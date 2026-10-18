@@ -1,0 +1,35 @@
+{
+  "name": "openpaper",
+  "version": "0.1.0",
+  "description": "OpenPaper local server: file storage, live sync, Paper-compatible MCP server (HTTP + stdio) and headless rendering.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "openpaper": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false src/cli.ts serve --dev",
+    "serve": "tsx src/cli.ts serve",
+    "build": "node scripts/build.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.135.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "@openpaper/core": "0.1.0",
+    "jsonc-parser": "3.3.1",
+    "pdf-lib": "1.17.1",
+    "puppeteer-core": "25.14.0",
+    "smol-toml": "1.9.1",
+    "tailwindcss": "4.3.3",
+    "ws": "8.22.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.2",
+    "esbuild": "0.28.2",
+    "tsx": "4.23.15"
+  }
+}

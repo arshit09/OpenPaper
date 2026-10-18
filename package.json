@@ -1,0 +1,30 @@
+{
+  "name": "openpaper-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "description": "OpenPaper — an open-source, AI-first design canvas built on HTML/CSS, with a Paper-compatible MCP server.",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "packages/core",
+    "packages/server",
+    "apps/editor"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @openpaper/server",
+    "dev:editor": "npm run dev --workspace @openpaper/editor",
+    "build": "npm run build --workspace @openpaper/editor && npm run build --workspace openpaper",
+    "start": "node packages/server/dist/cli.js start",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p packages/core && tsc -p packages/server && tsc -p apps/editor"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.0",
+    "typescript": "5.9.3",
+    "vitest": "5.0.5"
+  },
+  "engines": {
+    "node": ">=20.19"
+  }
+}

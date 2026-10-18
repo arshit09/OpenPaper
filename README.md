@@ -1,0 +1,164 @@
+# OpenPaper
+
+**An open-source, AI-first design canvas where every design is real HTML and CSS — with a Paper-compatible MCP server so Claude Code, Cursor, Codex and any MCP client can design alongside you, live.**
+
+![An agent designing a landing page in OpenPaper](docs/images/agent-designing.png)
+
+OpenPaper is a local-first design tool. You draw frames, shapes, text and freehand sketches on an infinite canvas; AI agents connect over MCP and write HTML straight onto the same canvas while you watch. Because designs *are* HTML/CSS, what you see is exactly what ships: agents can read designs back as JSX/Tailwind and move them into your codebase without translation.
+
+It speaks the same MCP tool set as [Paper](https://paper.design) — all 37 tools, with the same names, parameters and response shapes — so prompts and workflows written for Paper work with OpenPaper unchanged. Everything runs on your machine; files are plain JSON in `~/.openpaper`.
+
+> OpenPaper is an independent open-source project. It is not affiliated with or endorsed by Paper (Lost Coast Labs, Inc.).
+
+## Features
+
+**Canvas**
+- Infinite canvas with pan/zoom; artboards are real DOM rendered with the exact CSS you'll ship
+- Tools: Move, Hand, Frame (artboards & frames), Rectangle, Ellipse, Text, Pencil (freehand → SVG), Image, Comment
+- Selection that respects depth (click / ⌘-click deep select / double-click to drill in), marquee, resize handles, drag to move or reorder flex children
+- Freeform frames (absolute children) or flex layout (column / row / wrap) with gap, padding and alignment
+- Layers panel with drag & drop, rename, hide/lock; pages with dividers
+- Inspector for size modes (fixed / hug / fill), layout, fills, borders, radius, shadows, typography (all Google Fonts + local fonts) and a raw CSS editor
+- Design tokens (CSS variables) used live across the file
+- Comments pinned to layers, threads, resolve/reopen
+- Copy/paste as clean HTML (paste HTML from any AI chat straight onto the canvas), drag-and-drop images
+- Export PNG / JPG / WebP / SVG / PDF; live JSX & Tailwind code panel
+- Undo/redo per person — agent changes never pollute your history, and you can undo an agent's last change from the Agents panel
+
+**AI / MCP**
+- Built-in design agent: type *"Ask AI to design…"* at the bottom of the canvas and Claude designs on the canvas while you watch (bring your own Anthropic API key)
+- Paper-compatible MCP server: Streamable HTTP at `http://127.0.0.1:29880/mcp` **and** stdio via `openpaper mcp` (auto-starts the app)
+- Agents see the canvas: `get_screenshot` renders through headless Chrome/Edge — pixel-identical to the editor
+- `get_jsx` uses Tailwind CSS v4's own canonicalizer for idiomatic utility classes
+- Live presence: working indicators on the artboards an agent touches, write/edit highlights, an activity feed of every tool call
+- Built-in guides (`get_guide`) that teach agents to design incrementally, review their work and use tokens
+- `paper-gen://` image generation with your own OpenAI or Gemini key
+- One-click setup for Claude Code, Claude Desktop, Cursor, VS Code, Codex, Windsurf, Gemini CLI, Antigravity, OpenCode and GitHub Copilot CLI
+
+## Quick start
+
+Requirements: **Node.js 20.19+** (22 recommended) and, for screenshots/exports, any Chromium browser (Chrome, Edge, Brave or Chromium — Edge ships with Windows).
+
+```bash
+git clone https://github.com/arshit09/OpenPaper.git && cd OpenPaper
+npm install
+npm run build
+npm start            # starts the server in the background and opens the editor
+```
+
+The editor runs at **http://127.0.0.1:29880**. To put the `openpaper` command on your PATH:
+
+```bash
+npm link --workspace openpaper     # then: openpaper start | status | stop | doctor
+```
+
+## Connect your agent
+
+Open **Connect agent** in the editor for one-click setup, or use the CLI:
+
+```bash
+openpaper install claude-code       # or: cursor, vscode, codex, claude-desktop, windsurf,
+                                    #     gemini-cli, antigravity, opencode, copilot-cli, --all
+```
+
+Manual setup — any MCP client, stdio:
+
+```json
+{
+  "mcpServers": {
+    "openpaper": { "command": "node", "args": ["/absolute/path/to/openpaper/packages/server/dist/cli.js", "mcp"] }
+  }
+}
+```
+
+Claude Code in one line:
+
+```bash
+claude mcp add openpaper --scope user -- node /absolute/path/to/openpaper/packages/server/dist/cli.js mcp
+```
+
+Or point an HTTP-capable client at `http://127.0.0.1:29880/mcp` while OpenPaper is running.
+
+Then try:
+
+- *"Create a pricing page for a note-taking app in OpenPaper."*
+- *"Make three different directions for the hero section of the selected artboard."*
+- *"Turn the selected card into a React component in src/components using Tailwind."*
+- *"Create a color and spacing token set, then restyle the design to use it."*
+
+![What the agent sees: get_screenshot](docs/images/agent-screenshot.jpg)
+
+## Built-in design agent
+
+No agent app needed: open a file and type into **Ask AI to design…** at the bottom of the canvas. The built-in agent is Claude, working with the same 37 tools an external MCP agent gets, so you watch it lay out artboards, check its work with screenshots and refine — and you can stop it at any moment.
+
+- **Credentials:** paste an Anthropic API key into the chat box the first time (stored only in `~/.openpaper/config.json`, owner-only permissions, never sent to the editor), or start the server with `ANTHROPIC_API_KEY` set, or sign in with `ant auth login`. Requests are billed to that account.
+- **Context:** every message includes the file, page and selection you're looking at, so *"make the selected card feel more premium"* just works.
+- **Settings** (gear icon): model (Claude Opus 5.5 by default, Sonnet 5.5, Haiku 5.5) and effort (`low` … `max`). Token usage for the conversation is shown in the header.
+- Agent edits are a separate actor: your own undo history is untouched, and the Agents panel can undo the agent's last change.
+- Conversations are per file and live while the server runs; **New chat** starts over.
+
+## MCP tools
+
+| Group | Tools |
+|---|---|
+| Files & pages | `open_file`, `list_resources`, `create_file`, `rename_resource`, `create_page`, `update_pages`, `arrange_pages` |
+| Reading | `get_basic_info`, `get_selection`, `get_node_info`, `get_children`, `get_tree_summary`, `get_screenshot`, `get_jsx`, `get_computed_styles`, `get_fill_image`, `find_nodes`, `get_font_family_info`, `get_guide` |
+| Writing | `write_html`, `create_artboard`, `update_styles`, `set_text_content`, `rename_nodes`, `duplicate_nodes`, `move_nodes`, `delete_nodes`, `finish_working_on_nodes` |
+| Tokens | `get_tokens`, `create_tokens`, `set_tokens` |
+| Comments | `list_comment_threads`, `get_comment_thread`, `list_comment_thread_authors`, `set_comment_thread_status` |
+| Export | `export`, `export_combined_pdf` |
+
+Full reference: [docs/mcp-tools.md](docs/mcp-tools.md).
+
+## Keyboard shortcuts
+
+| Action | Keys |
+|---|---|
+| Move / Hand / Frame / Rectangle / Ellipse / Text / Pencil / Comment | `V` `H` `F` `R` `O` `T` `P` `C` (hold `Space` to pan) |
+| Undo / Redo | `Ctrl/⌘ Z` / `Ctrl/⌘ Shift Z` |
+| Duplicate / Group / Ungroup | `Ctrl/⌘ D` / `Ctrl/⌘ G` / `Ctrl/⌘ Shift G` |
+| Add flex layout | `Shift A` |
+| Hide / Lock | `Ctrl/⌘ Shift H` / `Ctrl/⌘ Shift L` |
+| Bring forward / back (to front/back) | `Ctrl/⌘ ]` / `Ctrl/⌘ [` (+ `Alt`) |
+| Nudge | Arrows (`Shift` = 10px) |
+| Select children / parent | `Enter` / `Shift Enter` or `Esc` |
+| Zoom to fit / selection / 100% | `Shift 1` / `Shift 2` / `Shift 0`; `Ctrl/⌘ +/-`, `Ctrl/⌘`-scroll |
+| Rename | `F2` or double-click a layer |
+
+## How it works
+
+```
+packages/core     Isomorphic document model, HTML→layers importer, JSX/HTML export,
+                  render rules, tokens, queries (shared by server and editor)
+packages/server   `openpaper` CLI: local server, file storage, live sync (WebSocket),
+                  MCP server (Streamable HTTP + stdio relay), headless rendering,
+                  Tailwind worker, image generation, built-in Claude agent,
+                  agent-harness installers
+apps/editor       React canvas editor (served by the server)
+```
+
+The server owns every document. Editors and agents send commands; each change becomes a patch broadcast to every open editor, so you see agents work in real time. Agent edits run as their own actor with their own undo history. Rendering rules live in `core`, so headless screenshots, exports and the canvas are identical. See [docs/architecture.md](docs/architecture.md).
+
+**Data:** `~/.openpaper` (override with `OPENPAPER_HOME`) — `files/*.json`, `assets/` (images, content-addressed), `index.json`. Exports go to `~/Downloads/OpenPaper` (`OPENPAPER_EXPORT_DIR`).
+
+**Image generation:** set `OPENAI_API_KEY` and/or `GEMINI_API_KEY` for the server; agents use `paper-gen://` URLs (see `get_guide({topic: "image-generation"})`).
+
+**Browser for rendering:** auto-detected; override with `OPENPAPER_BROWSER=/path/to/chrome`. Without one, screenshots fall back to an open editor tab.
+
+## Development
+
+```bash
+npm run dev          # server with live reload (expects the editor on :5173)
+npm run dev:editor   # Vite dev server for the editor
+npm test             # unit + MCP integration tests (vitest)
+npm run typecheck
+```
+
+## Compatibility with Paper
+
+OpenPaper was built by studying Paper's publicly shipped desktop app and published MCP configuration (see [docs/reverse-engineering.md](docs/reverse-engineering.md)) and reimplementing the behavior from scratch: same tool names, parameters, ID formats (`1-0`, `p-1-0`, `root_node_…`), response shapes and error messages, so agents behave the same. Differences: OpenPaper is local-only (no accounts, teams, quotas or cloud sync), images can be generated with your own API keys, video export and shaders are not implemented yet.
+
+## License
+
+[MIT](LICENSE)
