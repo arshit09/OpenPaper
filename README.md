@@ -1,4 +1,9 @@
-# OpenPaper
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/logo/openpaper-horizontal-dark.svg">
+    <img alt="OpenPaper" src="docs/brand/logo/openpaper-horizontal.svg" width="320">
+  </picture>
+</h1>
 
 **An open-source, AI-first design canvas where every design is real HTML and CSS — with a Paper-compatible MCP server so Claude Code, Cursor, Codex and any MCP client can design alongside you, live.**
 

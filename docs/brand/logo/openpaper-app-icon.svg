@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-labelledby="title">
+  <title id="title">OpenPaper</title>
+  <rect width="1024" height="1024" rx="230" fill="#111111"/>
+  <path fill="#FFFFFF" d="M437.82 184.87A327.68 327.68 0 1 0 839.13 586.18Z"/>
+  <path fill="#8C8C8C" d="M437.82 184.87A327.68 327.68 0 0 0 839.13 586.18Z"/>
+</svg>
