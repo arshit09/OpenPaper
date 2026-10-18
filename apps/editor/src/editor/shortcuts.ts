@@ -211,6 +211,10 @@ export function useShortcuts() {
           return;
         }
       }
+      if (!e.altKey && !e.shiftKey && key === 's') {
+        setState({ showShaders: !s.showShaders });
+        return;
+      }
       if (!e.altKey && !e.shiftKey && TOOL_KEYS[key]) {
         setState({ tool: TOOL_KEYS[key] });
       }

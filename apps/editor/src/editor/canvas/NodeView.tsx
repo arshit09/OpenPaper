@@ -2,6 +2,7 @@ import { memo, useMemo, type CSSProperties } from 'react';
 import { parentKindOf, renderSpec, scopeSvgIds, splitSvgMarkup, svgAttrToReact } from '@openpaper/core';
 import { useEditor } from '../../state/store.ts';
 import { renderContext } from './render-context.ts';
+import { ShaderNode } from '../shaders/ShaderLayer.tsx';
 
 const SvgNode = memo(function SvgNode({ markup, style, id }: { markup: string; style: CSSProperties; id: string }) {
   // Ids are scoped per node: many SVGs share the canvas DOM (same rule as headless renders).
@@ -28,6 +29,7 @@ export const NodeView = memo(function NodeView({ id }: { id: string }) {
   const style = (transient ? { ...spec.style, ...transient } : spec.style) as CSSProperties;
 
   if (spec.kind === 'svg') return <SvgNode markup={spec.svg!} style={style} id={node.id} />;
+  if (spec.kind === 'shader') return <ShaderNode node={node} style={style} />;
 
   if (spec.kind === 'text') {
     return (

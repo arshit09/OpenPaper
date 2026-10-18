@@ -49,6 +49,7 @@ export const GUIDE_TOPICS = [
   ['mobile-status-bar', 'Ready-to-paste status bar markup for mobile artboards'],
   ['figma-import', 'Workflow for bringing Figma designs into OpenPaper'],
   ['image-generation', 'Generating AI images inside write_html, update_styles and create_artboard with paper-gen:// URLs'],
+  ['shaders', 'Shader layers (GPU effects: mesh gradients, grain, dithering, image filters…): the x-shader tag and every effect\'s parameters (OpenPaper extension)'],
 ] as const;
 
 const pageIdParam = z
@@ -437,7 +438,8 @@ Markup rules:
 - Each text element has a single style — one color and font for the whole element — so a code sample is one <pre> element.
 - Give layers names with the layer-name attribute, e.g. <div layer-name="Hero">.
 - Local image files need absolute paper-asset:// URLs, e.g. <img src="paper-asset:///C:/Users/me/logo.svg">.
-- paper-gen:// URLs create AI-generated images. Only use them if the user asked for generated imagery, and read get_guide({ topic: "image-generation" }) first.`,
+- paper-gen:// URLs create AI-generated images. Only use them if the user asked for generated imagery, and read get_guide({ topic: "image-generation" }) first.
+- OpenPaper extension: <x-shader type="MeshGradient" …> adds a GPU shader layer (animated gradients, grain, dithering, glows, image filters). Read get_guide({ topic: "shaders" }) before using it.`,
     input: z.object({
       html: z.string().describe('HTML to turn into design nodes. Standard elements with inline CSS styles.'),
       targetNodeId: z
@@ -493,6 +495,28 @@ The device height is only a starting point to show what fits above the fold. Whe
       updates: z
         .array(z.object({ nodeId: z.string().describe('Text node id.'), textContent: z.string().describe('New text.') }))
         .describe('One entry per text node.'),
+    }),
+  },
+  {
+    name: 'update_shader',
+    scope: 'file',
+    annotations: { destructiveHint: true },
+    description:
+      'OpenPaper extension. Change the settings of shader layers (GPU effects created with <x-shader> — see get_guide({ topic: "shaders" })). Each update names a shader node and gives a preset to apply and/or params to change; null removes a param (switching an optional group such as grain off). Returns the resulting params. Size, radius, opacity and background are ordinary CSS: use update_styles for those.',
+    input: z.object({
+      updates: z
+        .array(
+          z.object({
+            nodeId: z.string().describe('Id of the shader layer.'),
+            preset: z.string().optional().describe('Preset to apply before params, e.g. "Default" (see the shaders guide for each effect\'s presets).'),
+            params: z
+              .record(z.string(), z.union([z.number(), z.string(), z.boolean(), z.array(z.string()), z.null()]))
+              .optional()
+              .describe('Params by name, e.g. { "colors": ["#ff5f6d", "#2b5876"], "speed": 0.4, "grainMixer": null }.'),
+          })
+        )
+        .min(1)
+        .describe('One entry per shader layer.'),
     }),
   },
   {

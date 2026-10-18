@@ -14,6 +14,7 @@ import {
   Download,
   Plug,
   ChevronLeft,
+  Blend,
 } from 'lucide-react';
 import { useEditor, setState, type Tool } from '../state/store.ts';
 import { command, redo, undo } from '../sync/session.ts';
@@ -35,6 +36,7 @@ const TOOLS: Array<{ id: Tool; label: string; key: string; icon: typeof Frame }>
 export function TopBar() {
   const doc = useEditor((s) => s.doc)!;
   const tool = useEditor((s) => s.tool);
+  const showShaders = useEditor((s) => s.showShaders);
   const agents = useEditor((s) => s.agents);
   const zoom = useEditor((s) => (s.pageId && s.cameras[s.pageId]?.zoom) || 1);
   const connection = useEditor((s) => s.connection);
@@ -82,6 +84,9 @@ export function TopBar() {
             <t.icon size={16} />
           </button>
         ))}
+        <button className={`op-icon-btn${showShaders ? ' active' : ''}`} title="Shaders (S)" onClick={() => setState({ showShaders: !showShaders })}>
+          <Blend size={16} />
+        </button>
         <label className="op-icon-btn" title="Image">
           <ImagePlus size={16} />
           <input

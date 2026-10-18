@@ -1,6 +1,9 @@
 import { normalizeStyleValue, type StyleMap } from '../styles/css.ts';
 import { isAncestorOf, subtreeOf } from './tree.ts';
 import type { Transaction } from './transaction.ts';
+import { shaderDef } from '../shaders/registry.ts';
+import { applyShaderPropsPatch } from '../shaders/props.ts';
+import type { ShaderProps } from '../shaders/registry.ts';
 import type { ComponentType, NodeRecord } from './types.ts';
 
 /** Thrown for user-facing validation failures (become MCP error results). */
@@ -26,6 +29,7 @@ export interface NewNode {
   src?: string;
   svg?: string;
   attrs?: Record<string, string>;
+  props?: ShaderProps;
   isVisible?: boolean;
   isLocked?: boolean;
   children?: NewNode[];
@@ -44,7 +48,7 @@ export function defaultLabel(n: Pick<NewNode, 'component' | 'textValue'>): strin
     case 'Video':
       return 'Video';
     default:
-      return 'Frame';
+      return shaderDef(n.component)?.label ?? 'Frame';
   }
 }
 
@@ -83,6 +87,14 @@ function buildRecords(tx: Transaction, input: NewNode, parentId: string): NodeRe
   if (input.src !== undefined) record.src = input.src;
   if (input.svg !== undefined) record.svg = input.svg;
   if (input.attrs && Object.keys(input.attrs).length) record.attrs = { ...input.attrs };
+  const shader = shaderDef(input.component);
+  if (shader) {
+    try {
+      record.props = applyShaderPropsPatch(shader, {}, input.props ?? {});
+    } catch (error) {
+      throw new OpError(error instanceof Error ? error.message : String(error));
+    }
+  }
   tx.putNode(record);
   if (input.children?.length) {
     if (!CONTAINER_COMPONENTS.has(input.component)) {
@@ -170,6 +182,7 @@ export function duplicateSubtree(
       children: [],
       styles: { ...src.styles },
       ...(src.attrs ? { attrs: { ...src.attrs } } : {}),
+      ...(src.props ? { props: structuredClone(src.props) } : {}),
     };
     delete copy.imageGeneration;
     if (src.imageGeneration?.status === 'ready') copy.imageGeneration = { ...src.imageGeneration };

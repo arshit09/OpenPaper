@@ -21,3 +21,5 @@ export * from './query/find-nodes.ts';
 export * from './tokens/tokens.ts';
 export * from './sync/protocol.ts';
 export * from './commands/types.ts';
+export * from './shaders/index.ts';
+export * from './figma/index.ts';

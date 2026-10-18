@@ -8,6 +8,7 @@ import {
   type NodeRecord,
   type PaperDocument,
   type ResourceInfo,
+  type ShaderProps,
 } from '@openpaper/core';
 import type { ConnectionState } from '../sync/client.ts';
 
@@ -61,6 +62,12 @@ export interface EditorState {
   pendingComment: { nodeId: string | null; world: { x: number; y: number } } | null;
   /** Built-in agent chat for the open file. */
   agentChat: { items: AgentChatItem[]; running: boolean; usage: AgentUsage | null; open: boolean };
+  /** Shader picker popup. */
+  showShaders: boolean;
+  /** Uncommitted shader params while a control is being dragged (node id → props). */
+  shaderPreview: Record<string, ShaderProps>;
+  /** Pending question for a Figma paste with images and no Figma token. */
+  figmaPrompt: { images: number; resolve: (choice: 'with-images' | 'without-images' | 'cancel') => void } | null;
 }
 
 export const useEditor = create<EditorState>(() => ({
@@ -87,6 +94,9 @@ export const useEditor = create<EditorState>(() => ({
   flashes: [],
   pendingComment: null,
   agentChat: { items: [], running: false, usage: null, open: false },
+  showShaders: false,
+  shaderPreview: {},
+  figmaPrompt: null,
 }));
 
 export const getState = useEditor.getState;

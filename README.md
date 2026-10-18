@@ -6,7 +6,7 @@
 
 OpenPaper is a local-first design tool. You draw frames, shapes, text and freehand sketches on an infinite canvas; AI agents connect over MCP and write HTML straight onto the same canvas while you watch. Because designs *are* HTML/CSS, what you see is exactly what ships: agents can read designs back as JSX/Tailwind and move them into your codebase without translation.
 
-It speaks the same MCP tool set as [Paper](https://paper.design) — all 37 tools, with the same names, parameters and response shapes — so prompts and workflows written for Paper work with OpenPaper unchanged. Everything runs on your machine; files are plain JSON in `~/.openpaper`.
+It speaks the same MCP tool set as [Paper](https://paper.design) — all 37 tools, with the same names, parameters and response shapes — so prompts and workflows written for Paper work with OpenPaper unchanged (plus one OpenPaper extension, `update_shader`). Everything runs on your machine; files are plain JSON in `~/.openpaper`.
 
 > OpenPaper is an independent open-source project. It is not affiliated with or endorsed by Paper (Lost Coast Labs, Inc.).
 
@@ -21,6 +21,8 @@ It speaks the same MCP tool set as [Paper](https://paper.design) — all 37 tool
 - Inspector for size modes (fixed / hug / fill), layout, fills, borders, radius, shadows, typography (all Google Fonts + local fonts) and a raw CSS editor
 - Design tokens (CSS variables) used live across the file
 - Comments pinned to layers, threads, resolve/reopen
+- **Shaders**: 30 live GPU effects — mesh and grain gradients, dithering, noise, metaballs, god rays, liquid metal, halftone and other image filters — as layers with presets and full controls (`S`)
+- **Paste from Figma**: copy layers in Figma and paste them onto the canvas as editable frames, text, shapes and vectors (auto layout, components, gradients, effects and images included)
 - Copy/paste as clean HTML (paste HTML from any AI chat straight onto the canvas), drag-and-drop images
 - Export PNG / JPG / WebP / SVG / PDF; live JSX & Tailwind code panel
 - Undo/redo per person — agent changes never pollute your history, and you can undo an agent's last change from the Agents panel
@@ -33,6 +35,7 @@ It speaks the same MCP tool set as [Paper](https://paper.design) — all 37 tool
 - Live presence: working indicators on the artboards an agent touches, write/edit highlights, an activity feed of every tool call
 - Built-in guides (`get_guide`) that teach agents to design incrementally, review their work and use tokens
 - `paper-gen://` image generation with your own OpenAI or Gemini key
+- Agents can create and tune shader layers too (`<x-shader>` in `write_html`, `update_shader`, the `shaders` guide)
 - One-click setup for Claude Code, Claude Desktop, Cursor, VS Code, Codex, Windsurf, Gemini CLI, Antigravity, OpenCode and GitHub Copilot CLI
 
 ## Quick start
@@ -108,14 +111,34 @@ No agent app needed: open a file and type into **Ask AI to design…** at the bo
 | Tokens | `get_tokens`, `create_tokens`, `set_tokens` |
 | Comments | `list_comment_threads`, `get_comment_thread`, `list_comment_thread_authors`, `set_comment_thread_status` |
 | Export | `export`, `export_combined_pdf` |
+| OpenPaper extension | `update_shader` (shader layers; create them with `<x-shader>` in `write_html`) |
 
 Full reference: [docs/mcp-tools.md](docs/mcp-tools.md).
+
+## Shaders
+
+Press `S` (or the blend icon in the toolbar) to open the shader picker: effects, image filters and logo animations, each with live previews. A shader is a layer like any other — size, radius, opacity, borders and its background fill are ordinary CSS — and the inspector adds presets, sliders, colour lists, optional groups (grain, margins, folds…), images and play/pause.
+
+Agents use the same effects:
+
+```html
+<x-shader type="MeshGradient" colors="#0b1d51 #725ac1 #f6bd60" speed="0.4" style="width: 1440px; height: 900px"></x-shader>
+```
+
+`get_jsx` exports shader layers as [`@paper-design/shaders-react`](https://shaders.paper.design) components with the same parameters, and screenshots/exports render them through headless Chrome. Shaders are powered by Paper Shaders (Apache-2.0) — see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Paste from Figma
+
+Select layers in Figma, press `Ctrl/⌘ C`, then `Ctrl/⌘ V` in OpenPaper. Frames, groups, auto layout (direction, gap, padding, alignment, hug/fill sizing, wrap), text (fonts, weights, line height, letter spacing, case, decoration, mixed styles in short text), rectangles, ellipses, vectors, stars and polygons, gradients, strokes, shadows, blurs, opacity, blend modes, rotation and clipping come across as editable OpenPaper layers. Component instances are expanded with their overrides. Pasting onto the canvas keeps the layers' arrangement; pasting into a selected frame adds them inside it.
+
+Figma's clipboard holds references to images, not the images themselves. To bring images over, add a Figma [personal access token](https://help.figma.com/hc/en-us/articles/8085703771159) (read-only file content) when OpenPaper asks — it is stored only in `~/.openpaper/config.json`, or set `FIGMA_TOKEN`. Without one, image fills paste as grey placeholders. Not supported yet: masks, shader-like Figma effects (noise, glass), and variable-font axes.
 
 ## Keyboard shortcuts
 
 | Action | Keys |
 |---|---|
 | Move / Hand / Frame / Rectangle / Ellipse / Text / Pencil / Comment | `V` `H` `F` `R` `O` `T` `P` `C` (hold `Space` to pan) |
+| Shader picker | `S` |
 | Undo / Redo | `Ctrl/⌘ Z` / `Ctrl/⌘ Shift Z` |
 | Duplicate / Group / Ungroup | `Ctrl/⌘ D` / `Ctrl/⌘ G` / `Ctrl/⌘ Shift G` |
 | Add flex layout | `Shift A` |
@@ -157,7 +180,7 @@ npm run typecheck
 
 ## Compatibility with Paper
 
-OpenPaper was built by studying Paper's publicly shipped desktop app and published MCP configuration (see [docs/reverse-engineering.md](docs/reverse-engineering.md)) and reimplementing the behavior from scratch: same tool names, parameters, ID formats (`1-0`, `p-1-0`, `root_node_…`), response shapes and error messages, so agents behave the same. Differences: OpenPaper is local-only (no accounts, teams, quotas or cloud sync), images can be generated with your own API keys, video export and shaders are not implemented yet.
+OpenPaper was built by studying Paper's publicly shipped desktop app and published MCP configuration (see [docs/reverse-engineering.md](docs/reverse-engineering.md)) and reimplementing the behavior from scratch: same tool names, parameters, ID formats (`1-0`, `p-1-0`, `root_node_…`), response shapes and error messages, so agents behave the same. Differences: OpenPaper is local-only (no accounts, teams, quotas or cloud sync), images can be generated with your own API keys, agents can create and edit shader layers (`<x-shader>`, `update_shader`), and video export is not implemented yet.
 
 ## License
 

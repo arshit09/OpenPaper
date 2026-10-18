@@ -5,6 +5,7 @@ import { findBrowserExecutable } from './browser-path.ts';
 const IDLE_CLOSE_MS = 5 * 60 * 1000;
 const NAV_TIMEOUT_MS = 30_000;
 const ASSET_TIMEOUT_MS = 10_000;
+const SHADER_TIMEOUT_MS = 12_000;
 
 export interface RenderViewport {
   width: number;
@@ -100,6 +101,11 @@ export class HeadlessRenderer {
       });
       await page.goto(`${this.baseUrl()}/__render/${token}`, { waitUntil: 'load', timeout: NAV_TIMEOUT_MS });
       await page.evaluate(waitForAssetsInPage, ASSET_TIMEOUT_MS);
+      if (html.includes('data-op-shader=')) {
+        await page
+          .waitForFunction(() => (window as unknown as { __opShadersReady?: boolean }).__opShadersReady === true, { timeout: SHADER_TIMEOUT_MS })
+          .catch(() => {});
+      }
       return await fn(page);
     } finally {
       this.documents.delete(token);

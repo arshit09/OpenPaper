@@ -1,6 +1,6 @@
 # OpenPaper MCP tools
 
-OpenPaper exposes 37 tools, compatible with Paper's MCP server (same names, parameters and response shapes).
+OpenPaper exposes 38 tools, compatible with Paper's MCP server (same names, parameters and response shapes).
 Generated from `packages/server/src/tools/definitions.ts` — do not edit by hand.
 
 - **Streamable HTTP:** `http://127.0.0.1:29880/mcp` (while OpenPaper is running)
@@ -306,11 +306,11 @@ Check whether font families are available (installed on this computer or on Goog
 
 _App-level · readOnly_
 
-Read a detailed guide. Call with topic "paper-mcp-instructions" before using the other tools for best results. Other topics: "mobile-status-bar", "figma-import", "image-generation".
+Read a detailed guide. Call with topic "paper-mcp-instructions" before using the other tools for best results. Other topics: "mobile-status-bar", "figma-import", "image-generation", "shaders".
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `topic` | string | yes | Guide to read. Available topics: "paper-mcp-instructions" — How to get the most out of the OpenPaper MCP tools (read this first) "mobile-status-bar" — Ready-to-paste status bar markup for mobile artboards "figma-import" — Workflow for bringing Figma designs into OpenPaper "image-generation" — Generating AI images inside write_html, update_styles and create_artboard with paper-gen:// URLs |
+| `topic` | string | yes | Guide to read. Available topics: "paper-mcp-instructions" — How to get the most out of the OpenPaper MCP tools (read this first) "mobile-status-bar" — Ready-to-paste status bar markup for mobile artboards "figma-import" — Workflow for bringing Figma designs into OpenPaper "image-generation" — Generating AI images inside write_html, update_styles and create_artboard with paper-gen:// URLs "shaders" — Shader layers (GPU effects: mesh gradients, grain, dithering, image filters…): the x-shader tag and every effect's parameters (OpenPaper extension) |
 
 ## `export`
 
@@ -361,6 +361,7 @@ Markup rules:
 - Give layers names with the layer-name attribute, e.g. <div layer-name="Hero">.
 - Local image files need absolute paper-asset:// URLs, e.g. <img src="paper-asset:///C:/Users/me/logo.svg">.
 - paper-gen:// URLs create AI-generated images. Only use them if the user asked for generated imagery, and read get_guide({ topic: "image-generation" }) first.
+- OpenPaper extension: <x-shader type="MeshGradient" …> adds a GPU shader layer (animated gradients, grain, dithering, glows, image filters). Read get_guide({ topic: "shaders" }) before using it.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -410,6 +411,17 @@ Change the text of one or more Text nodes (component type "Text" only). Use it i
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `updates` | { nodeId: string, textContent: string }[] | yes | One entry per text node. |
+| `fileId` | string | yes | The file to operate on. |
+
+## `update_shader`
+
+_File-scoped · destructive_
+
+OpenPaper extension. Change the settings of shader layers (GPU effects created with <x-shader> — see get_guide({ topic: "shaders" })). Each update names a shader node and gives a preset to apply and/or params to change; null removes a param (switching an optional group such as grain off). Returns the resulting params. Size, radius, opacity and background are ordinary CSS: use update_styles for those.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `updates` | { nodeId: string, preset?: string, params?: Record<string, number \| string \| boolean \| string[] \| null> }[] | yes | One entry per shader layer. |
 | `fileId` | string | yes | The file to operate on. |
 
 ## `rename_nodes`

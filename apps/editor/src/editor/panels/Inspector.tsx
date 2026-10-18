@@ -19,6 +19,7 @@ import {
   type StyleInput,
 } from '@openpaper/core';
 import { useEditor } from '../../state/store.ts';
+import { ShaderInspector } from '../shaders/ShaderInspector.tsx';
 import { client, command } from '../../sync/session.ts';
 
 function useSelectedNodes(): NodeRecord[] {
@@ -273,6 +274,7 @@ export function Inspector() {
   const pk = parentKindOf(parent);
   const positioned = pk === 'root' || pk === 'freeform' || first.styles.position === 'absolute';
   const allFrames = nodes.every((n) => n.component === 'Frame');
+  const allSameShader = first.component.startsWith('Shader') && nodes.every((n) => n.component === first.component);
   const anyText = nodes.some((n) => n.component === 'Text');
   const display = common(nodes, 'display');
   const dir = common(nodes, 'flexDirection');
@@ -303,6 +305,8 @@ export function Inspector() {
           <StyleField nodes={nodes} prop="zIndex" label="Z" placeholder="auto" unitless />
         </div>
       </Section>
+
+      {allSameShader && <ShaderInspector nodes={nodes} />}
 
       {allFrames && (
         <Section

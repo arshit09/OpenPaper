@@ -1,12 +1,13 @@
 import type { StyleMap } from '../styles/css.ts';
+import { SHADER_COMPONENTS, type ShaderComponent, type ShaderProps } from '../shaders/registry.ts';
 
 /**
  * Node "component" types. These names are visible to agents through the MCP
  * tools (get_node_info, get_tree_summary, ...), so they follow Paper's naming.
  */
-export type ComponentType = 'PageRoot' | 'Frame' | 'Text' | 'Rectangle' | 'SVG' | 'Image' | 'Video';
+export type ComponentType = 'PageRoot' | 'Frame' | 'Text' | 'Rectangle' | 'SVG' | 'Image' | 'Video' | ShaderComponent;
 
-export const COMPONENT_TYPES: readonly ComponentType[] = ['PageRoot', 'Frame', 'Text', 'Rectangle', 'SVG', 'Image', 'Video'];
+export const COMPONENT_TYPES: readonly ComponentType[] = ['PageRoot', 'Frame', 'Text', 'Rectangle', 'SVG', 'Image', 'Video', ...SHADER_COMPONENTS];
 
 /** Status of an AI image generation attached to a node (paper-gen:// URLs). */
 export interface ImageGenerationState {
@@ -41,6 +42,8 @@ export interface NodeRecord {
   isLocked: boolean;
   /** Set when a paper-gen:// image is being generated into this node. */
   imageGeneration?: ImageGenerationState;
+  /** Shader layers: effect parameters by library name (colours as CSS colours, `frame` in ms). */
+  props?: ShaderProps;
 }
 
 export interface PageRecord {

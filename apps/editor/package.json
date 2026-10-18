@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@openpaper/core": "0.1.0",
+    "@paper-design/shaders": "0.0.81",
+    "@paper-design/shaders-react": "0.0.81",
     "lucide-react": "1.59.0",
     "modern-screenshot": "4.7.0",
     "react": "19.3.1",

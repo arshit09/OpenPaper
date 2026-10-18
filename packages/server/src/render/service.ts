@@ -316,6 +316,8 @@ html,body{width:${Math.ceil(size.width)}px;height:${Math.ceil(size.height)}px}`;
         const m = new DOMMatrix(t === 'none' ? undefined : t);
         world.style.transform = `translate(${m.e - r.left}px, ${m.f - r.top}px)`;
       }, nodeId);
+      // WebGL canvases (shader layers) are printed from PNG snapshots.
+      await page.evaluate(() => (window as unknown as { __opFreezeShaders?: () => void }).__opFreezeShaders?.());
       const pdf = await page.pdf({
         width: `${Math.ceil(size.width)}px`,
         height: `${Math.ceil(size.height)}px`,

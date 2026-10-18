@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { extname, join, normalize, sep } from 'node:path';
 import type { Duplex } from 'node:stream';
 import { assetUrlToPath, IMAGE_MIME, MEDIA_ROUTE, type MediaStore } from './media.ts';
+import { SHADER_RUNTIME_PATH } from '@openpaper/core';
 import { MCP_PATH } from './paths.ts';
 import type { OriginPolicy } from './security.ts';
 
@@ -34,6 +35,8 @@ export interface AppHandlers {
   upgrade: (req: IncomingMessage, socket: Duplex, head: Buffer) => void;
   /** Internal render documents for the headless renderer: /__render/<token>. */
   renderDocument: (token: string) => string | null;
+  /** Script that mounts shader layers in render documents (SHADER_RUNTIME_PATH). */
+  shaderRuntime: () => Promise<string>;
   shutdown: () => void;
 }
 
@@ -130,6 +133,12 @@ export function createApp(h: AppHandlers): Server {
       if (html === null) return sendText(res, 404, 'Not found');
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
       return void res.end(html);
+    }
+
+    if (path === SHADER_RUNTIME_PATH) {
+      const js = await h.shaderRuntime();
+      res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' });
+      return void res.end(js);
     }
 
     // --- Editor (static) ------------------------------------------------

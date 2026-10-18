@@ -1,21 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-  ChevronDown,
-  ChevronRight,
-  Eye,
-  EyeOff,
-  Lock,
-  Unlock,
-  Frame as FrameIcon,
-  Type,
-  Square,
-  Shapes,
-  Plus,
-  FileText,
-  Copy,
-  Trash2,
-  Minus,
-} from 'lucide-react';
+import { ChevronDown, ChevronRight, Eye, EyeOff, Lock, Unlock, Frame as FrameIcon, Type, Square, Shapes, Plus, FileText, Copy, Trash2, Minus, Blend } from 'lucide-react';
 import { displayName, isAncestorOf, readerOf, type NodeRecord } from '@openpaper/core';
 import { useEditor, setState, getState } from '../../state/store.ts';
 import { command } from '../../sync/session.ts';
@@ -30,7 +14,7 @@ function iconFor(n: NodeRecord) {
     case 'Rectangle':
       return <Square size={13} />;
     default:
-      return <FrameIcon size={13} />;
+      return n.component.startsWith('Shader') ? <Blend size={13} /> : <FrameIcon size={13} />;
   }
 }
 

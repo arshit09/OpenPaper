@@ -1,4 +1,5 @@
 import {
+  applyShaderPropsPatch,
   collectImageUrls,
   createSubtree,
   deleteSubtree,
@@ -19,6 +20,8 @@ import {
   renameNode,
   setNodeFlags,
   setTextValue,
+  shaderDef,
+  shaderPresetProps,
   subtreeOf,
   topLevelBoxes,
   type CommandResult,
@@ -64,9 +67,27 @@ export async function executeCommand(
       const parent = tx.getNode(cmd.parentId);
       if (!parent) throw new OpError(`Node not found: ${cmd.parentId}`);
       const placed: Array<{ minX: number; minY: number; maxX: number; maxY: number }> = [];
+      // Keep the pasted layers' arrangement: one free spot for their bounding box.
+      let spots: Array<{ x: number; y: number }> | null = null;
+      if (cmd.keepLayout && parent.component === 'PageRoot') {
+        const boxes = imported.roots.map((r) => ({
+          x: pxValue(r.styles.left) ?? 0,
+          y: pxValue(r.styles.top) ?? 0,
+          w: pxValue(r.styles.width) ?? 400,
+          h: pxValue(r.styles.height) ?? 300,
+        }));
+        const minX = Math.min(...boxes.map((b) => b.x));
+        const minY = Math.min(...boxes.map((b) => b.y));
+        const w = Math.max(...boxes.map((b) => b.x + b.w)) - minX;
+        const h = Math.max(...boxes.map((b) => b.y + b.h)) - minY;
+        const spot = findFreeSpot(topLevelBoxes(tx, parent, null), w, h);
+        spots = boxes.map((b) => ({ x: spot.x + b.x - minX, y: spot.y + b.y - minY }));
+      }
       const result = insertImported(tx, imported.roots, cmd.parentId, 'insert-children', {
         placeTopLevel:
-          parent.component === 'PageRoot'
+          parent.component === 'PageRoot' && spots
+            ? () => spots!.shift()!
+            : parent.component === 'PageRoot'
             ? (styles) => {
                 const w = pxValue(styles.width) ?? 400;
                 const h = pxValue(styles.height) ?? 300;
@@ -80,8 +101,53 @@ export async function executeCommand(
     });
   }
 
+  if (cmd.type === 'setShaderFrame') {
+    return live.transact(
+      actor,
+      'Shader frame',
+      (tx): CommandResult => {
+        for (const [id, frame] of Object.entries(cmd.frames)) {
+          const node = tx.getNode(id);
+          if (!node || !shaderDef(node.component) || !Number.isFinite(frame)) continue;
+          tx.updateNode(id, (n) => {
+            n.props = { ...(n.props ?? {}), frame: Math.max(0, Math.round(frame * 10) / 10) };
+          });
+        }
+        return {};
+      },
+      { undoable: false }
+    );
+  }
+
   return live.transact(actor, labelFor(cmd), (tx): CommandResult => {
     switch (cmd.type) {
+      case 'setShaderProps': {
+        for (const id of cmd.nodeIds) {
+          const node = tx.getNode(id);
+          const shader = node && shaderDef(node.component);
+          if (!node || !shader) throw new OpError(`Node "${id}" is not a shader layer.`);
+          let props = { ...(node.props ?? {}) };
+          let background: string | null | undefined;
+          if (cmd.preset) {
+            const applied = shaderPresetProps(shader, cmd.preset);
+            props = { ...applied.props, ...(props.image ? { image: props.image } : {}), ...(props.frame !== undefined ? { frame: props.frame } : {}) };
+            background = applied.background;
+          }
+          try {
+            props = applyShaderPropsPatch(shader, props, cmd.patch ?? {});
+          } catch (error) {
+            throw new OpError(error instanceof Error ? error.message : String(error));
+          }
+          tx.updateNode(id, (n) => {
+            n.props = props;
+            if (background !== undefined) {
+              if (background) n.styles.backgroundColor = background;
+              else delete n.styles.backgroundColor;
+            }
+          });
+        }
+        return {};
+      }
       case 'createNodes': {
         const ids: string[] = [];
         cmd.nodes.forEach((node, i) => ids.push(createSubtree(tx, cmd.parentId, node, cmd.index === undefined ? undefined : cmd.index + i).id));
@@ -316,6 +382,10 @@ function labelFor(cmd: EditorCommand): string {
       return 'Create';
     case 'updateStyles':
       return 'Edit styles';
+    case 'setShaderProps':
+      return 'Edit shader';
+    case 'setShaderFrame':
+      return 'Shader frame';
     case 'setText':
       return 'Edit text';
     case 'rename':

@@ -1,6 +1,7 @@
 import { cssUrls, type StyleMap } from '../styles/css.ts';
 import type { DocReader } from '../model/transaction.ts';
 import type { NodeRecord } from '../model/types.ts';
+import { isShaderComponent, shaderDef } from '../shaders/registry.ts';
 
 /**
  * Shared rendering rules. Both the static HTML renderer (headless screenshots,
@@ -78,11 +79,13 @@ export function renderStyle(node: NodeRecord, parentKind: ParentKind, ctx: Rende
     style.whiteSpace ??= 'pre-wrap';
     style.overflowWrap ??= 'break-word';
   }
+  // The effect's canvas host fills the layer box (absolute, inset 0).
+  if (isShaderComponent(node.component)) style.position ??= 'relative';
   if (!node.isVisible) style.display = 'none';
   return style;
 }
 
-export type RenderKind = 'element' | 'text' | 'svg';
+export type RenderKind = 'element' | 'text' | 'svg' | 'shader';
 
 export interface RenderSpec {
   kind: RenderKind;
@@ -92,8 +95,19 @@ export interface RenderSpec {
   text?: string;
   /** Raw SVG markup (SVG nodes), with the root <svg> tag included. */
   svg?: string;
+  /** Shader layers: the @paper-design/shaders-react component name. */
+  shader?: string;
   attrs: Record<string, string>;
 }
+
+/**
+ * Style of the element that hosts a shader's canvas inside the layer. The layer element keeps its
+ * own CSS (background = fill, borders, radius); the host fills its padding box.
+ */
+export const SHADER_HOST_STYLE = { position: 'absolute', inset: '0', borderRadius: 'inherit' } as const;
+
+/** Script that mounts shader layers in static renders (served by the OpenPaper server). */
+export const SHADER_RUNTIME_PATH = '/__op/shaders.js';
 
 /** Render spec using a reader to find the parent. */
 export function renderSpecIn(reader: DocReader, node: NodeRecord, ctx: RenderContext): RenderSpec {
@@ -117,8 +131,11 @@ export function renderSpec(node: NodeRecord, parentKind: ParentKind, ctx: Render
       if (node.src) attrs.src = ctx.resolveUrl(node.src);
       return { kind: 'element', tag: 'video', style, attrs };
     }
-    default:
+    default: {
+      const shader = shaderDef(node.component);
+      if (shader) return { kind: 'shader', tag: 'div', style, attrs, shader: shader.name };
       return { kind: 'element', tag: 'div', style, attrs };
+    }
   }
 }
 

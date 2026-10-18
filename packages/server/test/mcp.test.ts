@@ -48,7 +48,7 @@ describe('OpenPaper MCP server', () => {
 
   it('lists Paper-compatible tools and instructions', async () => {
     const { tools } = await client.listTools();
-    expect(tools).toHaveLength(37);
+    expect(tools).toHaveLength(38);
     const names = tools.map((t) => t.name);
     for (const n of ['write_html', 'create_artboard', 'get_screenshot', 'get_jsx', 'finish_working_on_nodes', 'find_nodes', 'set_tokens']) {
       expect(names).toContain(n);

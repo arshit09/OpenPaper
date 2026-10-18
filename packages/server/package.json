@@ -28,8 +28,13 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@paper-design/shaders-react": "0.0.81",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
     "@types/ws": "8.18.2",
     "esbuild": "0.28.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "tsx": "4.23.15"
   }
 }

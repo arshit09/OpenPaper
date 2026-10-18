@@ -28,6 +28,7 @@ See [docs/architecture.md](docs/architecture.md). In short: document model and H
 
 - **MCP compatibility is a feature.** Tool names, parameters and response shapes match Paper's; don't change them without a very good reason. Add new behavior with new optional parameters or new tools.
 - After changing tool definitions, regenerate the reference: `npx tsx packages/server/scripts/gen-docs.ts`.
+- Shader packages are pinned to an Apache-2.0 release (`@paper-design/shaders` 0.0.77+; never 0.0.47–0.0.76, which were PolyForm Shield). After bumping them, regenerate presets with `node packages/core/scripts/gen-shader-presets.mjs` and update THIRD_PARTY_NOTICES.md.
 - Rendering rules belong in `packages/core/src/render` so the canvas, headless screenshots and exports stay identical.
 - Every mutation goes through a `Transaction`; never mutate a document in place.
 - Add tests: importer behavior in `packages/core/src/html/import.test.ts`, tools in `packages/server/test/mcp.test.ts`.

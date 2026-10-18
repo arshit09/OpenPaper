@@ -8,6 +8,9 @@ import { useShortcuts } from './shortcuts.ts';
 import { useClipboard } from './clipboard.ts';
 import { ExportDialog } from './panels/ExportDialog.tsx';
 import { AgentDock } from './AgentDock.tsx';
+import { ShaderPicker } from './shaders/ShaderPicker.tsx';
+import { FigmaTokenDialog } from './figma/FigmaTokenDialog.tsx';
+import { persistShaderFrames } from './shaders/ShaderInspector.tsx';
 
 function AgentOpenedBanner() {
   const opened = useEditor((s) => s.agentOpened);
@@ -57,6 +60,16 @@ export function EditorView() {
   useShortcuts();
   useClipboard();
 
+  // Animated shaders resume where they were when the file is opened again.
+  useEffect(() => {
+    if (!doc?.id) return;
+    window.addEventListener('pagehide', persistShaderFrames);
+    return () => {
+      window.removeEventListener('pagehide', persistShaderFrames);
+      persistShaderFrames();
+    };
+  }, [doc?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (doc) document.title = `${doc.name} — OpenPaper`;
     return () => {
@@ -78,11 +91,13 @@ export function EditorView() {
         <div style={{ position: 'relative', minWidth: 0, minHeight: 0, display: 'grid' }}>
           <Canvas />
           <AgentOpenedBanner />
+          <ShaderPicker />
           <AgentDock />
         </div>
         <RightPanel />
       </div>
       {showExport && <ExportDialog />}
+      <FigmaTokenDialog />
     </div>
   );
 }

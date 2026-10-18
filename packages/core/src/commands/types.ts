@@ -10,8 +10,13 @@ export type StyleInput = Record<string, string | number | null>;
  */
 export type EditorCommand =
   | { type: 'createNodes'; parentId: string; index?: number; nodes: NewNode[] }
-  | { type: 'insertHtml'; parentId: string; index?: number; html: string }
+  /** keepLayout: pasting onto the canvas keeps the layers' relative positions (left/top) as one group. */
+  | { type: 'insertHtml'; parentId: string; index?: number; html: string; keepLayout?: boolean }
   | { type: 'updateStyles'; updates: Array<{ nodeIds: string[]; styles: StyleInput }> }
+  /** Shader layers: apply a preset (its background becomes the fill) and/or patch params (null removes). */
+  | { type: 'setShaderProps'; nodeIds: string[]; preset?: string; patch?: Record<string, unknown> }
+  /** Remember the animation time a shader is showing (not undoable). */
+  | { type: 'setShaderFrame'; frames: Record<string, number> }
   | { type: 'setText'; nodeId: string; text: string }
   | { type: 'rename'; nodeId: string; name: string }
   | { type: 'delete'; nodeIds: string[] }

@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { imageSize, sniffMime, assetUrlToPath, type MediaStore } from './media.ts';
 import type { ResolvedImage } from '@openpaper/core';
+import { figmaImageFills, parseFigmaImageUrl } from './figma.ts';
 
 const REMOTE_TIMEOUT_MS = 15_000;
 const REMOTE_MAX_BYTES = 25 * 1024 * 1024;
@@ -16,15 +17,36 @@ const CONCURRENCY = 6;
 export class AssetResolver {
   private readonly cache = new Map<string, ResolvedImage | null>();
 
-  constructor(private readonly media: MediaStore) {}
+  constructor(
+    private readonly media: MediaStore,
+    /** Figma personal access token for figma-image:// URLs (pasted Figma image fills). */
+    private readonly figmaToken: () => Promise<string | null> = async () => null
+  ) {}
 
   async resolveAll(urls: string[]): Promise<Map<string, ResolvedImage | null>> {
     const out = new Map<string, ResolvedImage | null>();
-    const queue = [...new Set(urls)];
+    // Figma image fills: one REST call per source file maps hashes to download URLs.
+    const figma = urls.map((u) => [u, parseFigmaImageUrl(u)] as const).filter(([, p]) => p);
+    const download = new Map<string, string>();
+    if (figma.length) {
+      const token = await this.figmaToken();
+      const files = new Set(figma.map(([, p]) => p!.fileKey));
+      for (const fileKey of files) {
+        const fills = token ? await figmaImageFills(fileKey, token).catch(() => new Map<string, string>()) : new Map<string, string>();
+        for (const [url, p] of figma) {
+          if (p!.fileKey !== fileKey) continue;
+          const remote = fills.get(p!.hash);
+          if (remote) download.set(url, remote);
+          else out.set(url, null);
+        }
+      }
+    }
+    const queue = [...new Set(urls)].filter((u) => !out.has(u));
     const worker = async () => {
       while (queue.length) {
         const url = queue.shift()!;
-        out.set(url, await this.resolveOne(url));
+        const remote = download.get(url);
+        out.set(url, await this.resolveOne(remote ?? url));
       }
     };
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker));

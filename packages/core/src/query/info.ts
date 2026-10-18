@@ -1,3 +1,4 @@
+import { shaderDef } from '../shaders/registry.ts';
 import { displayName, primaryImageUrl } from '../model/labels.ts';
 import type { DocReader } from '../model/transaction.ts';
 import { artboardOf, isArtboard } from '../model/tree.ts';
@@ -234,6 +235,9 @@ export function nodeInfo(reader: DocReader, node: NodeRecord, layout: LayoutMap 
     out.truncatedMessage = `Showing first ${LIMITS.children} of ${childIds.length} child IDs`;
   }
   if (node.imageGeneration) out.imageGeneration = { status: node.imageGeneration.status, output: node.imageGeneration.output };
+  // OpenPaper extension: shader settings (edit them with update_shader).
+  const shader = shaderDef(node.component);
+  if (shader) out.shader = { type: shader.name, props: node.props ?? {} };
   return out;
 }
 

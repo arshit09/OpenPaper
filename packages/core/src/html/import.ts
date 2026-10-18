@@ -2,6 +2,8 @@ import render from 'dom-serializer';
 import type { ChildNode, Element } from 'domhandler';
 import { cssUrls, parseInlineStyle, pxValue, type StyleMap } from '../styles/css.ts';
 import { hasBoxStyles, INHERITED_TEXT_PROPS, normalizeNodeStyles, stripInertStyles } from '../styles/normalize.ts';
+import { findShader, type ShaderComponent, type ShaderProps } from '../shaders/registry.ts';
+import { applyShaderPropsPatch, SHADER_DEFAULT_SIZE, shaderPresetProps } from '../shaders/props.ts';
 import { FREEFORM_DISPLAY } from '../render/render-spec.ts';
 import {
   attr,
@@ -25,9 +27,10 @@ import { cleanSvgMarkup } from './svg.ts';
  *  - typography is resolved from ancestors inside the snippet and stored on Text nodes
  *  - <img> becomes a Rectangle with an image fill; <svg> an SVG node
  *  - <x-paper-clone node-id="…"> deep-copies an existing node
+ *  - <x-shader type="MeshGradient" …params> creates a shader layer (OpenPaper extension)
  */
 
-export type ImportedComponent = 'Frame' | 'Text' | 'Rectangle' | 'SVG';
+export type ImportedComponent = 'Frame' | 'Text' | 'Rectangle' | 'SVG' | ShaderComponent;
 
 export interface ImportedNode {
   component: ImportedComponent;
@@ -43,6 +46,8 @@ export interface ImportedNode {
   cloneOf?: string;
   /** paper-gen:// URL requested for this node (image generation). */
   generate?: string;
+  /** Shader layers: effect parameters. */
+  props?: ShaderProps;
 }
 
 export interface ResolvedImage {
@@ -463,6 +468,57 @@ export function importHtml(html: string, opts: ImportOptions = {}): ImportResult
       return;
     }
 
+    // <x-shader type="…" …params> (OpenPaper extension)
+    if (tag === 'x-shader') {
+      const type = (attr(el, 'type') ?? attr(el, 'name') ?? '').trim();
+      const shader = findShader(type);
+      if (!shader) {
+        warnings.push(`Unknown shader type "${type}". See get_guide({ topic: "shaders" }) for the list.`);
+        return;
+      }
+      const preset = attr(el, 'preset');
+      const { props: base0, background } = shaderPresetProps(shader, preset ?? 'Default');
+      const patch: Record<string, unknown> = {};
+      const reserved = new Set(['type', 'name', 'preset', 'style', 'layer-name', 'data-paper-locked', 'hidden', 'id', 'class']);
+      for (const [rawKey, value] of Object.entries(el.attribs)) {
+        const key = rawKey.toLowerCase();
+        if (reserved.has(key)) continue;
+        const camel = key.replace(/-([a-z])/g, (_m, c: string) => c.toUpperCase());
+        const param = shader.params.find((p) => p.name.toLowerCase() === camel.toLowerCase());
+        if (!param && camel !== 'frame') {
+          warnings.push(`${shader.label} has no parameter "${rawKey}" (ignored). Parameters: ${shader.params.map((p) => p.name).join(', ')}.`);
+          continue;
+        }
+        if (param?.kind === 'image') {
+          const src = value.trim();
+          const resolved = src ? opts.resolveImage?.(src) : null;
+          if (resolved === null && src) warnings.push(`Could not load the image for ${shader.label}: ${src}`);
+          if (resolved) patch.image = resolved.url;
+          else if (resolved === undefined && src) patch.image = src;
+          continue;
+        }
+        patch[param?.name ?? camel] = value;
+      }
+      let props = base0;
+      for (const [k, v] of Object.entries(patch)) {
+        try {
+          props = applyShaderPropsPatch(shader, props, { [k]: v });
+        } catch (error) {
+          warnings.push(error instanceof Error ? error.message : String(error));
+        }
+      }
+      const node = base(shader.component);
+      if (layerName === undefined) node.label = shader.label;
+      node.props = props;
+      const s = { ...own };
+      s.width ??= `${SHADER_DEFAULT_SIZE.width}px`;
+      s.height ??= `${SHADER_DEFAULT_SIZE.height}px`;
+      if (background && !s.backgroundColor && !s.background && !s.backgroundImage) s.backgroundColor = background;
+      node.styles = s;
+      attach(makeBuild(node, s, tag, el, parent, ctx.inherited), parent);
+      return;
+    }
+
     // <svg>
     if (tag === 'svg') {
       const node = base('SVG');
@@ -702,7 +758,7 @@ export function importHtml(html: string, opts: ImportOptions = {}): ImportResult
 
   // ---- pruning ------------------------------------------------------------
   const isEmpty = (n: ImportedNode) =>
-    !n.children.length && !n.textValue && !n.svg && !n.cloneOf && !n.generate && Object.keys(n.styles).length === 0;
+    !n.children.length && !n.textValue && !n.svg && !n.cloneOf && !n.generate && !n.props && Object.keys(n.styles).length === 0;
   const positioned = (n: ImportedNode, parentDisplay: string | undefined) =>
     n.styles.position === 'absolute' || parentDisplay === FREEFORM_DISPLAY;
   const invisible = (n: ImportedNode) =>
@@ -801,6 +857,10 @@ export function collectImageUrls(html: string): string[] {
       if (tag === 'img') {
         const src = attr(n, 'src')?.trim();
         if (src && !src.startsWith('paper-gen://')) urls.add(src);
+      }
+      if (tag === 'x-shader') {
+        const src = attr(n, 'image')?.trim();
+        if (src) urls.add(src);
       }
       const style = attr(n, 'style');
       if (style && style.includes('url(')) for (const u of cssUrls(style)) if (!u.startsWith('paper-gen://') && !u.startsWith('#')) urls.add(u);

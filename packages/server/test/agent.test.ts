@@ -114,7 +114,7 @@ describe('built-in design agent', () => {
     expect(first.output_config).toEqual({ effort: 'high' });
     expect(first.cache_control).toEqual({ type: 'ephemeral' });
     expect(first.system[0].cache_control).toEqual({ type: 'ephemeral' });
-    expect(first.tools).toHaveLength(37);
+    expect(first.tools).toHaveLength(38);
     expect(first.tools.every((t: { eager_input_streaming: boolean }) => t.eager_input_streaming)).toBe(true);
     expect(first.tools[0].input_schema.$schema).toBeUndefined();
     expect(first.messages[0].content).toContain('<context>');

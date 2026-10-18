@@ -4,12 +4,23 @@ import type { DocReader } from '../model/transaction.ts';
 import type { NodeRecord } from '../model/types.ts';
 import { computedStyles } from '../query/info.ts';
 import { styleMapToCss } from '../styles/css.ts';
+import { shaderDef, type ShaderProps } from '../shaders/registry.ts';
 
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 function escAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+}
+
+/** Shader params as <x-shader> attributes (colour lists space-separated). */
+function shaderAttrs(props: ShaderProps | undefined, resolve: (u: string) => string): string {
+  let out = '';
+  for (const [k, v] of Object.entries(props ?? {})) {
+    const text = Array.isArray(v) ? v.join(' ') : k === 'image' && typeof v === 'string' ? resolve(v) : String(v);
+    out += ` ${k}="${escAttr(text)}"`;
+  }
+  return out;
 }
 
 /**
@@ -39,6 +50,8 @@ export function nodesToHtml(reader: DocReader, ids: string[], opts: { resolveUrl
     if (node.component === 'Text') {
       return `${indent}<div${name}${style}>${esc(node.textValue ?? '')}</div>`;
     }
+    const shader = shaderDef(node.component);
+    if (shader) return `${indent}<x-shader type="${shader.name}"${name}${shaderAttrs(node.props, resolve)}${style}></x-shader>`;
     const kids = node.children.map((id) => reader.getNode(id)).filter((n): n is NodeRecord => !!n);
     const tag = node.component === 'Rectangle' ? ' paper-node="Rectangle"' : '';
     if (!kids.length) return `${indent}<div${name}${tag}${style}></div>`;

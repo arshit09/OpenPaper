@@ -14,6 +14,8 @@ import { MediaStore } from './media.ts';
 import { DEFAULT_PORT, MCP_PATH, type OpenPaperPaths } from './paths.ts';
 import { PresenceService } from './presence.ts';
 import { HeadlessRenderer } from './render/headless.ts';
+import { createShaderRuntimeLoader } from './render/shader-runtime-loader.ts';
+import { FigmaSettings } from './figma.ts';
 import { RenderService, type EncodedImage } from './render/service.ts';
 import { OriginPolicy } from './security.ts';
 import { probeHealth, removeServerInfo, writeServerInfo } from './server-info.ts';
@@ -67,7 +69,8 @@ export async function startServer(opts: StartOptions): Promise<RunningServer> {
   await store.init();
   const hub = new DocumentHub(store);
   const media = new MediaStore(paths.assets);
-  const assets = new AssetResolver(media);
+  const figmaSettings = new FigmaSettings(paths.config);
+  const assets = new AssetResolver(media, () => figmaSettings.token());
   const fonts = new FontService(paths.cache);
   void fonts.refresh();
   const headless = new HeadlessRenderer(() => url);
@@ -137,7 +140,7 @@ export async function startServer(opts: StartOptions): Promise<RunningServer> {
     viewFor: (fileId) => views.viewFor(fileId),
     emit: (fileId, event) => views.broadcast(fileId, { t: 'agent', fileId, event }),
   });
-  sync = createSyncServer({ env, policy, mcpLaunch: mcpLaunchCommand, agents, agentSettings });
+  sync = createSyncServer({ env, policy, mcpLaunch: mcpLaunchCommand, agents, agentSettings, figmaSettings });
   tailwind.warmup();
 
   let closing: Promise<void> | null = null;
@@ -167,6 +170,7 @@ export async function startServer(opts: StartOptions): Promise<RunningServer> {
     mcpConfig: () => ({ tools: mcpToolList(), instructions: SERVER_INSTRUCTIONS }),
     upgrade: (req, socket, head) => sync.handleUpgrade(req, socket, head),
     renderDocument: (token) => headless.documentFor(token),
+    shaderRuntime: createShaderRuntimeLoader(),
     shutdown: () => {
       void close().then(() => process.exit(0));
     },

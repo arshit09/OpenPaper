@@ -21,11 +21,24 @@ await build({
   sourcemap: true,
   // npm dependencies of this package stay external; workspace code (core) and its
   // small pure-JS dependencies are bundled in.
-  external: Object.keys(pkg.dependencies).filter((d) => d !== '@openpaper/core'),
+  external: [...Object.keys(pkg.dependencies).filter((d) => d !== '@openpaper/core'), 'esbuild'],
   // (src/cli.ts carries the #!/usr/bin/env node line; esbuild keeps it first.)
   banner: {
     js: "import { createRequire as __opCreateRequire } from 'node:module'; const require = __opCreateRequire(import.meta.url);",
   },
+  logLevel: 'info',
+});
+
+// Browser runtime that mounts shader layers in headless render documents.
+await build({
+  entryPoints: [join(root, 'src/render/shader-runtime.ts')],
+  outfile: join(dist, 'shader-runtime.js'),
+  bundle: true,
+  format: 'iife',
+  platform: 'browser',
+  target: 'chrome110',
+  minify: true,
+  define: { 'process.env.NODE_ENV': '"production"' },
   logLevel: 'info',
 });
 

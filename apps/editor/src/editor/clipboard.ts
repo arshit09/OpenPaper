@@ -6,6 +6,8 @@ import { clientToWorld, viewportRect, worldRectOf } from './canvas/geometry.ts';
 import { isTyping } from './canvas/Canvas.tsx';
 
 const MARKER = '<!--openpaper-->';
+/** Figma puts its layers on the clipboard as a base64 payload between (figma) markers. */
+const FIGMA_PAYLOAD = /\(figma\)[A-Za-z0-9+/=\s]+\(\/figma\)/;
 
 /** Where pasted/dropped content goes: the selected frame, the selection's parent, or the page. */
 function pasteTarget(): string | null {
@@ -151,7 +153,14 @@ export function useClipboard() {
       }
       const html = data.getData('text/html');
       const text = data.getData('text/plain');
-      if (html && (html.includes(MARKER) || /<(div|section|svg|img|span|p|h[1-6]|button|a)\b/i.test(html))) {
+      if (html && FIGMA_PAYLOAD.test(html)) {
+        e.preventDefault();
+        const target = pasteTarget();
+        // The decoder (kiwi + decompression) loads only when Figma layers are pasted.
+        if (target) void import('./figma/figmaPaste.ts').then((m) => m.pasteFigma(html, target));
+        return;
+      }
+      if (html && (html.includes(MARKER) || /<(div|section|svg|img|span|p|h[1-6]|button|a|x-shader)\b/i.test(html))) {
         e.preventDefault();
         void pasteHtml(html);
         return;

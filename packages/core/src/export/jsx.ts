@@ -8,6 +8,9 @@ import { parseInlineStyle, toKebabCase, type StyleMap } from '../styles/css.ts';
 import { svgAttrToReact } from '../html/sanitize.ts';
 import { scopeSvgIds } from '../html/svg.ts';
 import { isFreeform } from '../render/render-spec.ts';
+import { shaderDef, shaderHasColorBack, type ShaderDef } from '../shaders/registry.ts';
+import { shaderColorToHex } from '../shaders/props.ts';
+import { SHADER_LIBRARY_VERSION } from '../shaders/presets.generated.ts';
 
 export interface JsxOptions {
   format: 'tailwind' | 'inline-styles';
@@ -39,10 +42,14 @@ const POSITION_KEYS = ['position', 'top', 'left', 'right', 'bottom', 'inset'];
 interface Ctx {
   reader: DocReader;
   opts: JsxOptions;
+  /** Shader components used in the subtree (named imports from @paper-design/shaders-react). */
+  imports: Set<string>;
 }
 
 function elementStyles(reader: DocReader, node: NodeRecord, isRoot: boolean, opts: JsxOptions, rootExtras: StyleMap): StyleMap {
-  const s: StyleMap = { boxSizing: 'border-box', ...computedStyles(reader, node) };
+  // Shader components render their own box: no box-sizing prefix (as in Paper's export).
+  const base = computedStyles(reader, node);
+  const s: StyleMap = shaderDef(node.component) ? { ...base } : { boxSizing: 'border-box', ...base };
   if (node.component === 'Text') {
     const text = node.textValue ?? '';
     if (!/ {2}|\n/.test(text)) delete s.whiteSpace;
@@ -55,7 +62,7 @@ function elementStyles(reader: DocReader, node: NodeRecord, isRoot: boolean, opt
     // Root extras lead (after box-sizing), like Paper's output.
     const { boxSizing, ...rest } = s;
     for (const k of Object.keys(s)) delete s[k];
-    Object.assign(s, { boxSizing: boxSizing!, ...rootExtras, ...rest });
+    Object.assign(s, boxSizing ? { boxSizing, ...rootExtras, ...rest } : { ...rootExtras, ...rest });
     const artboard = isArtboard(reader, node);
     if (!opts.includeRootPositioning) {
       for (const k of POSITION_KEYS) delete s[k];
@@ -237,6 +244,29 @@ function svgToJsx(node: NodeRecord, ctx: Ctx, rootStyle: StyleMap, depth: number
   return emit(root, depth, true);
 }
 
+// ---- shaders ------------------------------------------------------------------
+
+/** JSX props for a shader layer: stored params (colours as hex), then the transparent background. */
+function shaderJsxProps(def: ShaderDef, node: NodeRecord, reader: DocReader): string[] {
+  const params = new Map(def.params.map((p) => [p.name, p]));
+  const out: string[] = [];
+  const colorProps: string[] = [];
+  for (const [k, v] of Object.entries(node.props ?? {})) {
+    const param = params.get(k);
+    if (k !== 'frame' && !param) continue;
+    if (param?.kind === 'color' && typeof v === 'string') {
+      colorProps.push(`${k}="${shaderColorToHex(v, reader.getTokens())}"`);
+    } else if (param?.kind === 'colors' && Array.isArray(v)) {
+      colorProps.push(`${k}={[${v.map((c) => jsString(shaderColorToHex(c, reader.getTokens()))).join(', ')}]}`);
+    } else if (typeof v === 'number') out.push(`${k}={${v}}`);
+    else if (typeof v === 'boolean') out.push(v ? k : `${k}={false}`);
+    else if (typeof v === 'string') out.push(`${k}="${v.replace(/"/g, '&quot;')}"`);
+  }
+  out.push(...colorProps);
+  if (shaderHasColorBack(def)) out.push('colorBack="#00000000"');
+  return out;
+}
+
 // ---- main ---------------------------------------------------------------------
 
 async function emitNode(node: NodeRecord, ctx: Ctx, depth: number, isRoot: boolean, rootExtras: StyleMap): Promise<string[]> {
@@ -253,6 +283,12 @@ async function emitNode(node: NodeRecord, ctx: Ctx, depth: number, isRoot: boole
     if (Object.keys(style).length) attrs.push(`style=${styleObject(style, false)}`);
   } else {
     attrs.push(`style=${styleObject(styles, true)}`);
+  }
+  const shader = shaderDef(node.component);
+  if (shader) {
+    ctx.imports.add(shader.name);
+    const idAttr = ctx.opts.includeNodeIds ? attrs.splice(0, 1) : [];
+    return [`${ind}<${shader.name} ${[...idAttr, ...shaderJsxProps(shader, node, ctx.reader), ...attrs].join(' ')} />`];
   }
   const open = `${ind}<div${attrs.length ? ' ' + attrs.join(' ') : ''}`;
 
@@ -274,9 +310,11 @@ async function emitNode(node: NodeRecord, ctx: Ctx, depth: number, isRoot: boole
 export async function generateJsx(reader: DocReader, rootId: string, opts: JsxOptions): Promise<string> {
   const root = reader.getNode(rootId);
   if (!root) throw new Error(`Node not found: ${rootId}`);
-  const ctx: Ctx = { reader, opts };
+  const ctx: Ctx = { reader, opts, imports: new Set() };
   const lines = await emitNode(root, ctx, 0, true, rootExtrasFor(reader, root));
   if (!lines.length) return '';
-  if (lines.length === 1) return lines[0]!;
-  return `(\n${lines.map((l) => `    ${l}`).join('\n')}\n  )`;
+  const body = lines.length === 1 ? lines[0]! : `(\n${lines.map((l) => `    ${l}`).join('\n')}\n  )`;
+  if (!ctx.imports.size) return body;
+  const names = [...ctx.imports].sort().join(', ');
+  return `/** @paper-design/shaders-react@${SHADER_LIBRARY_VERSION} */\nimport { ${names} } from '@paper-design/shaders-react';\n\n${body}`;
 }

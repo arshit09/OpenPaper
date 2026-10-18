@@ -35,6 +35,7 @@ import {
   updateStyles,
   writeHtml,
 } from './write-tools.ts';
+import { updateShader } from './shader-tools.ts';
 
 const TOOL_TIMEOUT_MS = 60_000;
 
@@ -66,6 +67,7 @@ const HANDLERS: Record<string, (call: Call) => Promise<HandlerResult>> = {
   create_artboard: createArtboard,
   delete_nodes: deleteNodes,
   set_text_content: setTextContent,
+  update_shader: updateShader,
   rename_nodes: renameNodes,
   update_styles: updateStyles,
   duplicate_nodes: duplicateNodes,
@@ -122,6 +124,8 @@ export function summarize(name: string, args: Record<string, any>): string {
       return `Restyled ${args.updates?.reduce((s: number, u: { nodeIds: string[] }) => s + u.nodeIds.length, 0) ?? 0} layer(s)`;
     case 'set_text_content':
       return `Edited text in ${n(args.updates)} layer(s)`;
+    case 'update_shader':
+      return `Adjusted ${n(args.updates)} shader(s)`;
     case 'rename_nodes':
       return `Renamed ${n(args.updates)} layer(s)`;
     case 'delete_nodes':

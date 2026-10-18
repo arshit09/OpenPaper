@@ -1,3 +1,4 @@
+import type { FigmaSettings } from './figma.ts';
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
@@ -31,6 +32,7 @@ export interface SyncOptions {
   mcpLaunch: () => { command: string; args: string[] };
   agents: AgentService;
   agentSettings: AgentSettings;
+  figmaSettings?: FigmaSettings;
 }
 
 function localUserName(): string {
@@ -43,7 +45,7 @@ function localUserName(): string {
 }
 
 /** WebSocket endpoint for editors: commands in, patches/presence/activity out. */
-export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings }: SyncOptions) {
+export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings, figmaSettings }: SyncOptions) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 * 1024 });
   const userName = localUserName();
 
@@ -180,6 +182,11 @@ export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings
           ...(params?.effort ? { effort: String(params.effort) as Effort } : {}),
         });
         return agentSettings.info();
+      case 'figma.config.get':
+        return figmaSettings?.info() ?? { tokenSource: null };
+      case 'figma.config.set':
+        await figmaSettings?.setToken(params?.token === null ? null : String(params?.token ?? ''));
+        return figmaSettings?.info() ?? { tokenSource: null };
       case 'agent.history': {
         const chat = agents.chat(String(params.fileId));
         return { items: chat.items, running: chat.running, usage: chat.usage };

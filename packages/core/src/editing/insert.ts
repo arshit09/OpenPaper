@@ -77,6 +77,7 @@ function createRecord(tx: Transaction, n: ImportedNode, parentId: string, out: I
   };
   if (n.textValue !== undefined) record.textValue = n.textValue;
   if (n.svg !== undefined) record.svg = n.svg;
+  if (n.props) record.props = structuredClone(n.props);
   tx.putNode(record);
   tx.updateNode(parentId, (p) => {
     p.children.push(id);

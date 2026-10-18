@@ -24,6 +24,8 @@ OpenPaper is a single local process (the **server**) plus a browser-based **edit
 - `export/` — JSX (Tailwind or inline styles) and clean HTML export.
 - `query/` — read-tool payloads (`get_basic_info`, `get_tree_summary`, …), `find_nodes` matching (glob + color equivalence).
 - `tokens/` — token names, ordering, CSS/Tailwind output, content hash.
+- `shaders/` — the shader registry (30 effects: parameters, ranges, optional groups), presets generated from `@paper-design/shaders-react` (`scripts/gen-shader-presets.mjs`), parameter validation and the props handed to the GPU library (colours resolved to hex, tokens included).
+- `figma/` — paste from Figma: decoding the clipboard's fig-kiwi archive (embedded kiwi schema + deflate/zstd) and converting Figma nodes to importable HTML (auto layout → flex, text runs, vectors, gradients, instances with overrides).
 - `sync/protocol.ts`, `commands/types.ts` — editor ⇄ server messages and editor commands.
 
 ### `packages/server` (the `openpaper` CLI)
@@ -31,7 +33,7 @@ OpenPaper is a single local process (the **server**) plus a browser-based **edit
 - `hub.ts` — `DocumentHub` / `LiveDocument`: the authoritative copy of each open file, per-actor undo/redo (skipping records others changed since), debounced atomic saves.
 - `mcp/http.ts` — Streamable HTTP endpoint. Each request gets a fresh stateless SDK transport while OpenPaper keeps its own session table, so clients holding a session id from before a restart keep working.
 - `mcp/stdio-relay.ts` — `openpaper mcp`: stdio ⇄ HTTP relay that starts the server when needed and restarts it if it dies.
-- `tools/` — the 37 MCP tools (definitions, handlers, guides, dispatcher).
+- `tools/` — the 37 Paper-compatible MCP tools plus OpenPaper's `update_shader` (definitions, handlers, guides, dispatcher).
 - `sync.ts`, `views.ts` — editor connections, what each editor is viewing (MCP tools default to the user's file/page/selection), server → editor RPC.
 - `presence.ts` — agent activity per node (40 s expiry), working indicators, activity log.
 - `render/` — headless Chrome/Edge via puppeteer-core: measurement, screenshots (Paper's 2000 px / JPEG 0.92 / 4.5 MB limits), PNG/JPG/WebP/PDF export, local font discovery.
@@ -39,6 +41,8 @@ OpenPaper is a single local process (the **server**) plus a browser-based **edit
 - `assets.ts`, `media.ts` — content-addressed image store; data URIs, local files and remote images are imported on write.
 - `images.ts` — `paper-gen://` generation via OpenAI / Gemini.
 - `harness.ts` — writes MCP config for agent apps.
+- `render/shader-runtime.ts` — browser script (served at `/__op/shaders.js`, prebuilt to `dist/shader-runtime.js`) that mounts shader layers in headless render documents at their stored frame; the renderer waits for it before capturing.
+- `figma.ts` — Figma token settings and the REST lookup that turns pasted image-fill hashes into downloads (`figma-image://` URLs in the asset resolver).
 - `agent/` — the built-in design agent: a Claude API tool loop (streaming, adaptive thinking, prompt caching, server-side compaction) over the same `ToolRuntime` the MCP endpoint uses, so it behaves exactly like an external agent and shows up in presence and the activity feed. Text, thinking summaries and tool steps stream to editors over the WebSocket (`{t: "agent"}` events); the API key and model/effort settings live in `<home>/config.json`.
 
 ### `apps/editor` (React)
@@ -46,6 +50,8 @@ OpenPaper is a single local process (the **server**) plus a browser-based **edit
 - `editor/canvas/` — canvas (pan/zoom world), `NodeView` (one React component per layer, using core's render rules), overlay (selection, handles, agent indicators, comment pins), interactions (tools/gestures), inline text editor.
 - `editor/panels/` — layers & pages, tokens, inspector, code, comments, agents, export.
 - `editor/AgentDock.tsx` — the built-in agent's chat, docked at the bottom of the canvas.
+- `editor/shaders/` — shader layers on the canvas (library loaded lazily), the picker with generated previews, inspector controls (presets, sliders with live preview, colours, groups, images, play/pause).
+- `editor/figma/` — Figma paste (loaded on demand) and the token prompt for image fills.
 
 ## Data flow of an agent edit
 

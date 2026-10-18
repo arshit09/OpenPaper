@@ -2,6 +2,7 @@
  * Guides served by `get_guide`. Topic ids match Paper's so existing prompts work;
  * the text is OpenPaper's own.
  */
+import { shaderGuide } from './shader-tools.ts';
 
 export const SERVER_INSTRUCTIONS = `OpenPaper is an open-source design tool for user interfaces. The user works on an infinite 2D canvas where every design is real HTML and CSS.
 These tools let you act as a skilled product and web designer: read the user's file, see what they are doing, and write HTML back into the design as editable layers. The user watches your work appear live.
@@ -264,6 +265,8 @@ export function guideContent(topic: string, imageGuide: () => string): string | 
       return FIGMA_GUIDE;
     case 'image-generation':
       return imageGuide();
+    case 'shaders':
+      return shaderGuide();
     default:
       return null;
   }
