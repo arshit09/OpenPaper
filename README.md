@@ -30,7 +30,7 @@ It speaks the same MCP tool set as [Paper](https://paper.design) — all 37 tool
 - **Paste from Figma**: copy layers in Figma and paste them onto the canvas as editable frames, text, shapes and vectors (auto layout, components, gradients, effects and images included)
 - Copy/paste as clean HTML (paste HTML from any AI chat straight onto the canvas), drag-and-drop images
 - Export PNG / JPG / WebP / SVG / PDF; live JSX & Tailwind code panel
-- Undo/redo per person — agent changes never pollute your history, and you can undo an agent's last change from the Agents panel
+- Undo/redo covers agent changes too: `Ctrl+Z` steps back through your edits and the agents' edits, newest first, and the Agents panel undoes one agent's last change
 
 **AI / MCP**
 - Built-in design agent: type *"Ask AI to design…"* at the bottom of the canvas and Claude designs on the canvas while you watch (bring your own Anthropic API key)
@@ -108,10 +108,10 @@ No agent app needed: open a file and type into **Ask AI to design…** at the bo
 - **Or use an API key:** paste an Anthropic API key into the chat box (stored only in `~/.openpaper/config.json`, owner-only permissions, never sent to the editor), or start the server with `ANTHROPIC_API_KEY` set, or sign in with `ant auth login`. Requests are billed to that account.
 - **Context:** every message includes the file, page and selection you're looking at, so *"make the selected card feel more premium"* just works.
 - **Settings** (gear icon): model (Claude Opus 5.5 by default, Sonnet 5.5, Haiku 5.5) and effort (`low` … `max`). Token usage for the conversation is shown in the header.
-- Agent edits are a separate actor: your own undo history is untouched, and the Agents panel can undo the agent's last change.
+- Agent edits land in your undo history, so `Ctrl+Z` takes back what an agent just did. The Agents panel can also undo one agent's last change.
 - Conversations are per file and live while the server runs; **New chat** starts over.
 - **Point at what to change:** select one or more layers and click the agent button beside the selection (or press `Ctrl+K`). The prompt that opens is aimed at exactly those layers, and the agent is told to leave the rest of the design alone. Progress and the agent's reply show right there; **Show in chat** opens the full conversation.
-- **Talk instead of typing:** click the mic in either prompt and speak, then click again (or hold the mic while you talk and let go). `Esc` cancels. The text lands in the prompt for you to check before sending. The first time, OpenPaper asks before downloading the speech model (NVIDIA Parakeet TDT 0.6B v2, 661 MB) into `~/.openpaper/models`. After that it runs offline on your CPU and turns a few seconds of speech into text in under a second. The engine is an optional native dependency (`sherpa-onnx-node`): if it can't be installed on your platform, the mic says so and everything else works.
+- **Talk instead of typing:** click the mic in either prompt and speak, then click again (or hold the mic while you talk and let go). `Esc` cancels. The text lands in the prompt for you to check before sending, or press **Send** while the mic is still on to send what you said (plus anything you typed) in one go. The first time, OpenPaper asks before downloading the speech model (NVIDIA Parakeet TDT 0.6B v2, 661 MB) into `~/.openpaper/models`. After that it runs offline on your CPU and turns a few seconds of speech into text in under a second. The engine is an optional native dependency (`sherpa-onnx-node`): if it can't be installed on your platform, the mic says so and everything else works.
 
 ## Live sites
 
@@ -252,7 +252,7 @@ packages/server   `openpaper` CLI: local server, file storage, live sync (WebSoc
 apps/editor       React canvas editor (served by the server)
 ```
 
-The server owns every document. Editors and agents send commands; each change becomes a patch broadcast to every open editor, so you see agents work in real time. Agent edits run as their own actor with their own undo history. Rendering rules live in `core`, so headless screenshots, exports and the canvas are identical. See [docs/architecture.md](docs/architecture.md).
+The server owns every document. Editors and agents send commands; each change becomes a patch broadcast to every open editor, so you see agents work in real time. Agent edits run as their own actor and join the undo timeline, so `Ctrl+Z` reaches them. Rendering rules live in `core`, so headless screenshots, exports and the canvas are identical. See [docs/architecture.md](docs/architecture.md).
 
 **Data:** `~/.openpaper` (override with `OPENPAPER_HOME`) — `files/*.json`, `assets/` (images, content-addressed), `index.json`. Exports go to `~/Downloads/OpenPaper` (`OPENPAPER_EXPORT_DIR`).
 
