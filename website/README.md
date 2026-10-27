@@ -61,6 +61,8 @@ website/
 - **Palette:** only the logo's colours, Ink `#111111`, Fold `#8C8C8C` and Paper `#FFFFFF`, plus the editor's neutral
   greys. The serif phrase in each headline uses Fold, like the logo's peeled edge.
 - **Type:** Inter (the editor's UI font), Instrument Serif for one accent phrase per headline, Fragment Mono for code.
+- **Agent logos** (the homepage's "Works with" list) are one-colour marks from [theSVG](https://thesvg.org), stored as
+  `b-*` symbols in `partials/icons.svg`. They are trademarks of their owners, shown only to identify compatible tools.
 - **Layout language:** based on the Subframe style from [Refero Styles](https://styles.refero.design/), adapted to
   OpenPaper's palette.
 - Light and dark themes follow the system and can be toggled. Animations pause off screen and are skipped under

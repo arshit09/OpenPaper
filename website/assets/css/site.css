@@ -3389,3 +3389,15 @@ a:hover .link-arrow .i {
     padding: 16px;
   }
 }
+/* Agent logos in the "Works with" strip: one colour, like the names beside them. */
+.strip-list li {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+.logo-ico {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
