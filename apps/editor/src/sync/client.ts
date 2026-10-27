@@ -6,6 +6,9 @@ type RpcHandler = (params: unknown) => Promise<unknown> | unknown;
 
 export type ConnectionState = 'connecting' | 'open' | 'closed';
 
+/** How long a request waits for the connection (the server may be restarting) before it fails. */
+const CONNECT_WAIT_MS = 8000;
+
 /**
  * WebSocket connection to the local OpenPaper server with request/response,
  * server pushes and server→editor RPCs. Reconnects automatically.
@@ -24,8 +27,10 @@ export class SyncClient {
   clientId: string | null = null;
   serverVersion = '';
   mcpUrl = '';
+  /** Settles once the server has welcomed this connection; shared by every request made meanwhile. */
   private welcome: Promise<void>;
   private resolveWelcome!: () => void;
+  private welcomed = false;
 
   constructor(private readonly url = SyncClient.defaultUrl()) {
     this.welcome = new Promise((r) => (this.resolveWelcome = r));
@@ -66,7 +71,11 @@ export class SyncClient {
       this.pending.clear();
       this.setState('closed');
       if (this.stopped) return;
-      this.welcome = new Promise((r) => (this.resolveWelcome = r));
+      // A fresh wait only after a welcome: a failed reconnect must not orphan the requests already waiting.
+      if (this.welcomed) {
+        this.welcomed = false;
+        this.welcome = new Promise((r) => (this.resolveWelcome = r));
+      }
       const delay = Math.min(5000, 300 * 2 ** this.retry++) + Math.random() * 200;
       setTimeout(() => this.connect(), delay);
     };
@@ -80,6 +89,7 @@ export class SyncClient {
         this.mcpUrl = message.mcpUrl;
         sessionStorage.setItem('openpaper.clientId', message.clientId);
         this.setState('open');
+        this.welcomed = true;
         this.resolveWelcome();
         for (const hook of this.onOpenHooks) hook();
         return;
@@ -114,14 +124,22 @@ export class SyncClient {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(message));
   }
 
-  /** Send a request and await its response (waits for the connection if needed). */
+  /** Send a request and await its response (waits a while for the connection if needed). */
   async request<T = unknown>(method: string, params?: unknown): Promise<T> {
-    await this.welcome;
+    if (!this.welcomed) await this.connected();
     const id = this.nextId++;
     return new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
       this.sendRaw({ t: 'req', id, method, params });
     });
+  }
+
+  private connected(): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Not connected to the OpenPaper server. Is it still running?')), CONNECT_WAIT_MS);
+    });
+    return Promise.race([this.welcome, timeout]).finally(() => clearTimeout(timer));
   }
 
   /** Fire-and-forget request (errors are logged). */

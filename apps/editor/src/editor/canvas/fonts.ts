@@ -20,29 +20,46 @@ function familiesInDoc(): string[] {
   return [...out];
 }
 
-/** Load Google Fonts used by the open document (same stylesheets as headless renders). */
+async function loadMissingFonts() {
+  const families = familiesInDoc().filter((f) => !loaded.has(f));
+  if (!families.length) return;
+  for (const f of families) loaded.add(f);
+  try {
+    const urls = await client.request<string[]>('fonts.css', { families });
+    for (const href of urls) {
+      if (document.querySelector(`link[data-op-font="${CSS.escape(href)}"]`)) continue;
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = href;
+      link.dataset.opFont = href;
+      document.head.appendChild(link);
+    }
+  } catch {
+    for (const f of families) loaded.delete(f);
+  }
+}
+
+/**
+ * Load Google Fonts used by the open document (same stylesheets as headless renders). Watches the
+ * store directly: as a selector, the document would re-render the whole canvas on every patch.
+ */
 export function useDocumentFonts() {
-  const doc = useEditor((s) => s.doc);
   useEffect(() => {
-    if (!doc) return;
-    const timer = setTimeout(async () => {
-      const families = familiesInDoc().filter((f) => !loaded.has(f));
-      if (!families.length) return;
-      for (const f of families) loaded.add(f);
-      try {
-        const urls = await client.request<string[]>('fonts.css', { families });
-        for (const href of urls) {
-          if (document.querySelector(`link[data-op-font="${CSS.escape(href)}"]`)) continue;
-          const link = document.createElement('link');
-          link.rel = 'stylesheet';
-          link.href = href;
-          link.dataset.opFont = href;
-          document.head.appendChild(link);
-        }
-      } catch {
-        for (const f of families) loaded.delete(f);
-      }
-    }, 150);
-    return () => clearTimeout(timer);
-  }, [doc]);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        void loadMissingFonts();
+      }, 150);
+    };
+    if (useEditor.getState().doc) schedule();
+    const unsubscribe = useEditor.subscribe((s, prev) => {
+      if (s.doc && (s.doc.nodes !== prev.doc?.nodes || s.doc.tokens !== prev.doc?.tokens)) schedule();
+    });
+    return () => {
+      unsubscribe();
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
 }

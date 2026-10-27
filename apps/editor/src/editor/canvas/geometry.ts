@@ -39,8 +39,87 @@ export function worldToScreen(p: Point): Point {
   return { x: p.x * cam.zoom + cam.x, y: p.y * cam.zoom + cam.y };
 }
 
+// ---- layer elements ------------------------------------------------------------
+
+/** The element rendering each layer, kept by the layer components' refs so lookups never scan the DOM. */
+const layerElements = new Map<string, Element>();
+
+/** Ref callback body for the element that renders layer `id` (returns the React 19 ref cleanup). */
+export function registerLayer(id: string, el: Element | null): (() => void) | undefined {
+  if (!el) return undefined;
+  layerElements.set(id, el);
+  return () => {
+    if (layerElements.get(id) === el) layerElements.delete(id);
+  };
+}
+
 export function elementFor(id: string): Element | null {
-  return viewportEl?.querySelector(`[data-op-id="${CSS.escape(id)}"]`) ?? null;
+  const el = layerElements.get(id);
+  if (el?.isConnected) return el;
+  if (import.meta.env.DEV) {
+    // Every layer element registers itself; one that didn't would be missed here in production.
+    const found = viewportEl?.querySelector(`[data-op-id="${CSS.escape(id)}"]`) ?? null;
+    if (found) console.warn(`[openpaper] layer element "${id}" is not registered (registerLayer)`);
+    return found;
+  }
+  return null;
+}
+
+/** Copies of layers (drag previews, fading ghosts) are silent: cloneNode doesn't carry a video's `muted`. */
+export function muteVideos(root: Element): void {
+  const videos = [...(root instanceof HTMLVideoElement ? [root] : []), ...Array.from(root.querySelectorAll('video'))];
+  for (const v of videos) {
+    v.muted = true;
+    v.defaultMuted = true;
+  }
+}
+
+// ---- layout changes --------------------------------------------------------------
+
+/**
+ * Layers can move or resize without React knowing (fonts and images loading, live-build
+ * animations, CSS transitions, text being typed). Overlays that track them subscribe here
+ * instead of measuring every frame.
+ */
+const layoutListeners = new Set<() => void>();
+let worldEl: HTMLElement | null = null;
+
+export function subscribeLayout(listener: () => void): () => void {
+  layoutListeners.add(listener);
+  return () => layoutListeners.delete(listener);
+}
+
+function notifyLayout() {
+  for (const l of layoutListeners) l();
+}
+
+/** Watch the canvas for anything that can change layer boxes (set up by Canvas). */
+export function watchLayout(viewport: HTMLElement, world: HTMLElement): () => void {
+  worldEl = world;
+  const mutations = new MutationObserver(notifyLayout);
+  mutations.observe(world, { attributes: true, childList: true, characterData: true, subtree: true });
+  const resize = new ResizeObserver(notifyLayout);
+  resize.observe(viewport);
+  // Media load events don't bubble; capture them at the world.
+  world.addEventListener('load', notifyLayout, true);
+  world.addEventListener('loadedmetadata', notifyLayout, true);
+  document.fonts?.addEventListener('loadingdone', notifyLayout);
+  return () => {
+    if (worldEl === world) worldEl = null;
+    mutations.disconnect();
+    resize.disconnect();
+    world.removeEventListener('load', notifyLayout, true);
+    world.removeEventListener('loadedmetadata', notifyLayout, true);
+    document.fonts?.removeEventListener('loadingdone', notifyLayout);
+  };
+}
+
+/** Is a finite animation or transition playing on the canvas (layers may still be moving)? */
+export function layoutAnimating(): boolean {
+  if (!worldEl?.getAnimations) return false;
+  return worldEl
+    .getAnimations({ subtree: true })
+    .some((a) => a.playState === 'running' && Number.isFinite(Number(a.effect?.getComputedTiming().endTime ?? Infinity)));
 }
 
 /** A node's border box in world coordinates (from the live DOM), or null when not rendered. */

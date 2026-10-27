@@ -1,7 +1,8 @@
-import { useEffect, useReducer, useRef, useSyncExternalStore } from 'react';
+import { memo, useLayoutEffect, useReducer, useRef, useSyncExternalStore } from 'react';
+import { flushSync } from 'react-dom';
 import { displayName, type AgentPresence } from '@openpaper/core';
-import { useEditor, getState, setState } from '../../state/store.ts';
-import { screenRectOf, worldToScreen, type Rect } from './geometry.ts';
+import { camera, useEditor, getState, setState } from '../../state/store.ts';
+import { layoutAnimating, screenRectOf, subscribeLayout, worldToScreen, type Rect } from './geometry.ts';
 import { getGestureView, pressNode, startResize, subscribeGesture, type ResizeHandle } from './interactions.ts';
 import { LiveCursors, LiveLayer } from './LiveLayer.tsx';
 import { SelectionPrompt } from './SelectionPrompt.tsx';
@@ -24,30 +25,56 @@ function sameRect(a: Rect | null | undefined, b: Rect | null | undefined): boole
   return Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5 && Math.abs(a.width - b.width) < 0.5 && Math.abs(a.height - b.height) < 0.5;
 }
 
-/** Track on-screen rects of nodes every animation frame (layout can change without React knowing). */
+/** Unchanged frames before rect tracking sleeps until something can move layers again. */
+const QUIET_FRAMES = 3;
+
+/**
+ * Track on-screen rects of nodes. Layout can change without React knowing (fonts, images, live
+ * builds, transitions, typing), so rects are re-measured every frame — but only while something
+ * changes: the loop sleeps after a few unchanged frames and wakes on any canvas change.
+ */
 function useScreenRects(ids: string[]): Record<string, Rect | null> {
   const [, force] = useReducer((x: number) => x + 1, 0);
   const rects = useRef<Record<string, Rect | null>>({});
   const idsKey = ids.join('|');
-  useEffect(() => {
-    let frame = 0;
-    const tick = () => {
-      let changed = false;
+  useLayoutEffect(() => {
+    // The camera counts too: page-anchored pins and gesture visuals are placed from it.
+    let cam = { ...camera() };
+    const measure = (): boolean => {
+      const now = camera();
+      let changed = Object.keys(rects.current).length !== ids.length || now.x !== cam.x || now.y !== cam.y || now.zoom !== cam.zoom;
+      cam = { ...now };
       const next: Record<string, Rect | null> = {};
       for (const id of ids) {
         const r = screenRectOf(id);
         next[id] = r;
         if (!sameRect(r, rects.current[id])) changed = true;
       }
-      if (Object.keys(rects.current).length !== ids.length) changed = true;
-      if (changed) {
-        rects.current = next;
-        force();
-      }
+      if (changed) rects.current = next;
+      return changed;
+    };
+    let frame = 0;
+    let quiet = 0;
+    const tick = () => {
+      frame = 0;
+      if (measure()) {
+        quiet = 0;
+        // Render before this frame paints, so outlines move with the content.
+        flushSync(force);
+      } else if (++quiet >= QUIET_FRAMES && !layoutAnimating()) return;
       frame = requestAnimationFrame(tick);
     };
-    tick();
-    return () => cancelAnimationFrame(frame);
+    const wake = () => {
+      quiet = 0;
+      if (!frame) frame = requestAnimationFrame(tick);
+    };
+    if (measure()) force();
+    wake();
+    const unsubscribe = subscribeLayout(wake);
+    return () => {
+      unsubscribe();
+      cancelAnimationFrame(frame);
+    };
   }, [idsKey]); // eslint-disable-line react-hooks/exhaustive-deps
   return rects.current;
 }
@@ -83,7 +110,8 @@ function AgentRing({ agent, rect, inset }: { agent: AgentPresence; rect: Rect; i
   );
 }
 
-export function Overlay() {
+/** Memoized: it re-renders from its own subscriptions and rect tracking, not with every Canvas render (each pan frame). */
+export const Overlay = memo(function Overlay() {
   const selection = useEditor((s) => s.selection);
   const hoverId = useEditor((s) => s.hoverId);
   const agents = useEditor((s) => s.agents);
@@ -102,14 +130,16 @@ export function Overlay() {
   const agentBoards = agents.flatMap((a) => a.workingOn.map((id) => ({ a, id })));
   const boardAgents = new Map<string, AgentPresence[]>();
   for (const { a, id } of agentBoards) boardAgents.set(id, [...(boardAgents.get(id) ?? []), a]);
-  const tracked = [...new Set([...selection, ...(hoverId ? [hoverId] : []), ...topLevel, ...agentBoards.map((x) => x.id)])];
+  const threads =
+    !doc || commentsHidden ? [] : Object.values(doc.comments).filter((t) => !t.deletedAt && t.pageId === pageId && t.status === 'open');
+  const anchors = threads.map((t) => t.nodeId).filter((id) => doc!.nodes[id] && doc!.nodes[id]!.component !== 'PageRoot');
+  const tracked = [...new Set([...selection, ...(hoverId ? [hoverId] : []), ...topLevel, ...agentBoards.map((x) => x.id), ...anchors])];
   const rects = useScreenRects(tracked);
   if (!doc) return null;
 
   const single = selection.length === 1 ? doc.nodes[selection[0]!] : undefined;
   const singleRect = single ? rects[single.id] : null;
   const showHandles = !!single && !!singleRect && !single.isLocked && tool === 'select' && !editingTextId && single.component !== 'PageRoot';
-  const threads = commentsHidden ? [] : Object.values(doc.comments).filter((t) => !t.deletedAt && t.pageId === pageId && t.status === 'open');
 
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
@@ -256,7 +286,7 @@ export function Overlay() {
       {/* Comment pins */}
       {threads.map((t) => {
         const anchor = doc.nodes[t.nodeId];
-        const base = anchor && anchor.component !== 'PageRoot' ? rects[t.nodeId] ?? screenRectOf(t.nodeId) : null;
+        const base = anchor && anchor.component !== 'PageRoot' ? rects[t.nodeId] : null;
         const pos = base
           ? { x: base.x + t.xOffset * zoom, y: base.y + t.yOffset * zoom }
           : worldToScreen({ x: t.xOffset, y: t.yOffset });
@@ -295,7 +325,7 @@ export function Overlay() {
       {!gesture.marquee && <SelectionPrompt rects={rects} />}
     </div>
   );
-}
+});
 
 function ScreenRect({ world, style }: { world: Rect; style: React.CSSProperties }) {
   const tl = worldToScreen({ x: world.x, y: world.y });

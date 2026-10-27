@@ -1,6 +1,6 @@
 import type { ActorInfo, AgentPresence, NodeRecord, PaperDocument, Patch } from '@openpaper/core';
 import { camera, getState, useEditor } from '../../state/store.ts';
-import { elementFor, getViewportElement, viewportRect, type Rect } from './geometry.ts';
+import { elementFor, getViewportElement, muteVideos, viewportRect, type Rect } from './geometry.ts';
 
 /**
  * Live preview of agent edits. The server applies each tool call at once; the editor plays the
@@ -1054,6 +1054,7 @@ function snapshot(el: Element, node: NodeRecord): Ghost | null {
     if (inset.some((v) => v > 0)) clip = `inset(${inset.map((v) => `${v}px`).join(' ')})`;
   }
   const clone = el.cloneNode(true) as HTMLElement | SVGElement;
+  muteVideos(clone);
   // A ghost is not a layer: nothing may find it by id.
   clone.removeAttribute('data-op-id');
   for (const d of Array.from(clone.querySelectorAll('[data-op-id]'))) d.removeAttribute('data-op-id');
@@ -1198,11 +1199,11 @@ function tick() {
   else clearHud();
 }
 
+/** Clear the outlines and release the HUD's viewport-sized bitmap until the next drawing. */
 function clearHud() {
-  const ctx = hud?.getContext('2d');
-  if (ctx && hud) {
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, hud.width, hud.height);
+  if (hud) {
+    hud.width = 0;
+    hud.height = 0;
   }
   dirty = null;
 }

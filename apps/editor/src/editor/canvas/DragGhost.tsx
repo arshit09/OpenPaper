@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useSyncExternalStore } from 'react';
-import { elementFor, worldRectOf } from './geometry.ts';
+import { elementFor, muteVideos, worldRectOf } from './geometry.ts';
 import { getToolView, subscribeToolView } from './interactions.ts';
 
 /** Text properties a layer may inherit from its parent; the copy sits elsewhere in the tree. */
@@ -26,6 +26,7 @@ export function DragGhost() {
       const w = src instanceof HTMLElement ? src.offsetWidth : r.width;
       const h = src instanceof HTMLElement ? src.offsetHeight : r.height;
       const copy = src.cloneNode(true) as HTMLElement;
+      muteVideos(copy);
       copy.removeAttribute('data-op-id');
       for (const d of copy.querySelectorAll('[data-op-id]')) d.removeAttribute('data-op-id');
       const from = src.querySelectorAll('canvas');

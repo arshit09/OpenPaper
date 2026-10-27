@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore, type CSSProperties } from 'react';
 import { BASE_CSS, tokenVars } from '@openpaper/core';
-import { camera, getState, setCamera, useEditor } from '../../state/store.ts';
+import { camera, getState, setCamera, setState, useEditor } from '../../state/store.ts';
 import { pushView } from '../../sync/session.ts';
 import { NodeView } from './NodeView.tsx';
 import { Overlay } from './Overlay.tsx';
@@ -8,8 +8,21 @@ import { TextEditor } from './TextEditor.tsx';
 import { DragGhost } from './DragGhost.tsx';
 import { MeasureOverlay } from './MeasureOverlay.tsx';
 import { ZoomOverlay } from './ZoomOverlay.tsx';
-import { setViewportElement, unionRects, worldRectOf, viewportRect } from './geometry.ts';
-import { fitRect, getModes, onDoubleClick, onPointerDown, onPointerMove, onPointerUp, onWheel, setModes, subscribeModes, zoomAt } from './interactions.ts';
+import { setViewportElement, unionRects, watchLayout, worldRectOf, viewportRect } from './geometry.ts';
+import {
+  cancelGesture,
+  fitRect,
+  gestureKind,
+  getModes,
+  onDoubleClick,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onWheel,
+  setModes,
+  subscribeModes,
+  zoomAt,
+} from './interactions.ts';
 import { nextZoomLevel } from './canvas-math.ts';
 import { useDocumentFonts } from './fonts.ts';
 
@@ -58,6 +71,7 @@ export function zoomStep(direction: 1 | -1) {
 
 export function Canvas() {
   const ref = useRef<HTMLDivElement>(null);
+  const world = useRef<HTMLDivElement>(null);
   const pageId = useEditor((s) => s.pageId);
   const cam = useEditor((s) => (s.pageId && s.cameras[s.pageId]) || null);
   const tool = useEditor((s) => s.tool);
@@ -74,22 +88,44 @@ export function Canvas() {
   useEffect(() => {
     const el = ref.current;
     setViewportElement(el);
-    if (!el) return;
-    const wheel = (e: WheelEvent) => onWheel(e);
+    if (!el || !world.current) return;
+    const unwatch = watchLayout(el, world.current);
+    const wheel = (e: WheelEvent) => {
+      if (scrollsItself(e)) {
+        // The control scrolls; pinch / Ctrl+wheel must still never zoom the page.
+        if (e.ctrlKey || e.metaKey) e.preventDefault();
+        return;
+      }
+      onWheel(e);
+    };
     el.addEventListener('wheel', wheel, { passive: false });
     const move = (e: PointerEvent) => {
       // Alt may go down while another window has focus; pointer events still report it.
       if (e.altKey !== getModes().alt) setModes({ alt: e.altKey });
-      onPointerMove(e);
+      // Gestures follow the pointer anywhere; hover only hit-tests over the canvas itself, not over
+      // panels or the dock (whose own hover would be undone) or controls drawn on the canvas.
+      if (gestureKind()) return onPointerMove(e);
+      const target = e.target as Element | null;
+      if (target && el.contains(target) && !target.closest('[data-op-overlay-ui]')) onPointerMove(e);
+      else if (target && el.contains(target) && getState().hoverId) setState({ hoverId: null });
+    };
+    const leave = () => {
+      if (!gestureKind() && getState().hoverId) setState({ hoverId: null });
     };
     const up = (e: PointerEvent) => onPointerUp(e);
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    // A pen or touch press taken over by the system: drop the gesture instead of leaving it stuck.
+    window.addEventListener('pointercancel', cancelGesture);
+    el.addEventListener('pointerleave', leave);
     return () => {
       setViewportElement(null);
+      unwatch();
       el.removeEventListener('wheel', wheel);
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', cancelGesture);
+      el.removeEventListener('pointerleave', leave);
     };
   }, []);
 
@@ -105,8 +141,9 @@ export function Canvas() {
     hadContent.current[pageId] = has;
   }, [pageId, (rootChildren?.length ?? 0) > 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Panning reports the viewport a few times a second, not every frame.
   useEffect(() => {
-    pushView();
+    pushView(250);
   }, [cam]);
 
   const view = cam ?? { x: 0, y: 0, zoom: 1 };
@@ -152,7 +189,7 @@ export function Canvas() {
       onContextMenu={(e) => e.preventDefault()}
     >
       <style>{BASE_CSS}</style>
-      <div data-op-world style={worldStyle}>
+      <div ref={world} data-op-world style={worldStyle}>
         {rootChildren?.map((id) => <NodeView key={id} id={id} />)}
         <DragGhost />
         <TextEditor />
@@ -162,6 +199,19 @@ export function Canvas() {
       <ZoomOverlay />
     </div>
   );
+}
+
+/** Is a wheel over a control on the canvas (a long prompt) for that control to scroll, rather than the canvas? */
+function scrollsItself(e: WheelEvent): boolean {
+  const target = e.target as Element | null;
+  const ui = target?.closest?.('[data-op-overlay-ui]');
+  if (!ui) return false;
+  for (let el: Element | null = target; el && el !== ui.parentElement; el = el.parentElement) {
+    if (!(el instanceof HTMLElement) || el.scrollHeight <= el.clientHeight + 1) continue;
+    const overflow = getComputedStyle(el).overflowY;
+    if (overflow === 'auto' || overflow === 'scroll') return true;
+  }
+  return false;
 }
 
 const TEXT_INPUTS = /^(text|search|email|url|tel|password|number|date|datetime-local|month|time|week|range)$/i;

@@ -78,8 +78,12 @@ async function renderThumbnail(def: ShaderDef): Promise<string | null> {
   } catch {
     return null;
   } finally {
+    const canvas = host.querySelector('canvas');
     root.unmount();
     host.remove();
+    // Free the context now: the browser caps live WebGL contexts and, once over, drops the oldest —
+    // the shader layers on the canvas. Garbage collection would get to these much later.
+    canvas?.getContext('webgl2')?.getExtension('WEBGL_lose_context')?.loseContext();
   }
 }
 

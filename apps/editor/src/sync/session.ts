@@ -95,14 +95,24 @@ function yieldMacrotask(): Promise<void> {
   });
 }
 
-async function waitForVersion(fileId: string, version: number, timeoutMs = 3000): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
+/** Wait until the editor shows `version` of the file (patches and measure requests race). */
+function waitForVersion(fileId: string, version: number, timeoutMs = 3000): Promise<boolean> {
+  const ready = () => {
     const s = getState();
-    if (s.doc?.id === fileId && s.version >= version) return true;
-    await yieldMacrotask();
-  }
-  return false;
+    return s.doc?.id === fileId && s.version >= version;
+  };
+  if (ready()) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const done = (ok: boolean) => {
+      unsubscribe();
+      clearTimeout(timer);
+      resolve(ok);
+    };
+    const unsubscribe = useEditor.subscribe(() => {
+      if (ready()) done(true);
+    });
+    const timer = setTimeout(() => done(ready()), timeoutMs);
+  });
 }
 
 client.handleRpc('measure', async (params) => {
@@ -123,6 +133,8 @@ client.handleRpc('screenshot', async (params) => {
 });
 
 client.onOpen(() => {
+  // A restarted server knows nothing of this editor's view: send it again even if unchanged.
+  lastView = '';
   void refreshResources();
   const doc = getState().doc;
   if (doc) void openFile(doc.id, { keepView: true });
@@ -211,25 +223,46 @@ export async function command<T = unknown>(cmd: EditorCommand): Promise<T> {
 export async function undo(): Promise<void> {
   const doc = getState().doc;
   if (!doc) return;
-  const label = await client.request<string | null>('file.undo', { fileId: doc.id });
-  if (!label) toast('Nothing to undo');
+  const label = await historyStep('file.undo', doc.id);
+  if (label === null) toast('Nothing to undo');
 }
 
 export async function redo(): Promise<void> {
   const doc = getState().doc;
   if (!doc) return;
-  const label = await client.request<string | null>('file.redo', { fileId: doc.id });
-  if (!label) toast('Nothing to redo');
+  const label = await historyStep('file.redo', doc.id);
+  if (label === null) toast('Nothing to redo');
+}
+
+/** Undo or redo on the server; failures (no connection) are shown, then reported as `undefined`. */
+async function historyStep(method: 'file.undo' | 'file.redo', fileId: string): Promise<string | null | undefined> {
+  try {
+    return await client.request<string | null>(method, { fileId });
+  } catch (error) {
+    toast(error instanceof Error ? error.message : String(error));
+    return undefined;
+  }
 }
 
 // ---- view state (what the user is looking at; MCP tools default to it) ----
 let viewTimer: ReturnType<typeof setTimeout> | null = null;
+let viewDue = 0;
 let lastView = '';
+/** The server keeps this many selected ids per view; sending more is wasted. */
+const MAX_VIEW_SELECTION = 1000;
 
-export function pushView(): void {
-  if (viewTimer) return;
+/**
+ * Report the view to the server, throttled: at most once per `delayMs` (camera moves pass a
+ * longer delay than selection changes; the sooner one wins).
+ */
+export function pushView(delayMs = 60): void {
+  const due = Date.now() + delayMs;
+  if (viewTimer) {
+    if (due >= viewDue) return;
+    clearTimeout(viewTimer);
+  }
+  viewDue = due;
   viewTimer = setTimeout(() => {
-    // (camera changes are throttled by this same timer)
     viewTimer = null;
     const s = getState();
     const cam = s.pageId ? s.cameras[s.pageId] : undefined;
@@ -237,7 +270,7 @@ export function pushView(): void {
     const view: ViewState = {
       fileId: s.doc?.id ?? null,
       pageId: s.pageId,
-      selection: s.selection,
+      selection: s.selection.length > MAX_VIEW_SELECTION ? s.selection.slice(0, MAX_VIEW_SELECTION) : s.selection,
       focused: document.visibilityState === 'visible' && document.hasFocus(),
       ...(cam && vp ? { viewport: { x: cam.x, y: cam.y, zoom: cam.zoom, width: vp.width, height: vp.height } } : {}),
     };
@@ -245,7 +278,7 @@ export function pushView(): void {
     if (key === lastView) return;
     lastView = key;
     client.notify('view.update', view);
-  }, 60);
+  }, delayMs);
 }
 
 // Report selection/page changes to the server (MCP tools default to the user's view).

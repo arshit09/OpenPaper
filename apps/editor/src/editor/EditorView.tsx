@@ -40,7 +40,9 @@ function AgentOpenedBanner() {
 }
 
 export function EditorView() {
-  const doc = useEditor((s) => s.doc);
+  // Only what the shell needs: selecting the document itself would re-render every panel on each patch.
+  const docId = useEditor((s) => s.doc?.id);
+  const docName = useEditor((s) => s.doc?.name);
   const showExport = useEditor((s) => s.showExport);
   const viewClass = useEditor((s) => `${s.uiHidden ? ' op-ui-hidden' : ''}${s.panelsCollapsed ? ' op-panels-collapsed' : ''}`);
   useShortcuts();
@@ -48,22 +50,22 @@ export function EditorView() {
 
   // Animated shaders resume where they were when the file is opened again.
   useEffect(() => {
-    if (!doc?.id) return;
+    if (!docId) return;
     window.addEventListener('pagehide', persistShaderFrames);
     return () => {
       window.removeEventListener('pagehide', persistShaderFrames);
       persistShaderFrames();
     };
-  }, [doc?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [docId]);
 
   useEffect(() => {
-    if (doc) document.title = `${doc.name} — OpenPaper`;
+    if (docName !== undefined) document.title = `${docName} — OpenPaper`;
     return () => {
       document.title = 'OpenPaper';
     };
-  }, [doc?.name]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [docName]);
 
-  if (!doc) {
+  if (!docId) {
     return (
       <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: 'var(--op-text-3)' }}>Opening file…</div>
     );

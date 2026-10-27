@@ -2,6 +2,9 @@ import type { LayoutMap } from '@openpaper/core';
 import { camera } from '../../state/store.ts';
 import { elementFor, getViewportElement } from './geometry.ts';
 import { suspendLive } from './live.ts';
+import { holdFullShaderResolution } from '../shaders/ShaderLayer.tsx';
+
+const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
 
 const round = (n: number) => Math.round(n * 100) / 100;
 
@@ -46,9 +49,15 @@ export function measureRenderedPage(): LayoutMap {
 export async function captureNode(nodeId: string, scale: number): Promise<{ data: string; mimeType: string; width: number; height: number }> {
   // The capture shows the final state: finish every reveal, and keep edits instant until it's taken.
   const release = suspendLive();
+  // Zoomed out, shaders render below full resolution; the capture is taken at the layer's size.
+  const releaseShaders = holdFullShaderResolution();
   try {
     const el = elementFor(nodeId) as HTMLElement | null;
     if (!el) throw new Error(`Node "${nodeId}" is not on the page the editor is showing.`);
+    if (el.querySelector('[data-paper-shader]')) {
+      await nextFrame();
+      await nextFrame();
+    }
     const { domToJpeg } = await import('modern-screenshot');
     const canvasColor = getComputedStyle(getViewportElement()!).backgroundColor || '#eeeeee';
     const dataUrl = await domToJpeg(el, { scale, quality: 0.92, backgroundColor: canvasColor });
@@ -57,6 +66,7 @@ export async function captureNode(nodeId: string, scale: number): Promise<{ data
     await img.decode().catch(() => {});
     return { data: dataUrl.slice(dataUrl.indexOf(',') + 1), mimeType: 'image/jpeg', width: img.naturalWidth, height: img.naturalHeight };
   } finally {
+    releaseShaders();
     release();
   }
 }
