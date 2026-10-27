@@ -6,6 +6,7 @@ export * from './model/transaction.ts';
 export * from './model/tree.ts';
 export * from './model/document.ts';
 export * from './model/ops.ts';
+export * from './model/text-runs.ts';
 export * from './model/labels.ts';
 export * from './render/render-spec.ts';
 export * from './render/to-html.ts';

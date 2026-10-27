@@ -554,29 +554,18 @@ function emit(raw: FigmaNode, ctx: Ctx, scope: Scope, parent: ParentLayout, dept
     strokeAndEffects({ ...n, strokePaints: [] }, s, ctx);
     const runs = textRuns(n);
     const chars = n.textData?.characters ?? '';
-    if (runs.length > 1 && chars.length <= 80 && !chars.includes('\n')) {
-      // OpenPaper text layers have one style: short mixed text becomes a row of text layers.
-      const box: Record<string, string> = {};
-      for (const k of ['position', 'left', 'top', 'rotate', 'width', 'height', 'flexGrow', 'flexBasis', 'flexShrink', 'minWidth', 'alignSelf', 'opacity', 'mixBlendMode']) {
-        if (s[k] !== undefined) box[k] = s[k]!;
-      }
-      Object.assign(box, { display: 'flex', flexWrap: 'wrap', alignItems: 'baseline' });
-      if (s.textAlign === 'center') box.justifyContent = 'center';
-      else if (s.textAlign === 'right') box.justifyContent = 'flex-end';
-      const items = runs
-        .map((run) => {
-          const rs = runStyles(n, run);
-          rs.whiteSpace = 'pre';
-          return `${indent}  <div style="${escAttr(toCss(rs))}">${esc(run.text)}</div>`;
-        })
-        .join('\n');
-      return `${indent}<div${name}${hidden} style="${escAttr(toCss(box))}">\n${items}\n${indent}</div>`;
-    }
     if (runs.length > 1) {
-      // Long or multi-line text keeps the style used by most characters.
-      const main = runs.reduce((a, b) => (b.text.length > a.text.length ? b : a));
-      Object.assign(s, runStyles(n, main));
-      ctx.warnings.add('Mixed text styles inside paragraphs were simplified to one style per text layer.');
+      // Mixed styles stay one text layer: each override is a span (imported as a text run).
+      const inner = runs
+        .map((run) => {
+          if (!run.override) return esc(run.text);
+          const rs = runStyles(n, run);
+          const diff: Record<string, string> = {};
+          for (const [k, v] of Object.entries(rs)) if (s[k] !== v) diff[k] = v;
+          return Object.keys(diff).length ? `<span style="${escAttr(toCss(diff))}">${esc(run.text)}</span>` : esc(run.text);
+        })
+        .join('');
+      return `${indent}<div${name}${hidden} data-paper-component="Text" style="${escAttr(toCss(s))}">${inner}</div>`;
     }
     return `${indent}<div${name}${hidden} style="${escAttr(toCss(s))}">${esc(chars)}</div>`;
   }

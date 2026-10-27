@@ -93,6 +93,8 @@ export interface RenderSpec {
   style: StyleMap;
   /** Text content (Text nodes). */
   text?: string;
+  /** Rich text: inline spans inside the one text element (an empty style = the node's own). */
+  runs?: Array<{ text: string; style: StyleMap }>;
   /** Raw SVG markup (SVG nodes), with the root <svg> tag included. */
   svg?: string;
   /** Shader layers: the @paper-design/shaders-react component name. */
@@ -118,8 +120,12 @@ export function renderSpec(node: NodeRecord, parentKind: ParentKind, ctx: Render
   const style = renderStyle(node, parentKind, ctx);
   const attrs: Record<string, string> = {};
   switch (node.component) {
-    case 'Text':
-      return { kind: 'text', tag: 'div', style, text: node.textValue ? node.textValue : EMPTY_TEXT, attrs };
+    case 'Text': {
+      const text = node.textValue ? node.textValue : EMPTY_TEXT;
+      if (!node.textRuns?.length || !node.textValue) return { kind: 'text', tag: 'div', style, text, attrs };
+      const runs = node.textRuns.map((r) => ({ text: r.text, style: { ...r.styles } }));
+      return { kind: 'text', tag: 'div', style, text, runs, attrs };
+    }
     case 'SVG':
       return { kind: 'svg', tag: 'svg', style, svg: node.svg ?? '<svg xmlns="http://www.w3.org/2000/svg"></svg>', attrs };
     case 'Image': {

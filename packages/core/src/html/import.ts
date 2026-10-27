@@ -5,6 +5,8 @@ import { hasBoxStyles, INHERITED_TEXT_PROPS, normalizeNodeStyles, stripInertStyl
 import { findShader, type ShaderComponent, type ShaderProps } from '../shaders/registry.ts';
 import { applyShaderPropsPatch, SHADER_DEFAULT_SIZE, shaderPresetProps } from '../shaders/props.ts';
 import { FREEFORM_DISPLAY } from '../render/render-spec.ts';
+import { inlineRunStyles, normalizeRuns } from '../model/text-runs.ts';
+import type { TextRun } from '../model/types.ts';
 import {
   attr,
   BLOCK_TAGS,
@@ -38,6 +40,8 @@ export interface ImportedNode {
   labelIsModified: boolean;
   styles: StyleMap;
   textValue?: string;
+  /** Mixed styles inside the text (see NodeRecord.textRuns). */
+  textRuns?: TextRun[];
   svg?: string;
   isVisible: boolean;
   isLocked: boolean;
@@ -96,6 +100,8 @@ interface Build {
   /** Text nodes created from a parent's text run inherit some non-inherited props from it. */
   createdFrom?: Build;
   isReplaced: boolean;
+  /** Styled pieces of flattened text, normalized into runs once the node's styles are final. */
+  pieces?: Piece[];
 }
 
 const INHERIT_SET = new Set<string>(INHERITED_TEXT_PROPS);
@@ -189,48 +195,74 @@ function canFlatten(el: Element, own: StyleMap): boolean {
   return el.children.every((c) => isTextLike(c) || isBlank(c));
 }
 
-/** Concatenate a flattened subtree; returns the text and the dominant color. */
-function flattenText(el: Element, ws: WhiteSpace, inheritedColor: string | undefined): { text: string; color?: string } {
-  const parts: string[] = [];
-  const colorChars = new Map<string, number>();
-  const walk = (node: ChildNode, mode: WhiteSpace, color: string | undefined) => {
+/** Part of flattened text with the inline styles it carries (becomes a text run). */
+interface Piece {
+  text: string;
+  styles: StyleMap;
+}
+
+/**
+ * Collapse spaces across run boundaries and keep explicit newlines from <br>, exactly as
+ * collapsing the joined text would, while tracking which piece each character came from.
+ */
+function collapsePieces(pieces: Piece[]): Piece[] {
+  const spaced: Array<{ c: string; p: number }> = [];
+  let prev = '';
+  pieces.forEach((piece, p) => {
+    for (const c of piece.text) {
+      const blank = c === ' ' || c === '\t';
+      if (!(blank && (prev === ' ' || prev === '\t'))) spaced.push({ c: blank ? ' ' : c, p });
+      prev = c;
+    }
+  });
+  // " ?\n ?" → "\n"
+  const chars: typeof spaced = [];
+  for (let i = 0; i < spaced.length; i++) {
+    const ch = spaced[i]!;
+    if (ch.c === ' ' && spaced[i + 1]?.c === '\n') continue;
+    chars.push(ch);
+    if (ch.c === '\n' && spaced[i + 1]?.c === ' ') i++;
+  }
+  let start = 0;
+  let end = chars.length;
+  while (start < end && chars[start]!.c === ' ') start++;
+  while (end > start && chars[end - 1]!.c === ' ') end--;
+  // One trailing newline adds no line.
+  if (end > start && chars[end - 1]!.c === '\n') end--;
+  const out: Piece[] = [];
+  let last = -1;
+  for (let i = start; i < end; i++) {
+    const { c, p } = chars[i]!;
+    if (p === last) out[out.length - 1]!.text += c;
+    else out.push({ text: c, styles: pieces[p]!.styles });
+    last = p;
+  }
+  return out;
+}
+
+/** Concatenate a flattened subtree; returns the text and its styled pieces (relative to `el`). */
+function flattenText(el: Element, ws: WhiteSpace): { text: string; pieces: Piece[] } {
+  const parts: Piece[] = [];
+  const walk = (node: ChildNode, mode: WhiteSpace, styles: StyleMap) => {
     if (isText(node)) {
-      const t = collapse(node.data, mode);
-      parts.push(t);
-      const weight = t.replace(/\s/g, '').length;
-      if (weight && color) colorChars.set(color, (colorChars.get(color) ?? 0) + weight);
-      else if (weight) colorChars.set('', (colorChars.get('') ?? 0) + weight);
+      parts.push({ text: collapse(node.data, mode), styles });
       return;
     }
     if (!isElement(node)) return;
     const tag = node.name.toLowerCase();
     if (SKIPPED_TAGS.has(tag)) return;
     if (tag === 'br') {
-      parts.push('\n');
+      parts.push({ text: '\n', styles });
       return;
     }
     const own = inlineStyle(node);
     const next = whiteSpaceOf(own, tag, mode);
-    const c = own.WebkitTextFillColor ?? own.color ?? color;
-    for (const child of node.children) walk(child, next, c);
+    const inner = inlineRunStyles(tag, own, styles);
+    for (const child of node.children) walk(child, next, inner);
   };
-  for (const child of el.children) walk(child, ws, inheritedColor);
-  let text = parts.join('');
-  if (!preserves(ws)) {
-    // Collapse spaces across run boundaries, keep explicit newlines from <br>.
-    text = text.replace(/[ \t]+/g, ' ').replace(/ ?\n ?/g, '\n');
-    text = text.replace(/^ +| +$/g, '');
-    text = text.replace(/\n+$/g, (m) => (m.length > 1 ? m.slice(1) : ''));
-  }
-  let best: string | undefined;
-  let bestCount = -1;
-  for (const [color, count] of colorChars) {
-    if (count > bestCount) {
-      best = color || undefined;
-      bestCount = count;
-    }
-  }
-  return { text, color: best };
+  for (const child of el.children) walk(child, ws, {});
+  const pieces = preserves(ws) ? parts.filter((p) => p.text) : collapsePieces(parts);
+  return { text: pieces.map((p) => p.text).join(''), pieces };
 }
 
 function labelFor(tag: string, component: ImportedComponent): { label: string; modified: boolean } {
@@ -633,21 +665,21 @@ export function importHtml(html: string, opts: ImportOptions = {}): ImportResult
     if (component !== 'Frame') return;
 
     if (canFlatten(el, own)) {
-      const { text, color } = flattenText(el, nextCtx.whiteSpace, nextInherited.WebkitTextFillColor ?? nextInherited.color);
-      if (color && color !== (nextInherited.WebkitTextFillColor ?? nextInherited.color)) own.WebkitTextFillColor = color;
-      const flatCtx: Ctx = { inherited: { ...nextInherited, ...(color ? { color } : {}) }, whiteSpace: 'pre' };
+      const { text, pieces } = flattenText(el, nextCtx.whiteSpace);
+      const flatCtx: Ctx = { inherited: nextInherited, whiteSpace: 'pre' };
       if (text) {
         if (hasBoxStyles(own) || (own.whiteSpace === 'nowrap' && own.width)) {
           const tb = textBuild(text, b, flatCtx);
           tb.raw.whiteSpace = 'pre-wrap';
+          tb.pieces = pieces;
           attach(tb, b);
         } else {
           becomeText(b, text);
           b.inheritedAtNode = { ...ctx.inherited };
+          b.pieces = pieces;
           if (/\n|  /.test(text)) own.whiteSpace ??= 'pre-wrap';
         }
       }
-      if (b.node.component === 'Text' && color) own.color = color;
       return;
     }
     visitChildren(el, b, nextCtx);
@@ -728,6 +760,12 @@ export function importHtml(html: string, opts: ImportOptions = {}): ImportResult
       const siblingsInline = (b.parent?.children ?? topLevel).some((x) => x !== b && /^inline/.test(x.raw.display ?? ''));
       if (n.styles.display === 'inline' || (siblingsInline && n.styles.display && /^inline/.test(n.styles.display))) {
         n.styles.display = 'inline-block';
+      }
+      if (b.pieces) {
+        // Only what differs from the paragraph becomes a run; a single shared style moves onto the node.
+        const { runs, hoist } = normalizeRuns(b.pieces, n.styles);
+        Object.assign(n.styles, hoist);
+        if (runs) n.textRuns = runs;
       }
       return;
     }

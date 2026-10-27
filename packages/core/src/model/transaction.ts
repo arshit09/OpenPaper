@@ -9,6 +9,7 @@ import type {
   TokenRecord,
 } from './types.ts';
 import { formatNodeId, formatPageId } from './ids.ts';
+import { cloneRuns } from './text-runs.ts';
 
 /**
  * A Patch is the unit of change that flows from the server to every editor.
@@ -111,6 +112,7 @@ function cloneNode(n: NodeRecord): NodeRecord {
     children: [...n.children],
     styles: { ...n.styles },
     ...(n.attrs ? { attrs: { ...n.attrs } } : {}),
+    ...(n.textRuns ? { textRuns: cloneRuns(n.textRuns) } : {}),
     ...(n.imageGeneration ? { imageGeneration: { ...n.imageGeneration } } : {}),
   };
 }

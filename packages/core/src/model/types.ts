@@ -17,6 +17,13 @@ export interface ImageGenerationState {
   error?: string;
 }
 
+/** Part of a Text node's text with its own inline style. */
+export interface TextRun {
+  text: string;
+  /** Overrides of the node's styles (TEXT_RUN_PROPS only). Absent = the node's own style. */
+  styles?: StyleMap;
+}
+
 export interface NodeRecord {
   id: string;
   component: ComponentType;
@@ -32,6 +39,8 @@ export interface NodeRecord {
   styles: StyleMap;
   /** Text content for Text nodes. Newlines are preserved. */
   textValue?: string;
+  /** Mixed styles inside one Text node (OpenPaper extension). Run texts join to exactly `textValue`. Absent = one style. */
+  textRuns?: TextRun[];
   /** Image / Video source URL (https:, data:, asset:, paper-asset:, paper-gen:). */
   src?: string;
   /** Raw SVG markup (the full <svg> element) for SVG nodes. */

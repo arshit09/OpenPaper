@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { importHtml, collectImageUrls, type ImportedNode } from './import.ts';
+import { createDocument, createSubtree, generateJsx, identityUrls, insertImported, nodesToHtml, readerOf, renderNodeHtml, setTextRuns, Transaction } from '../index.ts';
 
 const brief = (n: ImportedNode): unknown => ({
   c: n.component,
@@ -118,5 +119,98 @@ describe('importHtml', () => {
     // The badge moved up to the positioned ancestor, after the branch that contained it.
     expect(outer.children).toHaveLength(2);
     expect(outer.children[1]!.styles).toMatchObject({ position: 'absolute', right: '0', top: '0' });
+  });
+});
+
+describe('rich text runs', () => {
+  const textOf = (html: string) => importHtml(html).roots[0]!;
+
+  it('keeps a styled span as a run inside one Text node', () => {
+    const t = textOf('<p style="font-size:14px">Made with <span style="color:#ff3e3e;font-weight:700">love</span> by Arshit</p>');
+    expect(t.component).toBe('Text');
+    expect(t.children).toEqual([]);
+    expect(t.textValue).toBe('Made with love by Arshit');
+    expect(t.styles).toMatchObject({ fontSize: '14px', color: '#000000' });
+    expect(t.textRuns).toEqual([{ text: 'Made with ' }, { text: 'love', styles: { color: '#ff3e3e', fontWeight: '700' } }, { text: ' by Arshit' }]);
+  });
+
+  it('gives plain paragraphs no runs', () => {
+    for (const html of ['<p style="font-size:18px; color:#111">Just words</p>', '<p>One <span>Two</span> three</p>', '<p style="color:#111">a <span style="color:#111111">b</span></p>']) {
+      expect(textOf(html).textRuns).toBeUndefined();
+    }
+    const t = textOf('<p style="color:#666"><span style="color:red">all</span> <span style="color:red">red</span></p>');
+    expect(t.textRuns).toBeUndefined();
+    expect(t.styles.color).toBe('red');
+  });
+
+  it('collapses whitespace across run boundaries exactly like plain text', () => {
+    expect(textOf('<p>Hello <b>World</b></p>').textRuns).toEqual([{ text: 'Hello ' }, { text: 'World', styles: { fontWeight: '700' } }]);
+    const t = textOf('<p>\n  Hello  <b>  World </b>  again\n</p>');
+    expect(t.textValue).toBe('Hello World again');
+    expect(t.textRuns).toEqual([{ text: 'Hello ' }, { text: 'World ', styles: { fontWeight: '700' } }, { text: 'again' }]);
+    expect(textOf('<pre>  a <i>b</i>\n  c</pre>').textRuns).toEqual([{ text: '  a ' }, { text: 'b', styles: { fontStyle: 'italic' } }, { text: '\n  c' }]);
+    expect(textOf('<p>one<br><u>two</u></p>').textRuns).toEqual([{ text: 'one\n' }, { text: 'two', styles: { textDecoration: 'underline' } }]);
+  });
+
+  it('applies tag defaults and adds up nested decorations', () => {
+    const t = textOf('<p>a <a style="text-decoration:underline; text-underline-offset:2px">link <s>gone</s></a> <code>x()</code> <mark>hi</mark></p>');
+    expect(t.textRuns).toEqual([
+      { text: 'a ' },
+      { text: 'link ', styles: { textDecoration: 'underline', textUnderlineOffset: '2px' } },
+      { text: 'gone', styles: { textDecoration: 'underline line-through', textUnderlineOffset: '2px' } },
+      { text: ' ' },
+      { text: 'x()', styles: { fontFamily: 'monospace' } },
+      { text: ' ' },
+      { text: 'hi', styles: { backgroundColor: '#ffff00' } },
+    ]);
+  });
+
+  it('keeps runs on the text child of boxed elements', () => {
+    const button = textOf('<button style="padding:8px 16px; background:blue; color:white">Go <b>now</b></button>');
+    expect(button.component).toBe('Frame');
+    expect(button.children[0]!.textRuns).toEqual([{ text: 'Go ' }, { text: 'now', styles: { fontWeight: '700' } }]);
+  });
+
+  function inserted(html: string) {
+    const doc = createDocument({ name: 'Runs' });
+    const rootId = doc.pages[doc.pageList[0]!.id]!.rootId;
+    const tx = new Transaction(doc);
+    const { topLevelIds } = insertImported(tx, importHtml(html).roots, rootId, 'insert-children');
+    return { reader: readerOf(tx.commit().doc), id: topLevelIds[0]! };
+  }
+
+  it('round-trips through HTML export (copy/paste)', () => {
+    const { reader, id } = inserted('<p style="font-size:14px; color: var(--ink)">Made with <span style="color:var(--color-accent);font-weight:700">love</span> by <i>Arshit</i></p>');
+    const node = reader.getNode(id)!;
+    const html = nodesToHtml(reader, [id]);
+    expect(html).toContain('<span style="color: var(--color-accent); font-weight: 700;">love</span>');
+    const again = importHtml(html).roots[0]!;
+    expect(again.textValue).toBe(node.textValue);
+    expect(again.textRuns).toEqual(node.textRuns);
+    // A lone styled part still comes back as one text layer.
+    const { reader: r2, id: id2 } = inserted('<p>x <mark>all</mark></p>');
+    expect(importHtml(nodesToHtml(r2, [id2])).roots[0]!.textRuns).toEqual(r2.getNode(id2)!.textRuns);
+  });
+
+  it('keeps line breaks of text set without white-space through a paste', () => {
+    const doc = createDocument({ name: 'Breaks' });
+    const rootId = doc.pages[doc.pageList[0]!.id]!.rootId;
+    const tx = new Transaction(doc);
+    const plain = createSubtree(tx, rootId, { component: 'Text', textValue: 'one\ntwo', styles: { fontSize: '16px' } });
+    const rich = createSubtree(tx, rootId, { component: 'Text', textValue: 'x', styles: { fontSize: '16px' } });
+    setTextRuns(tx, rich.id, [{ text: 'bold', styles: { fontWeight: '700' } }, { text: ' line\nnext' }]);
+    const reader = readerOf(tx.commit().doc);
+    expect(importHtml(nodesToHtml(reader, [plain.id])).roots[0]!.textValue).toBe('one\ntwo');
+    const again = importHtml(nodesToHtml(reader, [rich.id])).roots[0]!;
+    expect(again.textValue).toBe('bold line\nnext');
+    expect(again.textRuns).toEqual(reader.getNode(rich.id)!.textRuns);
+  });
+
+  it('renders runs as spans in static HTML and JSX', async () => {
+    const { reader, id } = inserted('<p style="font-size:14px; white-space:pre-wrap">Read the <a style="font-weight:600; color:var(--link)">docs</a>  first</p>');
+    const node = reader.getNode(id)!;
+    expect(renderNodeHtml(reader, node, identityUrls)).toContain('>Read the <span style="color: var(--link); font-weight: 600;">docs</span>  first</div>');
+    const jsx = await generateJsx(reader, id, { format: 'inline-styles', includeNodeIds: false, includeRootPositioning: false });
+    expect(jsx).toContain("Read the <span style={{ color: 'var(--link)', fontWeight: 600 }}>docs</span>{'  '}first");
   });
 });

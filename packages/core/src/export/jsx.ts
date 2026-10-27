@@ -2,7 +2,7 @@ import { parseDocument } from 'htmlparser2';
 import { Element, Text, type ChildNode } from 'domhandler';
 import { computedStyles } from '../query/info.ts';
 import type { DocReader } from '../model/transaction.ts';
-import type { NodeRecord } from '../model/types.ts';
+import type { NodeRecord, TextRun } from '../model/types.ts';
 import { isArtboard } from '../model/tree.ts';
 import { parseInlineStyle, toKebabCase, type StyleMap } from '../styles/css.ts';
 import { svgAttrToReact } from '../html/sanitize.ts';
@@ -199,6 +199,32 @@ function textLines(text: string): string[] {
   });
 }
 
+/** Rich text as JSX lines: styled runs become inline <span>s, kept on one line so spaces survive. */
+async function runLines(runs: readonly TextRun[], ctx: Ctx): Promise<string[]> {
+  const lines: string[] = [];
+  let line = '';
+  for (const run of runs) {
+    let open = '';
+    if (run.styles && Object.keys(run.styles).length) {
+      if (ctx.opts.format === 'tailwind') {
+        const { className, style } = await classesAndStyle(run.styles, ctx.opts);
+        open = `<span${className ? ` className="${className}"` : ''}${Object.keys(style).length ? ` style=${styleObject(style, false)}` : ''}>`;
+      } else open = `<span style=${styleObject(run.styles, true)}>`;
+    }
+    run.text.split('\n').forEach((part, i) => {
+      if (i > 0) {
+        lines.push(`${line}<br />`);
+        line = '';
+      }
+      if (!part) return;
+      const body = escapeJsxText(part).replace(/ {2,}/g, (m) => `{'${m}'}`);
+      line += open ? `${open}${body}</span>` : body;
+    });
+  }
+  lines.push(line);
+  return lines;
+}
+
 // ---- SVG → JSX --------------------------------------------------------------
 
 function svgAttrValue(name: string, value: string): string {
@@ -295,7 +321,8 @@ async function emitNode(node: NodeRecord, ctx: Ctx, depth: number, isRoot: boole
   if (node.component === 'Text') {
     const text = node.textValue ?? '';
     if (!text) return [`${open} />`];
-    return [`${open}>`, ...textLines(text).map((l) => `${ind}  ${l}`), `${ind}</div>`];
+    const lines = node.textRuns?.length ? await runLines(node.textRuns, ctx) : textLines(text);
+    return [`${open}>`, ...lines.map((l) => `${ind}  ${l}`), `${ind}</div>`];
   }
   const children: string[] = [];
   for (const id of node.children) {

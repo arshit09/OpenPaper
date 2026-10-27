@@ -201,6 +201,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     annotations: { readOnlyHint: true },
     description: `Details about one node: size, visibility, lock state, parent, child ids, text (Text nodes), canvas position (worldX/worldY) and position inside its parent (x/y).
 - Nodes with an AI-generated image also report imageGeneration: status is "processing", "ready" or "error", and output is "raster" or "svg". Call again later to see whether generation is done.
+- Text with mixed styles (a bold word, a link) also reports textRuns: the text in order, each part with the inline styles that override the node's own.
 - Positions are null when they depend on layout that has not been measured.`,
     input: z.object({ nodeId: z.string().describe('Id of the node to inspect.') }),
   },
@@ -435,7 +436,7 @@ Markup rules:
 - Sizing is always border-box.
 - For code or indented text, use <pre> or white-space: pre.
 - Icons should be SVG or images, never emoji.
-- Each text element has a single style — one color and font for the whole element — so a code sample is one <pre> element.
+- A text element is one paragraph that wraps as a whole. To style part of it, wrap the words in <span>, <b>, <i>, <u>, <a> or <code> with inline styles, e.g. <p style="font-size:14px">Follow <a style="font-weight:600; text-decoration:underline">@geek updates</a> for more</p>. Spans can change color, font family, size, weight, style, letter-spacing, text decoration, text-transform and background color; line height, alignment and width belong to the whole element. A code sample is one <pre> element.
 - Give layers names with the layer-name attribute, e.g. <div layer-name="Hero">.
 - Local image files need absolute paper-asset:// URLs, e.g. <img src="paper-asset:///C:/Users/me/logo.svg">.
 - paper-gen:// URLs create AI-generated images. Only use them if the user asked for generated imagery, and read get_guide({ topic: "image-generation" }) first.
@@ -489,11 +490,26 @@ The device height is only a starting point to show what fits above the fold. Whe
     name: 'set_text_content',
     scope: 'file',
     annotations: { destructiveHint: true },
-    description:
-      'Change the text of one or more Text nodes (component type "Text" only). Use it instead of write_html replace when only the copy changes. Supports batches.',
+    description: `Change the text of one or more Text nodes (component type "Text" only). Use it instead of write_html replace when only the copy changes. Supports batches.
+- textContent sets plain text: any mixed styles in the node are removed.
+- runs (OpenPaper extension) sets text with mixed styles in one call: the parts in order, each with optional inline styles that override the node's, e.g. [{ "text": "Made with " }, { "text": "love", "styles": { "color": "#FF3E3E", "fontWeight": "700" } }]. Runs can set color, fontFamily, fontSize, fontWeight, fontStyle, letterSpacing, textDecoration (and its longhands), textUnderlineOffset, textTransform and backgroundColor.`,
     input: z.object({
       updates: z
-        .array(z.object({ nodeId: z.string().describe('Text node id.'), textContent: z.string().describe('New text.') }))
+        .array(
+          z.object({
+            nodeId: z.string().describe('Text node id.'),
+            textContent: z.string().optional().describe('New text. Required unless runs is given.'),
+            runs: z
+              .array(
+                z.object({
+                  text: z.string().describe('Text of this part.'),
+                  styles: z.record(z.string(), styleValue).optional().describe('Inline styles for this part (camelCase CSS); omit for the node\'s own style.'),
+                })
+              )
+              .optional()
+              .describe('OpenPaper extension: the text as styled parts; their texts join to the new text.'),
+          })
+        )
         .describe('One entry per text node.'),
     }),
   },
@@ -536,6 +552,7 @@ The device height is only a starting point to show what fits above the fold. Whe
     annotations: { destructiveHint: true },
     description: `Change styles on one or more nodes — the tool for targeted style edits. Design tokens work as CSS variables. Supports batches.
 - Setting top / left on an artboard moves it on the canvas.
+- On a Text node with mixed styles, this changes the whole paragraph; styled parts keep their own overrides (change those with set_text_content runs).
 - Wherever a URL is accepted, a paper-gen:// URL generates an AI image. Only use it when the user explicitly asked for image generation, and read the "image-generation" guide first.
 - Pass an empty string to remove a property.`,
     input: z.object({

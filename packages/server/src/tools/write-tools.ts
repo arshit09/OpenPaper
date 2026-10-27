@@ -1,4 +1,5 @@
 import {
+  applyTextRuns,
   canHaveChildren,
   collectImageUrls,
   cssUrls,
@@ -18,12 +19,15 @@ import {
   positionOf,
   pxValue,
   readerOf,
+  runsText,
   sanitizeSvg,
   stripInertStyles,
   topLevelBoxes,
+  unsupportedRunProps,
   type Box,
   type NodeRecord,
   type StyleMap,
+  type TextRun,
   type Transaction,
 } from '@openpaper/core';
 import {
@@ -306,22 +310,41 @@ export async function deleteNodes(call: Call): Promise<HandlerResult> {
 }
 
 export async function setTextContent(call: Call): Promise<HandlerResult> {
-  const items = call.args.updates as Array<{ nodeId: string; textContent: string }>;
+  const items = call.args.updates as Array<{ nodeId: string; textContent?: string; runs?: Array<{ text: string; styles?: Record<string, string | number> }> }>;
   if (!items.length) throw new ToolError('No updates provided');
-  const updates: Array<{ nodeId: string; textContent: string }> = [];
+  const updates: Array<{ nodeId: string; textContent: string; textRuns?: TextRun[]; ignoredStyles?: string[] }> = [];
   const errors: Array<{ nodeId: string; error: string }> = [];
   transact(call, 'set_text_content', (tx) => {
     for (const item of items) {
       const node = tx.getNode(item.nodeId);
+      const { runs, textContent } = item;
       if (!node) errors.push({ nodeId: item.nodeId, error: `Node not found: ${item.nodeId}` });
       else if (node.component !== 'Text') {
         errors.push({ nodeId: item.nodeId, error: `Node "${displayName(node)}" is a ${node.component}, not a Text node` });
+      } else if (runs === undefined && textContent === undefined) {
+        errors.push({ nodeId: item.nodeId, error: 'Give textContent or runs' });
+      } else if (runs !== undefined && textContent !== undefined && runsText(runs) !== textContent) {
+        errors.push({ nodeId: item.nodeId, error: 'textContent differs from the text of runs: give only runs' });
+      } else if (runs !== undefined) {
+        // OpenPaper extension: styled runs; the node keeps the paragraph's own styles.
+        const ignored = unsupportedRunProps(runs);
+        const n = tx.updateNode(item.nodeId, (d) => {
+          applyTextRuns(d, runs);
+          delete d.styles.overflowWrap;
+        })!;
+        updates.push({
+          nodeId: item.nodeId,
+          textContent: n.textValue ?? '',
+          ...(n.textRuns ? { textRuns: n.textRuns } : {}),
+          ...(ignored.length ? { ignoredStyles: ignored } : {}),
+        });
       } else {
         tx.updateNode(item.nodeId, (n) => {
-          n.textValue = item.textContent;
+          n.textValue = textContent!;
+          delete n.textRuns;
           delete n.styles.overflowWrap;
         });
-        updates.push({ nodeId: item.nodeId, textContent: item.textContent });
+        updates.push({ nodeId: item.nodeId, textContent: textContent! });
       }
     }
   });

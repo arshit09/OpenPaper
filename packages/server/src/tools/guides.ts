@@ -140,6 +140,12 @@ Don't put node ids in messages to the user — refer to layers by name or by wha
 - Letter spacing SHOULD be em (unless the existing design uses px).
 - Line height SHOULD be px unless the user asks otherwise; unitless or % line heights are fine if they don't produce fractional pixel sizes.
 
+### Mixed styles
+A text element is one paragraph that wraps as a whole. To style part of it — a bold word, a link, a coloured phrase — wrap that part in a <span> (or <b>, <i>, <u>, <a>, <code>) with inline styles; don't split the paragraph into separate text layers in a flex row:
+\`<p style="font-size: 14px; line-height: 20px; color: #555">I share prompts via <a style="font-weight: 600; color: #111; text-decoration: underline">@geek updates</a> on Instagram.</p>\`
+- Spans can change color, font family, size, weight, style, letter-spacing, text decoration, text-transform and background color. Line height, alignment and width belong to the paragraph.
+- get_node_info lists the styled parts as textRuns. set_text_content with runs rewrites them; plain textContent removes them. update_styles on the node changes the paragraph and leaves the parts' overrides alone.
+
 ## Importing from Figma
 
 Call \`get_guide({ topic: "figma-import" })\` for the step-by-step workflow.

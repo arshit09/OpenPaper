@@ -3,6 +3,7 @@ import { displayName } from '../model/labels.ts';
 import type { DocReader } from '../model/transaction.ts';
 import type { NodeRecord } from '../model/types.ts';
 import { computedStyles } from '../query/info.ts';
+import { runsHtml } from '../render/to-html.ts';
 import { styleMapToCss } from '../styles/css.ts';
 import { shaderDef, type ShaderProps } from '../shaders/registry.ts';
 
@@ -40,6 +41,8 @@ export function nodesToHtml(reader: DocReader, ids: string[], opts: { resolveUrl
       if (v.includes('url(')) styles[k] = v.replace(/url\(\s*(["']?)([^"')]+)\1\s*\)/g, (_m, _q, u: string) => `url("${resolve(u)}")`);
     }
     if (!node.isVisible) styles.display = 'none';
+    // Text renders pre-wrap: say so when the text needs it, so line breaks survive a paste.
+    if (node.component === 'Text' && !styles.whiteSpace && /\n| {2}/.test(node.textValue ?? '')) styles.whiteSpace = 'pre-wrap';
     const css = styleMapToCss(styles);
     const name = node.labelIsModified ? ` layer-name="${escAttr(node.label)}"` : '';
     const style = css ? ` style="${escAttr(css)}"` : '';
@@ -48,6 +51,10 @@ export function nodesToHtml(reader: DocReader, ids: string[], opts: { resolveUrl
       return indent + markup.replace(/^<svg\b/i, `<svg${name}${style}`);
     }
     if (node.component === 'Text') {
+      if (node.textRuns?.length && node.textValue) {
+        // Marked as one text layer so a lone styled span still re-imports as a single node.
+        return `${indent}<div${name} data-paper-component="Text"${style}>${runsHtml(node.textRuns.map((r) => ({ text: r.text, style: r.styles ?? {} })))}</div>`;
+      }
       return `${indent}<div${name}${style}>${esc(node.textValue ?? '')}</div>`;
     }
     const shader = shaderDef(node.component);

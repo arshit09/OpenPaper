@@ -1,5 +1,5 @@
 import type { NewNode } from '../model/ops.ts';
-import type { PageListItem, TokenRecord } from '../model/types.ts';
+import type { PageListItem, TextRun, TokenRecord } from '../model/types.ts';
 
 /** Style patch: `null` / `""` removes a property; numbers get `px` where CSS expects lengths. */
 export type StyleInput = Record<string, string | number | null>;
@@ -29,7 +29,8 @@ export type EditorCommand =
   | { type: 'setShaderProps'; nodeIds: string[]; preset?: string; patch?: Record<string, unknown> }
   /** Remember the animation time a shader is showing (not undoable). */
   | { type: 'setShaderFrame'; frames: Record<string, number> }
-  | { type: 'setText'; nodeId: string; text: string }
+  /** runs: rich text (text runs with inline styles); without them the node becomes plain text. */
+  | { type: 'setText'; nodeId: string; text: string; runs?: TextRun[] }
   | { type: 'rename'; nodeId: string; name: string }
   | { type: 'delete'; nodeIds: string[] }
   | { type: 'move'; moves: Array<{ nodeId: string; parentId: string; index?: number; styles?: StyleInput }> }

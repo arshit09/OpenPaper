@@ -172,6 +172,52 @@ describe('OpenPaper MCP server', () => {
     expect(missing.isError).toBe(true);
   });
 
+  it('keeps mixed text styles as runs', async () => {
+    const written = body(
+      await call('write_html', {
+        fileId,
+        targetNodeId: '2-0',
+        mode: 'insert-children',
+        html: '<p style="font-size:14px; color:#555">I share prompts via <a style="font-weight:600; text-decoration:underline">@geek updates</a> on Instagram.</p>',
+      })
+    );
+    expect(written.createdNodes.map((n: { component: string }) => n.component)).toEqual(['Text']);
+    const id = written.createdNodes[0].id;
+    const info = body(await call('get_node_info', { fileId, nodeId: id }));
+    expect(info.textContent).toBe('I share prompts via @geek updates on Instagram.');
+    expect(info.textRuns).toEqual([{ text: 'I share prompts via ' }, { text: '@geek updates', styles: { fontWeight: '600', textDecoration: 'underline' } }, { text: ' on Instagram.' }]);
+    expect(body(await call('find_nodes', { fileId, textValue: '*via @geek*' })).count).toBe(1);
+
+    const rich = body(
+      await call('set_text_content', {
+        fileId,
+        updates: [{ nodeId: id, runs: [{ text: 'Made with ' }, { text: 'love', styles: { color: '#FF3E3E', fontWeight: 700, lineHeight: '20px' } }] }],
+      })
+    );
+    expect(rich.updates[0]).toEqual({
+      nodeId: id,
+      textContent: 'Made with love',
+      textRuns: [{ text: 'Made with ' }, { text: 'love', styles: { color: '#FF3E3E', fontWeight: '700' } }],
+      ignoredStyles: ['lineHeight'],
+    });
+    // update_styles changes the paragraph; the styled part keeps its override.
+    await call('update_styles', { fileId, updates: [{ nodeIds: [id], styles: { color: '#111111' } }] });
+    const edited = body(await call('get_node_info', { fileId, nodeId: id }));
+    expect(edited.textRuns[1].styles.color).toBe('#FF3E3E');
+
+    const inline = body(await call('get_jsx', { fileId, nodeId: id, format: 'inline-styles', includeNodeIds: false }));
+    expect(inline).toContain("Made with <span style={{ color: '#FF3E3E', fontWeight: 700 }}>love</span>");
+    expect(body(await call('get_jsx', { fileId, nodeId: id }))).toMatch(/Made with <span className="[^"]+">love<\/span>/);
+
+    const bad = body(await call('set_text_content', { fileId, updates: [{ nodeId: id, textContent: 'nope', runs: [{ text: 'x' }] }, { nodeId: id }] }));
+    expect(bad.errors.map((e: { error: string }) => e.error)).toEqual(['textContent differs from the text of runs: give only runs', 'Give textContent or runs']);
+
+    const plain = body(await call('set_text_content', { fileId, updates: [{ nodeId: id, textContent: 'Plain again' }] }));
+    expect(plain.updates[0]).toEqual({ nodeId: id, textContent: 'Plain again' });
+    expect(body(await call('get_node_info', { fileId, nodeId: id })).textRuns).toBeUndefined();
+    await call('delete_nodes', { fileId, nodeIds: [id] });
+  });
+
   it('manages pages', async () => {
     const page = body(await call('create_page', { fileId, name: 'Mobile', icon: 'design' }));
     expect(page).toEqual({ pageId: 'p-2-0', name: 'Mobile', icon: 'design' });

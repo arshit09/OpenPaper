@@ -19,6 +19,7 @@ import {
   pxValue,
   renameNode,
   setNodeFlags,
+  setTextRuns,
   setTextValue,
   shaderDef,
   shaderPresetProps,
@@ -187,7 +188,8 @@ export async function executeCommand(
         return {};
       }
       case 'setText':
-        setTextValue(tx, cmd.nodeId, cmd.text);
+        if (cmd.runs?.length) setTextRuns(tx, cmd.nodeId, cmd.runs);
+        else setTextValue(tx, cmd.nodeId, cmd.text);
         return {};
       case 'rename': {
         renameNode(tx, cmd.nodeId, cmd.name, 200);

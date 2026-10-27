@@ -303,13 +303,10 @@ describe('Figma clipboard paste', () => {
         },
       ])
     );
-    void html;
-    const row = find(roots, 'Mixed')!;
-    expect(row.component).toBe('Frame');
-    expect(row.styles).toMatchObject({ display: 'flex', alignItems: 'baseline' });
-    expect(row.children.map((c) => [c.textValue, c.styles.fontWeight])).toEqual([
-      ['Hello ', '400'],
-      ['world', '700'],
-    ]);
+    expect(html).toContain('<span style="font-weight: 700">world</span>');
+    const text = find(roots, 'Mixed')!;
+    expect(text.component).toBe('Text');
+    expect(text.textValue).toBe('Hello world');
+    expect(text.textRuns).toEqual([{ text: 'Hello ' }, { text: 'world', styles: { fontWeight: '700' } }]);
   });
 });

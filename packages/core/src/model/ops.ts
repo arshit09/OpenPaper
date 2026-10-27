@@ -4,7 +4,8 @@ import type { Transaction } from './transaction.ts';
 import { shaderDef } from '../shaders/registry.ts';
 import { applyShaderPropsPatch } from '../shaders/props.ts';
 import type { ShaderProps } from '../shaders/registry.ts';
-import type { ComponentType, NodeRecord } from './types.ts';
+import { applyTextRuns, cloneRuns } from './text-runs.ts';
+import type { ComponentType, NodeRecord, TextRun } from './types.ts';
 
 /** Thrown for user-facing validation failures (become MCP error results). */
 export class OpError extends Error {
@@ -182,6 +183,7 @@ export function duplicateSubtree(
       children: [],
       styles: { ...src.styles },
       ...(src.attrs ? { attrs: { ...src.attrs } } : {}),
+      ...(src.textRuns ? { textRuns: cloneRuns(src.textRuns) } : {}),
       ...(src.props ? { props: structuredClone(src.props) } : {}),
     };
     delete copy.imageGeneration;
@@ -223,7 +225,18 @@ export function setTextValue(tx: Transaction, id: string, text: string): NodeRec
   }
   return tx.updateNode(id, (n) => {
     n.textValue = text;
+    delete n.textRuns;
   })!;
+}
+
+/** Set a Text node's text as styled runs; a single style left over moves onto the node. */
+export function setTextRuns(tx: Transaction, id: string, runs: ReadonlyArray<Pick<TextRun, 'text'> & { styles?: Record<string, unknown> }>): NodeRecord {
+  const node = tx.getNode(id);
+  if (!node) throw new OpError(`Node not found: "${id}"`);
+  if (node.component !== 'Text') {
+    throw new OpError(`Node "${id}" is a ${node.component}, not a Text node.`);
+  }
+  return tx.updateNode(id, (n) => applyTextRuns(n, runs))!;
 }
 
 export function renameNode(tx: Transaction, id: string, label: string, maxLength = 50): NodeRecord {

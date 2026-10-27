@@ -34,7 +34,17 @@ export const NodeView = memo(function NodeView({ id }: { id: string }) {
   if (spec.kind === 'text') {
     return (
       <div data-op-id={node.id} style={editing ? { ...style, visibility: 'hidden' } : style}>
-        {spec.text}
+        {spec.runs
+          ? spec.runs.map((r, i) =>
+              Object.keys(r.style).length ? (
+                <span key={i} style={r.style as CSSProperties}>
+                  {r.text}
+                </span>
+              ) : (
+                r.text
+              )
+            )
+          : spec.text}
       </div>
     );
   }

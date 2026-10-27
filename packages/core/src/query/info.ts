@@ -230,6 +230,8 @@ export function nodeInfo(reader: DocReader, node: NodeRecord, layout: LayoutMap 
     artboardId: board?.id ?? null,
     textContent: node.component === 'Text' ? (node.textValue ?? '') : null,
   };
+  // OpenPaper extension: mixed styles inside the text (set them with set_text_content runs).
+  if (node.component === 'Text' && node.textRuns?.length) out.textRuns = node.textRuns;
   if (childIds.length > LIMITS.children) {
     out.truncated = true;
     out.truncatedMessage = `Showing first ${LIMITS.children} of ${childIds.length} child IDs`;

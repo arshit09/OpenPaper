@@ -180,8 +180,9 @@ export function planLive(fileId: string, patch: Patch, actor: ActorInfo, label: 
     // Still waiting to appear: it will build with its final look.
     if (pending.has(n.id) || edits.length >= MAX_EDITS) continue;
     const text = n.component === 'Text' && old.textValue !== n.textValue;
+    const runs = old.textRuns !== n.textRuns && JSON.stringify(old.textRuns) !== JSON.stringify(n.textRuns);
     const media = old.src !== n.src || old.svg !== n.svg;
-    if (!text && !media && old.parentId === n.parentId && sameStyles(old.styles, n.styles)) continue;
+    if (!text && !runs && !media && old.parentId === n.parentId && sameStyles(old.styles, n.styles)) continue;
     const el = elementFor(n.id);
     if (!el || el.closest(`[${PENDING}]`)) continue;
     // Gradients, images and SVG markup can't tween: the old look dissolves over the new one instead.

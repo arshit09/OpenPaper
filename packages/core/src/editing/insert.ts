@@ -3,6 +3,7 @@ import { normalizeStyleValue, type StyleMap } from '../styles/css.ts';
 import type { ImportedNode } from '../html/import.ts';
 import { deleteSubtree, duplicateSubtree, OpError, patchStyles } from '../model/ops.ts';
 import type { Transaction } from '../model/transaction.ts';
+import { cloneRuns } from '../model/text-runs.ts';
 import type { NodeRecord } from '../model/types.ts';
 import { subtreeOf } from '../model/tree.ts';
 
@@ -76,6 +77,7 @@ function createRecord(tx: Transaction, n: ImportedNode, parentId: string, out: I
     isLocked: n.isLocked,
   };
   if (n.textValue !== undefined) record.textValue = n.textValue;
+  if (n.textRuns) record.textRuns = cloneRuns(n.textRuns);
   if (n.svg !== undefined) record.svg = n.svg;
   if (n.props) record.props = structuredClone(n.props);
   tx.putNode(record);

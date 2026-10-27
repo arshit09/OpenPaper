@@ -25,6 +25,16 @@ function decorateSvgRoot(markup: string, id: string, style: StyleMap): string {
   });
 }
 
+/** Rich text runs as inline spans (unstyled runs stay plain text). */
+export function runsHtml(runs: ReadonlyArray<{ text: string; style: StyleMap }>): string {
+  return runs
+    .map((r) => {
+      const css = styleMapToCss(r.style);
+      return css ? `<span style="${escapeAttr(css)}">${escapeHtml(r.text)}</span>` : escapeHtml(r.text);
+    })
+    .join('');
+}
+
 /** Static HTML for a node subtree (same rules as the editor canvas). */
 export function renderNodeHtml(reader: DocReader, node: NodeRecord, ctx: RenderContext): string {
   const parent = node.parentId ? reader.getNode(node.parentId) : undefined;
@@ -33,7 +43,7 @@ export function renderNodeHtml(reader: DocReader, node: NodeRecord, ctx: RenderC
   if (spec.kind === 'svg') return decorateSvgRoot(scopeSvgIds(spec.svg!, `_${node.id}_`), node.id, spec.style);
   const css = styleMapToCss(spec.style);
   const styleAttr = css ? ` style="${escapeAttr(css)}"` : '';
-  if (spec.kind === 'text') return `<div data-op-id="${id}"${styleAttr}>${escapeHtml(spec.text ?? '')}</div>`;
+  if (spec.kind === 'text') return `<div data-op-id="${id}"${styleAttr}>${spec.runs ? runsHtml(spec.runs) : escapeHtml(spec.text ?? '')}</div>`;
   if (spec.kind === 'shader') {
     // Mounted by the shader runtime script (SHADER_RUNTIME_PATH) at the stored frame.
     const props = shaderRenderProps(shaderDef(node.component)!, node.props, { tokens: reader.getTokens(), resolveUrl: (u) => ctx.resolveUrl(u) });
