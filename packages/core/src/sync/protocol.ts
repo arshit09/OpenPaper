@@ -50,6 +50,12 @@ export interface ResourceInfo {
   updatedAt: string;
   open?: boolean;
   active?: boolean;
+  /**
+   * Preview of the file's canvas (absent until one has been taken, or when there is nothing to show).
+   * The image is transparent where the canvas shows: `background` is the page's canvas colour, or
+   * null for the editor's own.
+   */
+  thumbnail?: { url: string; background: string | null };
 }
 
 export interface ViewState {

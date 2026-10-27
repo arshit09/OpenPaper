@@ -226,7 +226,16 @@ export function Home() {
                       openItem();
                     }}
                   >
-                    <div className="op-file-thumb">{r.type === 'folder' ? <Folder size={34} /> : <FileText size={30} />}</div>
+                    <div className="op-file-thumb" style={r.thumbnail?.background ? { background: r.thumbnail.background } : undefined}>
+                      {r.type === 'folder' ? (
+                        <Folder size={34} />
+                      ) : r.thumbnail ? (
+                        // A new version swaps in place: the browser keeps the old image until the new one is decoded.
+                        <img src={r.thumbnail.url} alt="" draggable={false} decoding="async" />
+                      ) : (
+                        <FileText size={30} />
+                      )}
+                    </div>
                     <div className="op-file-meta">
                       <div>
                         <div className="op-truncate" style={{ fontWeight: 550 }} title={r.name}>

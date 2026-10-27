@@ -7,6 +7,7 @@ import { assetUrlToPath, IMAGE_MIME, MEDIA_ROUTE, type MediaStore } from './medi
 import { SHADER_RUNTIME_PATH } from '@openpaper/core';
 import { MCP_PATH } from './paths.ts';
 import type { OriginPolicy } from './security.ts';
+import { THUMBNAIL_ROUTE } from './thumbnails.ts';
 
 const STATIC_MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -35,6 +36,8 @@ export interface AppHandlers {
   upgrade: (req: IncomingMessage, socket: Duplex, head: Buffer) => void;
   /** Internal render documents for the headless renderer: /__render/<token>. */
   renderDocument: (token: string) => string | null;
+  /** File thumbnails for the home screen: THUMBNAIL_ROUTE + `<fileId>.webp`. */
+  thumbnail: (name: string) => string | null;
   /** Script that mounts shader layers in render documents (SHADER_RUNTIME_PATH). */
   shaderRuntime: () => Promise<string>;
   shutdown: () => void;
@@ -119,6 +122,13 @@ export function createApp(h: AppHandlers): Server {
       const body = await readBody(req, 100 * 1024 * 1024);
       const stored = await h.media.put(body, String(req.headers['content-type'] ?? 'application/octet-stream'));
       return sendJson(res, 200, stored);
+    }
+    if (path.startsWith(THUMBNAIL_ROUTE)) {
+      if (!h.policy.notCrossSite(req)) return sendText(res, 403, 'Forbidden');
+      const file = h.thumbnail(path.slice(THUMBNAIL_ROUTE.length));
+      if (!file) return sendText(res, 404, 'Not found');
+      // Each new thumbnail gets a new `?v=`, so a URL's image never changes.
+      return sendFile(res, file, 'image/webp', 'private, max-age=31536000, immutable', MEDIA_HEADERS);
     }
     if (path === '/api/shutdown' && req.method === 'POST') {
       if (!h.policy.noBrowserOrigin(req)) return sendJson(res, 403, { status: 'forbidden' });

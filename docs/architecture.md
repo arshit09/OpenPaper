@@ -37,6 +37,7 @@ OpenPaper is a single local process (the **server**) plus a browser-based **edit
 - `sync.ts`, `views.ts` — editor connections, what each editor is viewing (MCP tools default to the user's file/page/selection), server → editor RPC.
 - `presence.ts` — agent activity per node (40 s expiry), working indicators, activity log.
 - `render/` — headless Chrome/Edge via puppeteer-core: measurement, screenshots (Paper's 2000 px / JPEG 0.92 / 4.5 MB limits), PNG/JPG/WebP/PDF export, local font discovery.
+- `thumbnails.ts` — home-screen previews of each file's first page with content, zoomed to fit and rendered in the headless browser (transparent WebP in `<home>/cache/thumbnails`, painted over the canvas colour by the card). A file is rendered again only after it changes: 15 s after the last edit while open (2 s when nobody has it open), right away when the user leaves it or switches away from the window, and for missing ones when the file list is requested. One render at a time; a browser launched only for thumbnails closes 30 s later.
 - `tailwind.ts` — Tailwind CSS v4 canonicalizer in a worker thread.
 - `assets.ts`, `media.ts` — content-addressed image store; data URIs, local files and remote images are imported on write.
 - `images.ts` — `paper-gen://` generation via OpenAI / Gemini.

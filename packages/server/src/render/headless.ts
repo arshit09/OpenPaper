@@ -21,6 +21,8 @@ export interface RenderViewport {
 export class HeadlessRenderer {
   private browser: Promise<Browser> | null = null;
   private idleTimer: NodeJS.Timeout | null = null;
+  /** When the browser may close if nothing is rendering: the latest any use asked for. */
+  private closeAt = 0;
   private readonly documents = new Map<string, string>();
   private active = 0;
   readonly executablePath: string | null;
@@ -77,19 +79,21 @@ export class HeadlessRenderer {
     return this.browser;
   }
 
-  private touch() {
+  private touch(lingerMs: number) {
+    this.closeAt = Math.max(this.closeAt, Date.now() + lingerMs);
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = setTimeout(() => {
       if (this.active === 0) void this.close();
-    }, IDLE_CLOSE_MS);
+    }, this.closeAt - Date.now());
     this.idleTimer.unref();
   }
 
   /**
    * Load `html` in a fresh page sized to `viewport`, wait for fonts and images,
-   * run `fn`, then dispose the page.
+   * run `fn`, then dispose the page. The browser stays up `lingerMs` afterwards for the next
+   * render (background work passes less, so it doesn't keep a browser around on its own).
    */
-  async withDocument<T>(html: string, viewport: RenderViewport, fn: (page: Page) => Promise<T>): Promise<T> {
+  async withDocument<T>(html: string, viewport: RenderViewport, fn: (page: Page) => Promise<T>, lingerMs = IDLE_CLOSE_MS): Promise<T> {
     const browser = await this.getBrowser();
     const token = randomUUID();
     this.documents.set(token, html);
@@ -115,7 +119,7 @@ export class HeadlessRenderer {
       this.documents.delete(token);
       this.active--;
       await page?.close().catch(() => {});
-      this.touch();
+      this.touch(lingerMs);
     }
   }
 

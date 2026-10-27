@@ -20,6 +20,7 @@ import {
 } from '@openpaper/core';
 import type { AgentService } from './agent/agent.ts';
 import type { SpeechService } from './speech/service.ts';
+import type { ThumbnailService } from './thumbnails.ts';
 import { detectFolderForUrl, inspectFolder, pickFolder } from './sites/folders.ts';
 import type { SiteProxies } from './sites/proxy.ts';
 import { normalizeSiteUrl, type SiteRecord, type SiteStore } from './sites/store.ts';
@@ -44,6 +45,8 @@ export interface SyncOptions {
   speech?: SpeechService;
   /** The user's own running sites, framed through per-site proxies (unset: no live sites). */
   sites?: { store: SiteStore; proxies: SiteProxies };
+  /** Canvas previews on the home screen's file cards (unset: cards show an icon). */
+  thumbnails?: ThumbnailService;
 }
 
 /** A site as the editor sees it (the proxy port is server bookkeeping). */
@@ -82,14 +85,19 @@ function localUserName(): string {
 }
 
 /** WebSocket endpoint for editors: commands in, patches/presence/activity out. */
-export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings, figmaSettings, speech, sites }: SyncOptions) {
+export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings, figmaSettings, speech, sites, thumbnails }: SyncOptions) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 * 1024 });
   const userName = localUserName();
 
   const resources = (): ResourceInfo[] => {
     const open = new Set(env.views.openFileIds());
     const active = env.views.activeFileId();
-    return env.store.list().map((r) => ({ ...r, open: open.has(r.id), active: r.id === active }));
+    return env.store.list().map((r) => ({
+      ...r,
+      open: open.has(r.id),
+      active: r.id === active,
+      ...(r.type === 'file' ? { thumbnail: thumbnails?.thumbnailFor(r.id) } : {}),
+    }));
   };
 
   env.hub.on('commit', (e) => {
@@ -102,6 +110,8 @@ export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings
   async function handleRequest(conn: EditorConnection, method: string, params: any): Promise<unknown> {
     switch (method) {
       case 'resources.list':
+        // Someone is looking at the file list: fill in missing or outdated previews in the background.
+        thumbnails?.backfill();
         return resources();
       case 'file.create': {
         const doc = await env.store.create({ name: params?.name, parentId: params?.parentId ?? null });
@@ -143,7 +153,11 @@ export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings
       }
       case 'view.update': {
         const view = params as ViewState;
+        const before = conn.view;
         conn.view = { ...view, selection: Array.isArray(view.selection) ? view.selection.slice(0, 1000) : [] };
+        // Leaving a file (for home, a site or another file) or switching away from the window
+        // catches its preview up in the background.
+        if (before.fileId && (before.fileId !== view.fileId || (before.focused && !view.focused))) thumbnails?.left(before.fileId);
         if (view.focused) conn.lastActiveAt = Date.now();
         return null;
       }
@@ -164,6 +178,7 @@ export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings
         const id = String(params.resourceId);
         if (env.hub.isOpen(id)) await env.hub.close(id);
         await env.store.delete(id);
+        await thumbnails?.removed(id);
         env.resourcesChanged();
         return null;
       }
@@ -355,7 +370,10 @@ export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings
       }
     });
     ws.on('close', () => {
-      if (conn) env.views.remove(conn.clientId);
+      if (!conn) return;
+      env.views.remove(conn.clientId);
+      // A tab closed on a file counts as leaving it.
+      if (conn.view.fileId) thumbnails?.left(conn.view.fileId);
     });
     ws.on('error', () => ws.close());
   }

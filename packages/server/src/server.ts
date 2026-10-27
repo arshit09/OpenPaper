@@ -25,6 +25,7 @@ import { probeHealth, removeServerInfo, writeServerInfo } from './server-info.ts
 import { FileStore } from './storage.ts';
 import { createSyncServer } from './sync.ts';
 import { TailwindService } from './tailwind.ts';
+import { ThumbnailService } from './thumbnails.ts';
 import type { ToolEnv } from './tools/context.ts';
 import { mcpToolList } from './tools/definitions.ts';
 import { SERVER_INSTRUCTIONS } from './tools/guides.ts';
@@ -133,6 +134,9 @@ export async function startServer(opts: StartOptions): Promise<RunningServer> {
     },
   };
 
+  const thumbnails = new ThumbnailService({ dir: join(paths.cache, 'thumbnails'), hub, store, render, views, changed: () => env.resourcesChanged() });
+  await thumbnails.init();
+
   const runtime = new ToolRuntime(env);
   const mcp = createMcpHttpHandler(runtime);
   const agentSettings = new AgentSettings(paths.config);
@@ -153,13 +157,24 @@ export async function startServer(opts: StartOptions): Promise<RunningServer> {
     claudeCode: { mcpUrl: `${url}${MCP_PATH}`, dir: join(paths.home, 'claude-code') },
   });
   const speech = new SpeechService({ dir: join(paths.home, 'models'), onStatus: (status) => views.broadcast(null, { t: 'speech', status }) });
-  sync = createSyncServer({ env, policy, mcpLaunch: mcpLaunchCommand, agents, agentSettings, figmaSettings, speech, sites: { store: siteStore, proxies: siteProxies } });
+  sync = createSyncServer({
+    env,
+    policy,
+    mcpLaunch: mcpLaunchCommand,
+    agents,
+    agentSettings,
+    figmaSettings,
+    speech,
+    sites: { store: siteStore, proxies: siteProxies },
+    thumbnails,
+  });
   tailwind.warmup();
 
   let closing: Promise<void> | null = null;
   const close = () => {
     closing ??= (async () => {
       agents.stopAll();
+      thumbnails.close();
       speech.close();
       mcp.close();
       sync.close();
@@ -187,6 +202,7 @@ export async function startServer(opts: StartOptions): Promise<RunningServer> {
     mcpConfig: () => ({ tools: mcpToolList(), instructions: SERVER_INSTRUCTIONS }),
     upgrade: (req, socket, head) => sync.handleUpgrade(req, socket, head),
     renderDocument: (token) => headless.documentFor(token),
+    thumbnail: (name) => thumbnails.pathFor(name),
     shaderRuntime: createShaderRuntimeLoader(),
     shutdown: () => {
       void close().then(() => process.exit(0));

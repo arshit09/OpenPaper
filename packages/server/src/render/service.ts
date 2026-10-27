@@ -23,6 +23,10 @@ export const MODEL_IMAGE_MAX_SIDE = 2000;
 export const MODEL_IMAGE_MAX_BASE64 = 4_500_000;
 const MAX_CANVAS_SIDE = 16_000;
 export const DEFAULT_CANVAS_COLOR = '#EEEEEE';
+/** Canvas kept around the content in a thumbnail, in frame pixels (at 1x). */
+const THUMBNAIL_PADDING = 12;
+/** Thumbnails are background work: a browser launched only for them closes soon after. */
+const THUMBNAIL_LINGER_MS = 30_000;
 
 export interface EncodedImage {
   data: string;
@@ -84,6 +88,41 @@ function measureScript(): Record<string, { worldX: number; worldY: number; x: nu
     out[id] = { worldX: round(r.left - wr.left), worldY: round(r.top - wr.top), x: round(x), y: round(y), width: round(r.width), height: round(r.height) };
   }
   return out;
+}
+
+/**
+ * Runs inside the page: scale and move the world so every top-level layer fits the frame, centred,
+ * never above 1:1. False when no layer has a size (all hidden or empty).
+ */
+async function fitWorldScript(frameWidth: number, frameHeight: number, padding: number): Promise<boolean> {
+  const world = document.querySelector('[data-op-world]') as HTMLElement;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const el of Array.from(world.children)) {
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 && r.height <= 0) continue;
+    minX = Math.min(minX, r.left);
+    minY = Math.min(minY, r.top);
+    maxX = Math.max(maxX, r.right);
+    maxY = Math.max(maxY, r.bottom);
+  }
+  if (minX === Infinity) return false;
+  const t = getComputedStyle(world).transform;
+  const m = new DOMMatrix(t === 'none' ? undefined : t);
+  const w = Math.max(maxX - minX, 1);
+  const h = Math.max(maxY - minY, 1);
+  const room = { width: frameWidth - 2 * padding, height: frameHeight - 2 * padding };
+  // Tall content may run off the bottom (showing its top) rather than shrink to a sliver.
+  const scale = Math.min(room.width / w, (room.height * 1.5) / h, 1);
+  // The content box in the world's own coordinates is (minX - m.e, minY - m.f).
+  const x = (frameWidth - w * scale) / 2 - (minX - m.e) * scale;
+  const y = (h * scale > room.height ? padding : (frameHeight - h * scale) / 2) - (minY - m.f) * scale;
+  world.style.transformOrigin = '0 0';
+  world.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  return true;
 }
 
 export class RenderService {
@@ -295,6 +334,33 @@ export class RenderService {
     if (box.width * box.height * dsf * dsf > MAX_CANVAS_SIDE * MAX_CANVAS_SIDE) dsf = MAX_CANVAS_SIDE / Math.sqrt(box.width * box.height);
     const shot = await this.capture(html, nodeId, box, dsf, format === 'jpg' ? 'jpeg' : format, [format === 'png' ? undefined : 90], format !== 'jpg');
     return Buffer.from(shot.data, 'base64');
+  }
+
+  /**
+   * A page zoomed to fit a `width`×`height` pixel frame, as WebP with the canvas left transparent
+   * (whoever shows it paints the canvas colour behind it). Null when nothing on the page has a size.
+   */
+  async thumbnail(doc: PaperDocument, pageId: string, width: number, height: number): Promise<Buffer | null> {
+    const target: RenderTarget = { ...this.pageTarget(doc, pageId), background: 'transparent' };
+    if (!target.rootIds.length) return null;
+    // Laid out at 1:1 in a frame half the pixel size at 2x, then the world is scaled down to fit it.
+    const frame = { width: width / 2, height: height / 2 };
+    return this.headless.withDocument(
+      this.html(target),
+      { ...frame, deviceScaleFactor: 2 },
+      async (page) => {
+        if (!(await page.evaluate(fitWorldScript, frame.width, frame.height, THUMBNAIL_PADDING))) return null;
+        const shot = (await page.screenshot({
+          type: 'webp',
+          quality: 80,
+          clip: { x: 0, y: 0, ...frame },
+          omitBackground: true,
+          encoding: 'binary',
+        })) as Uint8Array;
+        return Buffer.from(shot);
+      },
+      THUMBNAIL_LINGER_MS
+    );
   }
 
   /** Measured size of a node in its rendering context. */
