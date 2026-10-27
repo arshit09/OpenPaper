@@ -3,12 +3,15 @@ import { loadConfigWithSource } from '@anthropic-ai/sdk/core/credentials';
 import type { AgentConfigInfo } from '@openpaper/core';
 import { writeFileAtomic } from '../fs-utils.ts';
 import { AGENT_MODELS } from './agent.ts';
+import { claudeCodeStatus, type ClaudeCodeStatus } from './claude-code.ts';
 
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 const EFFORTS: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
+export type Runner = AgentConfigInfo['runner'];
+const RUNNERS: Runner[] = ['api', 'claude-code'];
 
 interface StoredConfig {
-  agent?: { apiKey?: string; model?: string; effort?: Effort };
+  agent?: { runner?: Runner; apiKey?: string; model?: string; effort?: Effort };
   [key: string]: unknown;
 }
 
@@ -17,9 +20,13 @@ interface StoredConfig {
  * The API key never leaves the server: editors only learn whether one is configured.
  */
 export class AgentSettings {
-  readonly defaults = { model: 'claude-opus-5-5', effort: 'high' as Effort };
+  readonly defaults = { runner: 'api' as Runner, model: 'claude-opus-5-5', effort: 'high' as Effort };
 
-  constructor(private readonly path: string) {}
+  constructor(
+    private readonly path: string,
+    /** Override for tests. */
+    private readonly probeClaudeCode: () => Promise<ClaudeCodeStatus | null> = () => claudeCodeStatus()
+  ) {}
 
   private async read(): Promise<StoredConfig> {
     try {
@@ -29,10 +36,11 @@ export class AgentSettings {
     }
   }
 
-  async resolved(): Promise<{ apiKey: string | undefined; model: string; effort: Effort }> {
+  async resolved(): Promise<{ runner: Runner; apiKey: string | undefined; model: string; effort: Effort }> {
     const cfg = (await this.read()).agent ?? {};
     // Without a stored key the SDK resolves ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN or an `ant auth login` profile.
     return {
+      runner: RUNNERS.includes(cfg.runner as Runner) ? cfg.runner! : this.defaults.runner,
       apiKey: cfg.apiKey || undefined,
       model: AGENT_MODELS.some((m) => m.id === cfg.model) ? cfg.model! : this.defaults.model,
       effort: EFFORTS.includes(cfg.effort as Effort) ? cfg.effort! : this.defaults.effort,
@@ -41,19 +49,20 @@ export class AgentSettings {
 
   async info(): Promise<AgentConfigInfo> {
     const r = await this.resolved();
-    const keySource: AgentConfigInfo['keySource'] = r.apiKey
-      ? 'settings'
-      : process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN
-        ? 'environment'
-        : (await hasSdkProfile())
-          ? 'profile'
-          : null;
-    return { keySource, model: r.model, effort: r.effort, models: AGENT_MODELS };
+    const [keySource, claudeCode] = await Promise.all([this.keySource(r.apiKey), this.probeClaudeCode()]);
+    return { runner: r.runner, keySource, claudeCode, model: r.model, effort: r.effort, models: AGENT_MODELS };
   }
 
-  async update(patch: { apiKey?: string | null; model?: string; effort?: Effort }): Promise<void> {
+  private async keySource(apiKey: string | undefined): Promise<AgentConfigInfo['keySource']> {
+    if (apiKey) return 'settings';
+    if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) return 'environment';
+    return (await hasSdkProfile()) ? 'profile' : null;
+  }
+
+  async update(patch: { runner?: Runner; apiKey?: string | null; model?: string; effort?: Effort }): Promise<void> {
     const cfg = await this.read();
     const agent = { ...(cfg.agent ?? {}) };
+    if (patch.runner && RUNNERS.includes(patch.runner)) agent.runner = patch.runner;
     if (patch.apiKey !== undefined) {
       const key = patch.apiKey?.trim();
       if (key) agent.apiKey = key;

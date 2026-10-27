@@ -16,7 +16,7 @@ import {
   type ViewState,
 } from '@openpaper/core';
 import type { AgentService } from './agent/agent.ts';
-import type { AgentSettings, Effort } from './agent/settings.ts';
+import type { AgentSettings, Effort, Runner } from './agent/settings.ts';
 import { executeCommand } from './commands.ts';
 import { HARNESSES, installHarness } from './harness.ts';
 import type { ActorRef } from './hub.ts';
@@ -177,6 +177,7 @@ export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings
         return agentSettings.info();
       case 'agent.config.set':
         await agentSettings.update({
+          ...(params?.runner ? { runner: String(params.runner) as Runner } : {}),
           ...(params?.apiKey !== undefined ? { apiKey: params.apiKey as string | null } : {}),
           ...(params?.model ? { model: String(params.model) } : {}),
           ...(params?.effort ? { effort: String(params.effort) as Effort } : {}),

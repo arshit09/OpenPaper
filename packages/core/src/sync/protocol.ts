@@ -102,8 +102,12 @@ export interface AgentUsage {
 }
 
 export interface AgentConfigInfo {
+  /** What runs the agent: the Anthropic API with a key, or the user's own Claude Code install and sign-in. */
+  runner: 'api' | 'claude-code';
   /** Where the API key comes from (null = not configured). */
   keySource: 'settings' | 'environment' | 'profile' | null;
+  /** The local Claude Code install (null = not found). */
+  claudeCode: { version: string; loggedIn: boolean; plan: string | null } | null;
   model: string;
   effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   models: Array<{ id: string; label: string }>;

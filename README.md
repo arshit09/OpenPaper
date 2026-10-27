@@ -101,7 +101,8 @@ Then try:
 
 No agent app needed: open a file and type into **Ask AI to design…** at the bottom of the canvas. The built-in agent is Claude, working with the same 37 tools an external MCP agent gets, so you watch it lay out artboards, check its work with screenshots and refine — and you can stop it at any moment.
 
-- **Credentials:** paste an Anthropic API key into the chat box the first time (stored only in `~/.openpaper/config.json`, owner-only permissions, never sent to the editor), or start the server with `ANTHROPIC_API_KEY` set, or sign in with `ant auth login`. Requests are billed to that account.
+- **Run it on Claude Code:** if [Claude Code](https://claude.com/claude-code) is installed and signed in, click **Use Claude Code** the first time (or pick *Claude Code sign-in* in settings). OpenPaper runs your own `claude` program in headless mode, connected to this server with only the design tools enabled (no shell, file or web access), so usage counts toward your own Claude account and plan. OpenPaper never reads or stores your Claude credentials; sign in with `claude auth login`.
+- **Or use an API key:** paste an Anthropic API key into the chat box (stored only in `~/.openpaper/config.json`, owner-only permissions, never sent to the editor), or start the server with `ANTHROPIC_API_KEY` set, or sign in with `ant auth login`. Requests are billed to that account.
 - **Context:** every message includes the file, page and selection you're looking at, so *"make the selected card feel more premium"* just works.
 - **Settings** (gear icon): model (Claude Opus 5.5 by default, Sonnet 5.5, Haiku 5.5) and effort (`low` … `max`). Token usage for the conversation is shown in the header.
 - Agent edits are a separate actor: your own undo history is untouched, and the Agents panel can undo the agent's last change.

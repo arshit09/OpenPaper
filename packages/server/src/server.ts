@@ -139,6 +139,7 @@ export async function startServer(opts: StartOptions): Promise<RunningServer> {
     getDoc: (fileId) => hub.peek(fileId)?.doc,
     viewFor: (fileId) => views.viewFor(fileId),
     emit: (fileId, event) => views.broadcast(fileId, { t: 'agent', fileId, event }),
+    claudeCode: { mcpUrl: `${url}${MCP_PATH}`, dir: join(paths.home, 'claude-code') },
   });
   sync = createSyncServer({ env, policy, mcpLaunch: mcpLaunchCommand, agents, agentSettings, figmaSettings });
   tailwind.warmup();

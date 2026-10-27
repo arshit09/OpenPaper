@@ -1,10 +1,11 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import Anthropic from '@anthropic-ai/sdk';
 import type { AgentEvent } from '@openpaper/core';
 import { AgentService } from '../src/agent/agent.ts';
+import { claudeCodeStatus } from '../src/agent/claude-code.ts';
 import { AgentSettings } from '../src/agent/settings.ts';
 import { resolvePaths } from '../src/paths.ts';
 import { startServer, type RunningServer } from '../src/server.ts';
@@ -216,5 +217,130 @@ describe('built-in design agent', () => {
     await chat.send('Hello');
     expect(requests).toHaveLength(1);
     expect(chat.items[chat.items.length - 1]).toMatchObject({ kind: 'notice', level: 'error' });
+  });
+});
+
+/** Stand-in for the `claude` CLI: logs its args and prompt, then prints scripted stream-json (no network). */
+const FAKE_CLAUDE = `
+const fs = require('node:fs');
+const [log, ...args] = process.argv.slice(2);
+if (args[0] === '--version') { console.log('9.9.9 (Claude Code)'); process.exit(0); }
+if (args[0] === 'auth') { console.log(JSON.stringify({ loggedIn: true, authMethod: 'claude.ai', subscriptionType: 'max' })); process.exit(0); }
+let prompt = '';
+process.stdin.on('data', (d) => (prompt += d)).on('end', () => {
+  fs.appendFileSync(log, JSON.stringify({ args, prompt }) + '\\n');
+  const out = (m) => process.stdout.write(JSON.stringify(m) + '\\n');
+  const delta = (text) => out({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text } } });
+  out({ type: 'system', subtype: 'init', session_id: 'sess-1', mcp_servers: [{ name: 'openpaper', status: 'connected' }] });
+  if (prompt.includes('SIGNED_OUT')) {
+    out({ type: 'assistant', error: 'authentication_failed', message: { content: [{ type: 'text', text: 'Not logged in · Please run /login' }] } });
+    out({ type: 'result', subtype: 'success', is_error: true, result: 'Not logged in · Please run /login', usage: {} });
+    process.exit(1);
+  }
+  out({ type: 'stream_event', event: { type: 'message_start' } });
+  delta('Adding ');
+  delta('an artboard.');
+  out({ type: 'stream_event', event: { type: 'content_block_start', content_block: { type: 'tool_use', id: 't1', name: 'mcp__openpaper__create_artboard' } } });
+  out({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: 'mcp__openpaper__create_artboard', input: { name: 'Board' } }] } });
+  if (prompt.includes('HANG')) { setInterval(() => {}, 1000); return; }
+  out({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: [{ type: 'text', text: 'ok' }] }] } });
+  out({ type: 'stream_event', event: { type: 'message_start' } });
+  delta('Done.');
+  out({ type: 'result', subtype: 'success', is_error: false, session_id: 'sess-1', usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 3, cache_creation_input_tokens: 2 } });
+});
+`;
+
+describe('built-in design agent on Claude Code', () => {
+  let command: string[];
+  let log: string;
+  const calls = async () =>
+    (await readFile(log, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l) as { args: string[]; prompt: string });
+
+  beforeAll(async () => {
+    const dir = await mkdtemp(join(home, 'fake-claude-'));
+    const script = join(dir, 'claude.cjs');
+    log = join(dir, 'calls.jsonl');
+    await writeFile(script, FAKE_CLAUDE);
+    command = [process.execPath, script, log];
+  });
+
+  async function claudeCodeChat(name: string, events: AgentEvent[] = []) {
+    const doc = await server.env.store.create({ name });
+    server.env.hub.adopt(doc);
+    const settings = new AgentSettings(join(home, `cc-${doc.id}.json`), async () => null);
+    await settings.update({ runner: 'claude-code' });
+    const agents = new AgentService({
+      runtime: new ToolRuntime(server.env),
+      settings,
+      getDoc: (id) => server.env.hub.peek(id)?.doc,
+      viewFor: () => null,
+      emit: (_f, e) => events.push(e),
+      claudeCode: { mcpUrl: 'http://127.0.0.1:1/mcp', dir: join(home, 'claude-code'), command },
+    });
+    return agents.chat(doc.id);
+  }
+
+  it('runs a turn on Claude Code with only the design tools, then resumes its session', async () => {
+    const events: AgentEvent[] = [];
+    const chat = await claudeCodeChat('Claude Code test', events);
+    await chat.send('Make me a mobile artboard');
+
+    expect(chat.items.map((i) => i.kind)).toEqual(['user', 'assistant', 'tool', 'assistant']);
+    expect(chat.items[1]).toMatchObject({ kind: 'assistant', text: 'Adding an artboard.' });
+    expect(chat.items[2]).toMatchObject({ kind: 'tool', name: 'create_artboard', status: 'done' });
+    expect(chat.items[3]).toMatchObject({ kind: 'assistant', text: 'Done.' });
+    expect(chat.usage).toEqual({ inputTokens: 10, outputTokens: 5, cacheReadTokens: 3, cacheWriteTokens: 2 });
+    expect(events.some((e) => e.type === 'status' && !e.running)).toBe(true);
+
+    const [first] = await calls();
+    const arg = (flag: string) => first!.args[first!.args.indexOf(flag) + 1];
+    expect(first!.args).toContain('-p');
+    expect(first!.args).toContain('--strict-mcp-config');
+    expect(arg('--tools')).toBe('');
+    expect(arg('--allowedTools')).toBe('mcp__openpaper');
+    expect(arg('--permission-mode')).toBe('dontAsk');
+    expect(arg('--model')).toBe('claude-opus-5-5');
+    expect(arg('--effort')).toBe('high');
+    expect(first!.args).not.toContain('--resume');
+    expect(JSON.parse(await readFile(arg('--mcp-config')!, 'utf8'))).toEqual({ mcpServers: { openpaper: { type: 'http', url: 'http://127.0.0.1:1/mcp' } } });
+    expect(await readFile(arg('--system-prompt-file')!, 'utf8')).toContain("You are OpenPaper's built-in design agent");
+    expect(first!.prompt).toContain('<context>');
+    expect(first!.prompt).toContain('Make me a mobile artboard');
+
+    await chat.send('Now a desktop one');
+    const second = (await calls()).at(-1)!;
+    expect(second.args[second.args.indexOf('--resume') + 1]).toBe('sess-1');
+  });
+
+  it('asks the user to sign in to Claude Code', async () => {
+    const chat = await claudeCodeChat('Signed out');
+    await chat.send('SIGNED_OUT');
+    expect(chat.items.map((i) => i.kind)).toEqual(['user', 'notice']);
+    expect(chat.items[1]).toMatchObject({ kind: 'notice', level: 'error' });
+    expect(chat.items[1]!.kind === 'notice' && chat.items[1]!.text).toContain('claude auth login');
+    expect(chat.running).toBe(false);
+  });
+
+  it('stops a running Claude Code turn', async () => {
+    const chat = await claudeCodeChat('Stop me');
+    const sending = chat.send('HANG');
+    await expect.poll(() => chat.items.some((i) => i.kind === 'tool'), { timeout: 10_000 }).toBe(true);
+    chat.stop();
+    await sending;
+    expect(chat.items.find((i) => i.kind === 'tool')).toMatchObject({ status: 'error' });
+    expect(chat.items.at(-1)).toMatchObject({ kind: 'notice', text: 'Stopped.' });
+    expect(chat.running).toBe(false);
+  });
+
+  it('reports the install and sign-in from Claude Code itself', async () => {
+    expect(await claudeCodeStatus(command)).toEqual({ version: '9.9.9', loggedIn: true, plan: 'max' });
+    expect(await claudeCodeStatus(null)).toBeNull();
+    const settings = new AgentSettings(join(home, 'runner-config.json'), () => claudeCodeStatus(command));
+    expect((await settings.info()).runner).toBe('api');
+    await settings.update({ runner: 'claude-code' });
+    expect(await settings.info()).toMatchObject({ runner: 'claude-code', claudeCode: { loggedIn: true, plan: 'max' } });
   });
 });

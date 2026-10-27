@@ -5,7 +5,8 @@ import type { McpSession } from '../mcp/http.ts';
 import { mcpToolList } from '../tools/definitions.ts';
 import { MAIN_GUIDE, SERVER_INSTRUCTIONS } from '../tools/guides.ts';
 import { summarize, type ToolRuntime } from '../tools/runtime.ts';
-import type { AgentSettings } from './settings.ts';
+import { runClaudeCode, type ClaudeCodeHost } from './claude-code.ts';
+import type { AgentSettings, Runner } from './settings.ts';
 
 type MessageParam = Anthropic.Beta.BetaMessageParam;
 type ContentBlockParam = Anthropic.Beta.BetaContentBlockParam;
@@ -83,14 +84,27 @@ export interface AgentHost {
   getDoc(fileId: string): PaperDocument | undefined;
   viewFor(fileId: string): ViewState | null;
   emit(fileId: string, event: AgentEvent): void;
+  /** Running on the user's own Claude Code (unset: only the API runner is available). */
+  claudeCode?: ClaudeCodeHost;
   /** Override for tests. */
   createClient?: (apiKey: string | undefined) => Pick<Anthropic, 'beta'>;
+}
+
+const RUNNER_NAMES: Record<Runner, string> = { api: 'the Anthropic API', 'claude-code': 'Claude Code' };
+
+/** Text of a tool result as Claude Code reports it (a string or content blocks). */
+function resultText(content: unknown): string {
+  const text = typeof content === 'string' ? content : Array.isArray(content) ? content.map((c) => (c?.type === 'text' ? c.text : '')).join(' ') : '';
+  return text.replace(/<\/?tool_use_error>/g, '').trim();
 }
 
 /** One conversation with the built-in agent, bound to a file. */
 export class AgentChat {
   readonly items: AgentChatItem[] = [];
   private messages: MessageParam[] = [];
+  /** The Claude Code session this chat continues (Claude Code keeps that history itself). */
+  private claudeSession: string | null = null;
+  private lastRunner: Runner | null = null;
   private controller: AbortController | null = null;
   private readonly session: McpSession;
   usage: AgentUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
@@ -126,7 +140,9 @@ export class AgentChat {
     this.stop();
     this.items.length = 0;
     this.messages = [];
-    this.usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+    this.claudeSession = null;
+    this.lastRunner = null;
+    this.usage ={ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
     this.host.emit(this.fileId, { type: 'reset' });
   }
 
@@ -160,18 +176,33 @@ export class AgentChat {
   async send(text: string): Promise<void> {
     if (this.running) throw new Error('The agent is already working. Stop it first or wait.');
     const config = await this.host.settings.resolved();
-    const client = this.host.createClient
-      ? this.host.createClient(config.apiKey)
-      : new Anthropic(config.apiKey ? { apiKey: config.apiKey } : {});
+    const client =
+      config.runner !== 'api'
+        ? null
+        : this.host.createClient
+          ? this.host.createClient(config.apiKey)
+          : new Anthropic(config.apiKey ? { apiKey: config.apiKey } : {});
 
     this.push({ kind: 'user', id: nextId(), text });
-    this.messages.push({ role: 'user', content: `${this.context()}\n\n${text}` });
+    // Each runner keeps its own history, so switching starts the new one fresh.
+    if (this.lastRunner && this.lastRunner !== config.runner) {
+      this.messages = [];
+      this.claudeSession = null;
+      this.notice('info', `Now running on ${RUNNER_NAMES[config.runner]}, which starts without the earlier messages.`);
+    }
+    this.lastRunner = config.runner;
+    const prompt = `${this.context()}\n\n${text}`;
 
     const controller = new AbortController();
     this.controller = controller;
     this.host.emit(this.fileId, { type: 'status', running: true, usage: this.usage });
     try {
-      await this.loop(client, config.model, config.effort, controller.signal);
+      if (client) {
+        this.messages.push({ role: 'user', content: prompt });
+        await this.loop(client, config.model, config.effort, controller.signal);
+      } else {
+        await this.runClaudeCode(prompt, config.model, config.effort, controller.signal);
+      }
     } catch (error) {
       if (error instanceof Anthropic.APIUserAbortError || controller.signal.aborted) {
         this.notice('info', 'Stopped.');
@@ -304,6 +335,90 @@ export class AgentChat {
       this.messages.push({ role: 'user', content: results });
     }
     this.notice('info', 'Paused after many steps — say "continue" to keep going.');
+  }
+
+  /** One turn on the user's own Claude Code, which calls the design tools itself over OpenPaper's MCP endpoint. */
+  private async runClaudeCode(prompt: string, model: string, effort: string, signal: AbortSignal) {
+    if (!this.host.claudeCode) throw new Error('Claude Code is not available here. Switch the agent to an API key in its settings.');
+    let textItem: Extract<AgentChatItem, { kind: 'assistant' }> | null = null;
+    const write = (delta: { text?: string; thinking?: string }) => {
+      if (!textItem) {
+        textItem = { kind: 'assistant', id: nextId(), text: '', thinking: '' };
+        this.push(textItem);
+      }
+      textItem.text += delta.text ?? '';
+      textItem.thinking += delta.thinking ?? '';
+      this.host.emit(this.fileId, { type: 'delta', id: textItem.id, ...delta });
+    };
+    const tools = new Map<string, Extract<AgentChatItem, { kind: 'tool' }>>();
+    const finishTool = (item: Extract<AgentChatItem, { kind: 'tool' }>, status: 'done' | 'error', summary?: string) => {
+      item.status = status;
+      if (summary !== undefined) item.summary = summary;
+      this.host.emit(this.fileId, { type: 'tool', id: item.id, status, summary: item.summary });
+    };
+    let streamed = false;
+    let authFailed = false;
+
+    try {
+      const run = runClaudeCode(this.host.claudeCode, { prompt, resume: this.claudeSession, model, effort, systemPrompt: SYSTEM_PROMPT, signal });
+      for await (const msg of run) {
+        if (msg.parent_tool_use_id) continue; // Subagent traffic (none expected: only the design tools are enabled).
+        if (msg.type === 'system' && msg.subtype === 'init') {
+          this.claudeSession = msg.session_id ?? this.claudeSession;
+          const server = (msg.mcp_servers as Array<{ name: string; status: string }> | undefined)?.find((s) => s.name === 'openpaper');
+          if (server && server.status !== 'connected') throw new Error(`Claude Code could not connect to OpenPaper's design tools (${server.status}).`);
+        } else if (msg.type === 'stream_event') {
+          streamed = true;
+          const event = msg.event;
+          // A new response or a tool call ends the current text bubble.
+          if (event?.type === 'message_start' || (event?.type === 'content_block_start' && event.content_block?.type === 'tool_use')) textItem = null;
+          else if (event?.type === 'content_block_delta' && event.delta?.type === 'text_delta' && event.delta.text) write({ text: event.delta.text });
+          else if (event?.type === 'content_block_delta' && event.delta?.type === 'thinking_delta' && event.delta.thinking) write({ thinking: event.delta.thinking });
+        } else if (msg.type === 'assistant') {
+          // Claude Code reports some failures (like being signed out) as an assistant message with `error`; the result follows.
+          if (msg.error) {
+            authFailed ||= msg.error === 'authentication_failed';
+            continue;
+          }
+          for (const block of msg.message?.content ?? []) {
+            if (block.type === 'text' && block.text && !streamed) write({ text: block.text });
+            if (block.type === 'tool_use' && !tools.has(block.id)) {
+              textItem = null;
+              const name = String(block.name).replace(/^mcp__openpaper__/, '');
+              const input = block.input && typeof block.input === 'object' ? block.input : {};
+              const item: Extract<AgentChatItem, { kind: 'tool' }> = { kind: 'tool', id: nextId(), name, status: 'running', summary: summarize(name, input) };
+              tools.set(block.id, item);
+              this.push(item);
+            }
+          }
+        } else if (msg.type === 'user') {
+          for (const block of Array.isArray(msg.message?.content) ? msg.message.content : []) {
+            const item = block.type === 'tool_result' ? tools.get(block.tool_use_id) : undefined;
+            if (!item) continue;
+            if (block.is_error) finishTool(item, 'error', resultText(block.content).slice(0, 200) || 'Failed');
+            else finishTool(item, 'done');
+          }
+        } else if (msg.type === 'result') {
+          const u = msg.usage ?? {};
+          this.usage.inputTokens += u.input_tokens ?? 0;
+          this.usage.outputTokens += u.output_tokens ?? 0;
+          this.usage.cacheReadTokens += u.cache_read_input_tokens ?? 0;
+          this.usage.cacheWriteTokens += u.cache_creation_input_tokens ?? 0;
+          if (msg.subtype === 'error_max_turns') {
+            this.notice('info', 'Paused after many steps — say "continue" to keep going.');
+          } else if (msg.is_error) {
+            const text = typeof msg.result === 'string' ? msg.result.trim() : '';
+            if (authFailed || /not logged in|\/login/i.test(text)) {
+              throw new Error('Claude Code is not signed in. Run `claude auth login` in a terminal, then try again.');
+            }
+            throw new Error(text ? `Claude Code: ${text}` : `Claude Code stopped (${msg.subtype ?? 'error'}).`);
+          }
+        }
+      }
+      if (signal.aborted) this.notice('info', 'Stopped.');
+    } finally {
+      for (const item of tools.values()) if (item.status === 'running') finishTool(item, 'error', 'Stopped before it finished.');
+    }
   }
 }
 
