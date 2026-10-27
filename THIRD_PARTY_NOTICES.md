@@ -27,4 +27,14 @@ OpenPaper is not affiliated with or endorsed by Paper (Lost Coast Labs, Inc.).
 
 Figma is a trademark of Figma, Inc. OpenPaper is not affiliated with Figma.
 
+## Voice input
+
+Speech is transcribed on the user's computer. The engine is an optional dependency, and the model is downloaded on first use rather than shipped with OpenPaper.
+
+- `sherpa-onnx-node` 2.0.1 — Apache License 2.0, by the k2-fsa / Next-gen Kaldi team — https://github.com/k2-fsa/sherpa-onnx
+- ONNX Runtime (bundled inside sherpa-onnx) — MIT, Copyright (c) Microsoft Corporation — https://github.com/microsoft/onnxruntime
+- Model: NVIDIA Parakeet TDT 0.6B v2 (https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2), in the int8 ONNX export by the sherpa-onnx project (https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8). Licence: Creative Commons Attribution 4.0 International (CC-BY-4.0, https://creativecommons.org/licenses/by/4.0/). The model was converted to ONNX and quantized to int8; OpenPaper uses it unmodified from that export.
+
+NVIDIA and Parakeet are trademarks of NVIDIA Corporation. OpenPaper is not affiliated with NVIDIA.
+
 Other dependencies are listed in each package's `package.json`; their licences ship with them in `node_modules`.

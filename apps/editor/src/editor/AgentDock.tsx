@@ -1,10 +1,18 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Sparkles, Send, Square, ChevronDown, ChevronUp, Settings2, RotateCcw, Check, X, Loader2, Wrench } from 'lucide-react';
-import type { AgentChatItem, AgentConfigInfo } from '@openpaper/core';
-import { useEditor, setState, getState, toast } from '../state/store.ts';
-import { client } from '../sync/session.ts';
+import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { Send, Square, ChevronDown, ChevronUp, Settings2, RotateCcw, Check, X, Loader2, Wrench, Crosshair } from 'lucide-react';
+import type { AgentChatItem, AgentConfigInfo, AgentTarget } from '@openpaper/core';
+import { useEditor, setState } from '../state/store.ts';
+import { client, sendToAgent } from '../sync/session.ts';
+import { MarkdownView } from '../ui/MarkdownView.tsx';
+import { AgentMark } from '../ui/Logo.tsx';
+import { Select } from '../ui/Select.tsx';
+import { VoiceButton, type VoicePhase } from '../ui/VoiceButton.tsx';
 
-const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+const RUNNERS = [
+  { value: 'claude-code', label: 'Claude Code sign-in' },
+  { value: 'api', label: 'Anthropic API key' },
+] as const;
+const EFFORTS = (['low', 'medium', 'high', 'xhigh', 'max'] as const).map((e) => ({ value: e, label: `Effort: ${e}` }));
 
 const KEY_SOURCES: Record<NonNullable<AgentConfigInfo['keySource']>, string> = {
   settings: 'API key saved on this computer',
@@ -84,25 +92,31 @@ function AgentSetup({ config, onChange }: { config: AgentConfigInfo; onChange: (
   );
 }
 
-function ItemView({ item }: { item: AgentChatItem }) {
+// Memoized so typing in the prompt doesn't re-render the whole conversation.
+const ItemView = memo(function ItemView({ item }: { item: AgentChatItem }) {
   const [showThinking, setShowThinking] = useState(false);
   switch (item.kind) {
     case 'user':
       return (
-        <div
-          style={{
-            alignSelf: 'flex-end',
-            maxWidth: '85%',
-            padding: '8px 11px',
-            borderRadius: '12px 12px 4px 12px',
-            background: 'var(--op-accent)',
-            color: '#fff',
-            whiteSpace: 'pre-wrap',
-            overflowWrap: 'anywhere',
-            lineHeight: 1.45,
-          }}
-        >
-          {item.text}
+        <div style={{ alignSelf: 'flex-end', maxWidth: '85%', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+          {item.target && (
+            <span className="op-chat-target op-truncate" title={`Pointed at ${item.target}`}>
+              <Crosshair size={11} style={{ flexShrink: 0 }} /> {item.target}
+            </span>
+          )}
+          <div
+            style={{
+              padding: '8px 11px',
+              borderRadius: '12px 12px 4px 12px',
+              background: 'var(--op-accent)',
+              color: '#fff',
+              whiteSpace: 'pre-wrap',
+              overflowWrap: 'anywhere',
+              lineHeight: 1.45,
+            }}
+          >
+            {item.text}
+          </div>
         </div>
       );
     case 'assistant':
@@ -114,11 +128,9 @@ function ItemView({ item }: { item: AgentChatItem }) {
             </button>
           )}
           {showThinking && (
-            <div className="op-label" style={{ borderLeft: '2px solid var(--op-border-strong)', paddingLeft: 8, margin: '2px 0 6px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-              {item.thinking}
-            </div>
+            <MarkdownView text={item.thinking ?? ''} className="op-label op-thinking-text" />
           )}
-          <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{item.text}</div>
+          <MarkdownView text={item.text} />
         </div>
       );
     case 'tool':
@@ -144,13 +156,24 @@ function ItemView({ item }: { item: AgentChatItem }) {
         </div>
       );
   }
-}
+});
 
-/** The built-in design agent, docked at the bottom of the canvas. */
-export function AgentDock() {
-  const doc = useEditor((s) => s.doc);
+/**
+ * The built-in agent, docked at the bottom of the canvas or a live site. It talks to the open chat
+ * (the file's, or the site's); `extra` adds per-message context such as the site page.
+ */
+export function AgentDock({
+  placeholder = 'Ask AI to design…',
+  emptyHint,
+  extra,
+}: {
+  placeholder?: string;
+  emptyHint?: ReactNode;
+  extra?: () => { page?: string; target?: AgentTarget };
+}) {
   const chat = useEditor((s) => s.agentChat);
   const [text, setText] = useState('');
+  const [voice, setVoice] = useState<VoicePhase>('idle');
   const [config, setConfig] = useState<AgentConfigInfo | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
@@ -169,12 +192,14 @@ export function AgentDock() {
     el.style.height = `${el.scrollHeight}px`;
   }, [text]);
 
-  useEffect(() => {
+  // Before paint, so the conversation opens already scrolled to the latest message.
+  useLayoutEffect(() => {
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [chat.items, open]);
 
-  if (!doc) return null;
+  const key = chat.key;
+  if (!key) return null;
   const setOpen = (v: boolean) => setState((s) => ({ agentChat: { ...s.agentChat, open: v } }));
   const needsSetup = config !== null && (config.runner === 'api' ? config.keySource === null : !config.claudeCode?.loggedIn);
 
@@ -183,11 +208,7 @@ export function AgentDock() {
     if (!value || chat.running) return;
     setText('');
     setOpen(true);
-    try {
-      await client.request('agent.send', { fileId: getState().doc!.id, text: value });
-    } catch (error) {
-      toast(error instanceof Error ? error.message : String(error));
-    }
+    await sendToAgent(value, extra?.()).catch(() => setText(value));
   };
 
   const usage = chat.usage;
@@ -195,13 +216,14 @@ export function AgentDock() {
     <div
       className="op-dock"
       data-op-overlay-ui
+      data-voice-box
       onPointerDown={(e) => e.stopPropagation()}
       onKeyDown={(e) => e.stopPropagation()}
     >
       <div className={`op-dock-body${open ? ' open' : ''}`}>
         <div inert={!open}>
           <div className="op-dock-row">
-            <Sparkles size={14} style={{ color: 'var(--op-agent)', flexShrink: 0 }} />
+            <AgentMark size={14} style={{ flexShrink: 0 }} />
             <b className="op-truncate" style={{ flex: 1 }}>
               Design agent
             </b>
@@ -213,7 +235,7 @@ export function AgentDock() {
             <button className={`op-icon-btn small${showSettings ? ' pressed' : ''}`} title="Settings" aria-pressed={showSettings} onClick={() => setShowSettings(!showSettings)}>
               <Settings2 size={13} />
             </button>
-            <button className="op-icon-btn small" title="New chat" onClick={() => void client.request('agent.reset', { fileId: doc.id })}>
+            <button className="op-icon-btn small" title="New chat" onClick={() => void client.request('agent.reset', { fileId: key })}>
               <RotateCcw size={13} />
             </button>
             <button className="op-icon-btn small" title="Collapse" onClick={() => setOpen(false)}>
@@ -222,40 +244,27 @@ export function AgentDock() {
           </div>
           {showSettings && config && (
             <div className="op-dock-row" style={{ flexWrap: 'wrap', padding: '8px 12px' }}>
-              <select
-                className="op-input"
+              <Select
                 style={{ width: 'auto' }}
                 title="What runs the agent"
                 value={config.runner}
-                onChange={async (e) => setConfig(await client.request<AgentConfigInfo>('agent.config.set', { runner: e.target.value }))}
-              >
-                <option value="claude-code">Claude Code sign-in</option>
-                <option value="api">Anthropic API key</option>
-              </select>
-              <select
-                className="op-input"
+                options={RUNNERS}
+                onChange={async (runner) => setConfig(await client.request<AgentConfigInfo>('agent.config.set', { runner }))}
+              />
+              <Select
                 style={{ width: 'auto' }}
+                title="Model"
                 value={config.model}
-                onChange={async (e) => setConfig(await client.request<AgentConfigInfo>('agent.config.set', { model: e.target.value }))}
-              >
-                {config.models.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="op-input"
+                options={config.models.map((m) => ({ value: m.id, label: m.label }))}
+                onChange={async (model) => setConfig(await client.request<AgentConfigInfo>('agent.config.set', { model }))}
+              />
+              <Select
                 style={{ width: 'auto' }}
+                title="Effort"
                 value={config.effort}
-                onChange={async (e) => setConfig(await client.request<AgentConfigInfo>('agent.config.set', { effort: e.target.value }))}
-              >
-                {EFFORTS.map((e) => (
-                  <option key={e} value={e}>
-                    Effort: {e}
-                  </option>
-                ))}
-              </select>
+                options={EFFORTS}
+                onChange={async (effort) => setConfig(await client.request<AgentConfigInfo>('agent.config.set', { effort }))}
+              />
               <span className="op-label">
                 {config.runner === 'claude-code' ? claudeCodeLabel(config.claudeCode) : config.keySource ? KEY_SOURCES[config.keySource] : 'No API key'}
               </span>
@@ -271,7 +280,12 @@ export function AgentDock() {
             <div ref={listRef} className="op-scroll" style={{ maxHeight: 'min(46vh, 420px)', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
               {!chat.items.length && (
                 <div className="op-label" style={{ lineHeight: 1.6 }}>
-                  Ask for a design and watch it appear on the canvas. Try: <i>“Design a sign-up screen for a meditation app”</i> or <i>“Make the selected card feel more premium.”</i>
+                  {emptyHint ?? (
+                    <>
+                      Ask for a design and watch it appear on the canvas. Try: <i>“Design a sign-up screen for a meditation app”</i>, or select a
+                      layer and use the agent button beside it (Ctrl+K) to change just that.
+                    </>
+                  )}
                 </div>
               )}
               {chat.items.map((item) => (
@@ -287,12 +301,14 @@ export function AgentDock() {
         </div>
       </div>
       <div className="op-dock-composer">
-        {!open && <Sparkles size={16} className="op-dock-spark" />}
+        <AgentMark size={16} className="op-dock-spark op-dock-fold" />
         <textarea
           ref={inputRef}
           className="op-input"
           rows={1}
-          placeholder={chat.running ? 'The agent is working…' : 'Ask AI to design…'}
+          placeholder={
+            voice === 'recording' ? 'Listening… click the mic to stop' : voice === 'transcribing' ? 'Transcribing…' : chat.running ? 'The agent is working…' : placeholder
+          }
           value={text}
           onFocus={() => !open && (chat.items.length > 0 || needsSetup) && setOpen(true)}
           onChange={(e) => setText(e.target.value)}
@@ -304,13 +320,20 @@ export function AgentDock() {
             if (e.key === 'Escape') (e.currentTarget as HTMLTextAreaElement).blur();
           }}
         />
-        {!open && chat.items.length > 0 && (
-          <button className="op-icon-btn" title="Show conversation" onClick={() => setOpen(true)}>
+        {chat.items.length > 0 && (
+          <button className="op-icon-btn op-dock-fold" title="Show conversation" inert={open} onClick={() => setOpen(true)}>
             <ChevronUp size={15} />
           </button>
         )}
+        <VoiceButton
+          onPhase={setVoice}
+          onText={(t) => {
+            setText((prev) => (prev.trim() ? `${prev.trimEnd()} ${t}` : t));
+            inputRef.current?.focus();
+          }}
+        />
         {chat.running ? (
-          <button className="op-icon-btn active" title="Stop" onClick={() => void client.request('agent.stop', { fileId: doc.id })}>
+          <button className="op-icon-btn active" title="Stop" onClick={() => void client.request('agent.stop', { fileId: key })}>
             <Square size={13} />
           </button>
         ) : (

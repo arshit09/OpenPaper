@@ -31,6 +31,7 @@ import {
 import { useEditor } from '../../state/store.ts';
 import { ShaderInspector } from '../shaders/ShaderInspector.tsx';
 import { client, command } from '../../sync/session.ts';
+import { Select } from '../../ui/Select.tsx';
 
 /** The untruncated name for tooltips (text layers are named after their first 20 characters). */
 export function fullName(node: NodeRecord): string {
@@ -179,6 +180,12 @@ function Segmented<T extends string>({ value, options, onChange }: { value: T | 
 }
 
 type SizeMode = 'fixed' | 'hug' | 'fill';
+
+const SIZE_MODES: { value: SizeMode; label: string }[] = [
+  { value: 'fixed', label: 'Fixed' },
+  { value: 'hug', label: 'Hug' },
+  { value: 'fill', label: 'Fill' },
+];
 function sizeMode(v: string | undefined, flexGrow: string | undefined, axisIsMain: boolean): SizeMode {
   if (v === 'fit-content' || v === 'max-content' || v === 'auto' || (!v && !(axisIsMain && flexGrow))) return 'hug';
   if (v === '100%' || v === 'stretch' || (axisIsMain && flexGrow && flexGrow !== '0')) return 'fill';
@@ -203,11 +210,7 @@ function SizeRow({ nodes, prop }: { nodes: NodeRecord[]; prop: 'width' | 'height
   return (
     <div className="op-row">
       <StyleField nodes={nodes} prop={prop} label={prop === 'width' ? 'W' : 'H'} hint={prop === 'width' ? 'Width' : 'Height'} placeholder={`${measured}`} />
-      <select className="op-input" style={{ width: 70, flex: 'none' }} value={mode} onChange={(e) => setMode(e.target.value as SizeMode)}>
-        <option value="fixed">Fixed</option>
-        <option value="hug">Hug</option>
-        <option value="fill">Fill</option>
-      </select>
+      <Select style={{ width: 70, flex: 'none' }} value={mode} options={SIZE_MODES} onChange={setMode} />
     </div>
   );
 }
@@ -219,7 +222,34 @@ const SHADOWS: Record<string, string | null> = {
   Large: '0px 12px 32px rgba(0, 0, 0, 0.14)',
 };
 
-const WEIGHTS = ['100', '200', '300', '400', '500', '600', '700', '800', '900'];
+const SHADOW_OPTIONS = [...Object.keys(SHADOWS), 'Custom'].map((k) => ({ value: k, label: k }));
+const WEIGHTS = ['100', '200', '300', '400', '500', '600', '700', '800', '900'].map((w) => ({ value: w, label: w }));
+const ALIGN_ITEMS = [
+  { value: '', label: 'Align: stretch' },
+  { value: 'flex-start', label: 'Align: start' },
+  { value: 'center', label: 'Align: center' },
+  { value: 'flex-end', label: 'Align: end' },
+  { value: 'baseline', label: 'Align: baseline' },
+];
+const JUSTIFY_CONTENT = [
+  { value: '', label: 'Justify: start' },
+  { value: 'center', label: 'Justify: center' },
+  { value: 'flex-end', label: 'Justify: end' },
+  { value: 'space-between', label: 'Space between' },
+  { value: 'space-around', label: 'Space around' },
+];
+const BACKGROUND_SIZES = [
+  { value: 'cover', label: 'Fill (cover)' },
+  { value: 'contain', label: 'Fit (contain)' },
+  { value: '100% 100%', label: 'Stretch' },
+  { value: 'auto', label: 'Original size' },
+];
+const TEXT_TRANSFORMS = [
+  { value: '', label: 'Aa' },
+  { value: 'uppercase', label: 'AA' },
+  { value: 'lowercase', label: 'aa' },
+  { value: 'capitalize', label: 'Aa Bb' },
+];
 
 let fontListPromise: Promise<string[]> | null = null;
 function useFontList(): string[] {
@@ -367,20 +397,8 @@ export function Inspector() {
                 <StyleField nodes={nodes} prop="padding" label={<SquareDashed size={12} />} hint="Padding" placeholder="0" />
               </div>
               <div className="op-grid-2">
-                <select className="op-input" value={common(nodes, 'alignItems') ?? ''} onChange={(e) => apply(nodes, { alignItems: e.target.value || null })}>
-                  <option value="">Align: stretch</option>
-                  <option value="flex-start">Align: start</option>
-                  <option value="center">Align: center</option>
-                  <option value="flex-end">Align: end</option>
-                  <option value="baseline">Align: baseline</option>
-                </select>
-                <select className="op-input" value={common(nodes, 'justifyContent') ?? ''} onChange={(e) => apply(nodes, { justifyContent: e.target.value || null })}>
-                  <option value="">Justify: start</option>
-                  <option value="center">Justify: center</option>
-                  <option value="flex-end">Justify: end</option>
-                  <option value="space-between">Space between</option>
-                  <option value="space-around">Space around</option>
-                </select>
+                <Select value={common(nodes, 'alignItems') ?? ''} options={ALIGN_ITEMS} onChange={(v) => apply(nodes, { alignItems: v || null })} />
+                <Select value={common(nodes, 'justifyContent') ?? ''} options={JUSTIFY_CONTENT} onChange={(v) => apply(nodes, { justifyContent: v || null })} />
               </div>
             </>
           )}
@@ -401,12 +419,7 @@ export function Inspector() {
             <span className="op-label op-prop-label">
               Image
             </span>
-            <select className="op-input" value={common(nodes, 'backgroundSize') ?? 'cover'} onChange={(e) => apply(nodes, { backgroundSize: e.target.value })}>
-              <option value="cover">Fill (cover)</option>
-              <option value="contain">Fit (contain)</option>
-              <option value="100% 100%">Stretch</option>
-              <option value="auto">Original size</option>
-            </select>
+            <Select value={common(nodes, 'backgroundSize') ?? 'cover'} options={BACKGROUND_SIZES} onChange={(v) => apply(nodes, { backgroundSize: v })} />
             <button className="op-btn" onClick={() => apply(nodes, { backgroundImage: null, backgroundSize: null, backgroundPosition: null, backgroundRepeat: null })}>
               Remove
             </button>
@@ -421,16 +434,11 @@ export function Inspector() {
           <span className="op-label op-prop-label">
             Shadow
           </span>
-          <select
-            className="op-input"
+          <Select
             value={Object.entries(SHADOWS).find(([, v]) => v === (common(nodes, 'boxShadow') ?? null))?.[0] ?? 'Custom'}
-            onChange={(e) => e.target.value !== 'Custom' && apply(nodes, { boxShadow: SHADOWS[e.target.value] ?? null })}
-          >
-            {Object.keys(SHADOWS).map((k) => (
-              <option key={k}>{k}</option>
-            ))}
-            <option>Custom</option>
-          </select>
+            options={SHADOW_OPTIONS}
+            onChange={(v) => v !== 'Custom' && apply(nodes, { boxShadow: SHADOWS[v] ?? null })}
+          />
         </div>
       </Section>
 
@@ -454,13 +462,7 @@ export function Inspector() {
           </label>
           <div className="op-grid-2">
             <StyleField nodes={nodes} prop="fontSize" label={<ALargeSmall size={13} />} hint="Font size" placeholder="16px" />
-            <select className="op-input" value={common(nodes, 'fontWeight') ?? '400'} onChange={(e) => apply(nodes, { fontWeight: e.target.value })}>
-              {WEIGHTS.map((w) => (
-                <option key={w} value={w}>
-                  {w}
-                </option>
-              ))}
-            </select>
+            <Select value={common(nodes, 'fontWeight') ?? '400'} options={WEIGHTS} onChange={(v) => apply(nodes, { fontWeight: v })} />
           </div>
           <div className="op-grid-2">
             <StyleField nodes={nodes} prop="lineHeight" label={<MoveVertical size={12} />} hint="Line height" placeholder="normal" unitless />
@@ -478,12 +480,7 @@ export function Inspector() {
               ]}
               onChange={(v) => apply(nodes, { textAlign: v === 'left' ? null : v })}
             />
-            <select className="op-input" value={common(nodes, 'textTransform') ?? ''} onChange={(e) => apply(nodes, { textTransform: e.target.value || null })}>
-              <option value="">Aa</option>
-              <option value="uppercase">AA</option>
-              <option value="lowercase">aa</option>
-              <option value="capitalize">Aa Bb</option>
-            </select>
+            <Select value={common(nodes, 'textTransform') ?? ''} options={TEXT_TRANSFORMS} onChange={(v) => apply(nodes, { textTransform: v || null })} />
           </div>
         </Section>
       )}

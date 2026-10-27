@@ -1,5 +1,5 @@
 import { flushSync } from 'react-dom';
-import type { AgentChatItem, AgentUsage, EditorCommand, OpenFileResult, ResourceInfo, ViewState } from '@openpaper/core';
+import type { AgentChatItem, AgentTarget, AgentUsage, EditorCommand, OpenFileResult, ResourceInfo, ViewState } from '@openpaper/core';
 import { applyServerPatch, getState, setDocument, setState, toast, useEditor } from '../state/store.ts';
 import { applyLive, flushLive, noteAgentReads, planLive } from '../editor/canvas/live.ts';
 import { SyncClient } from './client.ts';
@@ -36,8 +36,11 @@ client.subscribe((message) => {
     case 'navigate':
       void navigateTo(message.fileId, message.pageId ?? undefined, message.nodeId ?? undefined);
       break;
+    case 'speech':
+      setState({ speech: message.status });
+      break;
     case 'agent': {
-      if (getState().doc?.id !== message.fileId) break;
+      if (getState().agentChat.key !== message.fileId) break;
       const e = message.event;
       setState((s) => {
         const chat = s.agentChat;
@@ -139,10 +142,33 @@ export async function openFile(fileId: string, opts: { keepView?: boolean; pageI
   setDocument(result.doc, result.version);
   setState({ agents: result.agents, activity: result.activity });
   pushView();
+  openChat(fileId);
+}
+
+/** Show the agent conversation for a file id, or `site:<id>` for a live site (null: none). */
+export function openChat(key: string | null): void {
+  const same = getState().agentChat.key === key;
+  setState((s) => ({ agentChat: same ? s.agentChat : { ...s.agentChat, key, items: [], running: false, usage: null } }));
+  if (!key) return;
   client
-    .request<{ items: AgentChatItem[]; running: boolean; usage: AgentUsage }>('agent.history', { fileId })
-    .then((h) => setState((s) => ({ agentChat: { ...s.agentChat, items: h.items, running: h.running, usage: h.usage } })))
+    .request<{ items: AgentChatItem[]; running: boolean; usage: AgentUsage }>('agent.history', { fileId: key })
+    .then((h) => {
+      if (getState().agentChat.key !== key) return;
+      setState((s) => ({ agentChat: { ...s.agentChat, items: h.items, running: h.running, usage: h.usage } }));
+    })
     .catch(() => {});
+}
+
+/** Send a message to the open agent chat. `target` is what the user pointed at; `page` the live-site page. */
+export async function sendToAgent(text: string, extra: { target?: AgentTarget; page?: string } = {}): Promise<void> {
+  const key = getState().agentChat.key;
+  if (!key) return;
+  try {
+    await client.request('agent.send', { fileId: key, text, ...extra });
+  } catch (error) {
+    toast(error instanceof Error ? error.message : String(error));
+    throw error;
+  }
 }
 
 export function closeFile(): void {
@@ -155,7 +181,8 @@ export function closeFile(): void {
     selection: [],
     agents: [],
     activity: [],
-    agentChat: { ...s.agentChat, items: [], running: false, usage: null },
+    // A live site's chat (opened by its view before this runs) stays.
+    agentChat: s.agentChat.key === doc?.id ? { ...s.agentChat, key: null, items: [], running: false, usage: null } : s.agentChat,
   }));
   pushView();
 }

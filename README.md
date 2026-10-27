@@ -34,11 +34,14 @@ It speaks the same MCP tool set as [Paper](https://paper.design) — all 37 tool
 
 **AI / MCP**
 - Built-in design agent: type *"Ask AI to design…"* at the bottom of the canvas and Claude designs on the canvas while you watch (bring your own Anthropic API key)
+- Point and ask: select a layer and the agent button appears beside it (`Ctrl+K`), so a request changes exactly that layer
+- Live sites: open the site you're building from its dev server, click any element, and Claude Code edits your project's code while the page reloads in place
+- Voice input: talk to the agent instead of typing. Speech is transcribed on your computer (NVIDIA Parakeet, a one-time 661 MB download), never in the cloud
 - Paper-compatible MCP server: Streamable HTTP at `http://127.0.0.1:29880/mcp` **and** stdio via `openpaper mcp` (auto-starts the app)
 - Agents see the canvas: `get_screenshot` renders through headless Chrome/Edge — pixel-identical to the editor
 - `get_jsx` uses Tailwind CSS v4's own canonicalizer for idiomatic utility classes
 - Live presence: working indicators on the artboards an agent touches, write/edit highlights, an activity feed of every tool call
-- Live build preview: you watch an agent's work being built. New layers outline and fill in, in tree order, text types in, style changes tween, deletions fade, and a cursor follows where the agent is writing. Only the playback is animated: tool calls still apply instantly, and reduced motion is respected
+- Live build preview: you watch an agent's work being built. The agent's cursor draws each new layer by hand, in tree order: it traces the outline (or an SVG's own paths, which draw themselves under it) and the layer fills in from where the pen closed it, while text types in a character at a time. Style changes tween and deletions fade. Only the playback is animated: tool calls still apply instantly, and reduced motion is respected
 - Built-in guides (`get_guide`) that teach agents to design incrementally, review their work and use tokens
 - `paper-gen://` image generation with your own OpenAI or Gemini key
 - Agents can create and tune shader layers too (`<x-shader>` in `write_html`, `update_shader`, the `shaders` guide)
@@ -107,6 +110,17 @@ No agent app needed: open a file and type into **Ask AI to design…** at the bo
 - **Settings** (gear icon): model (Claude Opus 5.5 by default, Sonnet 5.5, Haiku 5.5) and effort (`low` … `max`). Token usage for the conversation is shown in the header.
 - Agent edits are a separate actor: your own undo history is untouched, and the Agents panel can undo the agent's last change.
 - Conversations are per file and live while the server runs; **New chat** starts over.
+- **Point at what to change:** select one or more layers and click the agent button beside the selection (or press `Ctrl+K`). The prompt that opens is aimed at exactly those layers, and the agent is told to leave the rest of the design alone. Progress and the agent's reply show right there; **Show in chat** opens the full conversation.
+- **Talk instead of typing:** click the mic in either prompt and speak, then click again (or hold the mic while you talk and let go). `Esc` cancels. The text lands in the prompt for you to check before sending. The first time, OpenPaper asks before downloading the speech model (NVIDIA Parakeet TDT 0.6B v2, 661 MB) into `~/.openpaper/models`. After that it runs offline on your CPU and turns a few seconds of speech into text in under a second. The engine is an optional native dependency (`sherpa-onnx-node`): if it can't be installed on your platform, the mic says so and everything else works.
+
+## Live sites
+
+Edit the site you're actually building, not a mock-up of it. On the home screen, click **Open live site**, paste your dev server's address (`http://localhost:5173`, `:3000`, …) and pick the project folder (**Browse…** opens your system's folder picker). OpenPaper checks that the server answers and, when it can tell, fills in the folder the server runs from.
+
+- The site opens inside OpenPaper with **Select** on: hover to see elements, click one, and the agent prompt appears beside it, ready for you to type or speak (*"make this a pill"*, *"use our brand blue here"*). Turn **Select** off to use the site normally, and switch between desktop, tablet and phone widths in the toolbar.
+- The agent is your own Claude Code, running in the project folder. It gets the element you clicked: tag, text, classes, CSS selector, HTML, key computed styles and, when the dev server exposes them, the source file and component names (React, Vue, Svelte, Astro, Angular). It finds the code, makes the change, and your dev server's hot reload shows it.
+- It only has Claude Code's file tools: read, search and edit. Edits are accepted inside the project folder only, and there's no shell, so it can't run commands, install packages or restart your server. It also follows the project's `CLAUDE.md`. Choose *Claude Code sign-in* in the agent settings; the API-key runner can't edit files.
+- How it works: each site is served through a small proxy on its own `127.0.0.1` port that forwards everything to your dev server (hot-reload WebSockets included). The proxy adds a script to each page that lets you pick elements, and lets the page be shown inside OpenPaper. The page can't reach OpenPaper's WebSocket or MCP endpoints. Saved sites are listed on the home screen (`~/.openpaper/sites.json`); removing one never touches your files.
 
 ## MCP tools
 
@@ -182,6 +196,7 @@ OpenPaper uses Paper's shortcuts, plus Figma's where Paper has none. `Ctrl` is `
 | Action | Keys |
 |---|---|
 | Undo / redo | `Ctrl+Z` / `Ctrl+Shift+Z` or `Ctrl+Y` |
+| Ask the agent about the selection (or focus the chat when nothing is selected) | `Ctrl+K` |
 | Cut / copy / paste (as HTML; into a selected frame) | `Ctrl+X` / `Ctrl+C` / `Ctrl+V` |
 | Paste on top of the selection / paste to replace it | `Ctrl+Shift+V` / `Ctrl+Shift+R` |
 | Copy / paste styles | `Ctrl+Alt+C` / `Ctrl+Alt+V` |

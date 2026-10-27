@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Home } from './home/Home.tsx';
 import { EditorView } from './editor/EditorView.tsx';
+import { SiteView } from './site/SiteView.tsx';
 import { Toasts } from './ui/Toasts.tsx';
 import { ConnectDialog } from './ui/ConnectDialog.tsx';
 import { useEditor } from './state/store.ts';
 import { closeFile, navigateTo } from './sync/session.ts';
 
-type Route = { name: 'home' } | { name: 'file'; fileId: string; pageId?: string; nodeId?: string };
+type Route = { name: 'home' } | { name: 'file'; fileId: string; pageId?: string; nodeId?: string } | { name: 'site'; siteId: string };
 
 function parseRoute(hash: string): Route {
   const parts = hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   if (parts[0] === 'file' && parts[1]) return { name: 'file', fileId: parts[1], pageId: parts[2], nodeId: parts[3] };
+  if (parts[0] === 'site' && parts[1]) return { name: 'site', siteId: parts[1] };
   return { name: 'home' };
 }
 
@@ -31,7 +33,7 @@ export function App() {
 
   return (
     <>
-      {route.name === 'file' ? <EditorView /> : <Home />}
+      {route.name === 'file' ? <EditorView /> : route.name === 'site' ? <SiteView key={route.siteId} siteId={route.siteId} /> : <Home />}
       {showConnect && <ConnectDialog />}
       <Toasts />
     </>

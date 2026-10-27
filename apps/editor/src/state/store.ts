@@ -9,6 +9,7 @@ import {
   type PaperDocument,
   type ResourceInfo,
   type ShaderProps,
+  type SpeechStatus,
 } from '@openpaper/core';
 import type { ConnectionState } from '../sync/client.ts';
 
@@ -58,8 +59,12 @@ export interface EditorState {
   agentOpened: { fileId: string; pageId: string | null; agentName: string } | null;
   /** A comment being written (placed with the comment tool). */
   pendingComment: { nodeId: string | null; world: { x: number; y: number } } | null;
-  /** Built-in agent chat for the open file. */
-  agentChat: { items: AgentChatItem[]; running: boolean; usage: AgentUsage | null; open: boolean };
+  /** Built-in agent chat for the open file or live site (`key`: file id, or `site:<id>`). */
+  agentChat: { key: string | null; items: AgentChatItem[]; running: boolean; usage: AgentUsage | null; open: boolean };
+  /** The ask-the-agent prompt beside the canvas selection is expanded (Mod+K or its button). */
+  selectionPrompt: boolean;
+  /** Local speech-to-text engine (null until first asked). */
+  speech: SpeechStatus | null;
   /** Shader picker popup. */
   showShaders: boolean;
   /** Uncommitted shader params while a control is being dragged (node id → props). */
@@ -98,7 +103,9 @@ export const useEditor = create<EditorState>(() => ({
   focusedThreadId: null,
   agentOpened: null,
   pendingComment: null,
-  agentChat: { items: [], running: false, usage: null, open: false },
+  agentChat: { key: null, items: [], running: false, usage: null, open: false },
+  selectionPrompt: false,
+  speech: null,
   showShaders: false,
   shaderPreview: {},
   figmaPrompt: null,

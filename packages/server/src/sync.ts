@@ -13,9 +13,16 @@ import {
   type EditorCommand,
   type OpenFileResult,
   type ResourceInfo,
+  type SiteInfo,
+  type SpeechStatus,
   type ViewState,
+  type AgentTarget,
 } from '@openpaper/core';
 import type { AgentService } from './agent/agent.ts';
+import type { SpeechService } from './speech/service.ts';
+import { detectFolderForUrl, inspectFolder, pickFolder } from './sites/folders.ts';
+import type { SiteProxies } from './sites/proxy.ts';
+import { normalizeSiteUrl, type SiteRecord, type SiteStore } from './sites/store.ts';
 import type { AgentSettings, Effort, Runner } from './agent/settings.ts';
 import { executeCommand } from './commands.ts';
 import { HARNESSES, installHarness } from './harness.ts';
@@ -33,6 +40,36 @@ export interface SyncOptions {
   agents: AgentService;
   agentSettings: AgentSettings;
   figmaSettings?: FigmaSettings;
+  /** Local speech-to-text behind the mic buttons (unset: voice input unavailable). */
+  speech?: SpeechService;
+  /** The user's own running sites, framed through per-site proxies (unset: no live sites). */
+  sites?: { store: SiteStore; proxies: SiteProxies };
+}
+
+/** A site as the editor sees it (the proxy port is server bookkeeping). */
+function siteInfo({ proxyPort: _port, ...site }: SiteRecord): SiteInfo {
+  return site;
+}
+
+/** Whether anything answers at a URL (any HTTP status counts). */
+async function reachable(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(2500) });
+    await res.body?.cancel();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const NO_SPEECH: SpeechStatus = { engine: 'Voice input', state: 'unavailable', sizeBytes: 0, downloadedBytes: 0, error: 'Voice input is not set up on this server.' };
+
+/** 16-bit little-endian PCM (base64) → samples in [-1, 1]. */
+function decodePcm16(base64: string): Float32Array {
+  const bytes = Buffer.from(base64, 'base64');
+  const samples = new Float32Array(bytes.length >> 1);
+  for (let i = 0; i < samples.length; i++) samples[i] = bytes.readInt16LE(i * 2) / 32768;
+  return samples;
 }
 
 function localUserName(): string {
@@ -45,7 +82,7 @@ function localUserName(): string {
 }
 
 /** WebSocket endpoint for editors: commands in, patches/presence/activity out. */
-export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings, figmaSettings }: SyncOptions) {
+export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings, figmaSettings, speech, sites }: SyncOptions) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 * 1024 });
   const userName = localUserName();
 
@@ -193,16 +230,87 @@ export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings
         return { items: chat.items, running: chat.running, usage: chat.usage };
       }
       case 'agent.send': {
-        const fileId = String(params.fileId);
-        await env.hub.get(fileId);
-        const chat = agents.chat(fileId);
-        if (chat.running) throw new Error('The agent is already working on this file.');
-        void chat.send(String(params.text ?? '').slice(0, 20_000));
+        // The chat key is a file id, or `site:<id>` for a live site.
+        const key = String(params.fileId);
+        if (key.startsWith('site:')) {
+          if (!sites?.store.get(key.slice('site:'.length))) throw new Error('This site no longer exists.');
+        } else await env.hub.get(key);
+        const chat = agents.chat(key);
+        if (chat.running) throw new Error('The agent is already working on this.');
+        const target = params.target && typeof params.target === 'object' ? (params.target as AgentTarget) : undefined;
+        const page = typeof params.page === 'string' ? params.page.slice(0, 2000) : undefined;
+        void chat.send(String(params.text ?? '').slice(0, 20_000), { target, page });
         return null;
       }
       case 'agent.stop':
         agents.chat(String(params.fileId)).stop();
         return null;
+      // ---- live sites (the user's own dev server, framed through a proxy) ----
+      case 'sites.list':
+        return sites ? sites.store.list().map(siteInfo) : [];
+      case 'sites.create': {
+        if (!sites) throw new Error('Live sites are not available on this server.');
+        return siteInfo(await sites.store.create({ url: String(params.url ?? ''), folder: String(params.folder ?? '') }));
+      }
+      case 'sites.update': {
+        if (!sites) throw new Error('Live sites are not available on this server.');
+        const patch = {
+          ...(typeof params.url === 'string' ? { url: params.url } : {}),
+          ...(typeof params.folder === 'string' ? { folder: params.folder } : {}),
+          ...(typeof params.name === 'string' ? { name: params.name } : {}),
+        };
+        return siteInfo(await sites.store.update(String(params.id), patch));
+      }
+      case 'sites.delete': {
+        const id = String(params.id);
+        await sites?.proxies.stop(id);
+        agents.chat(`site:${id}`).reset();
+        await sites?.store.delete(id);
+        return null;
+      }
+      case 'sites.open': {
+        const id = String(params.id);
+        const site = sites?.store.get(id);
+        if (!sites || !site) throw new Error('This site no longer exists.');
+        const { proxyUrl } = await sites.proxies.start(site);
+        conn.subscriptions.add(`site:${id}`);
+        const opened = await sites.store.update(id, { lastOpenedAt: new Date().toISOString() });
+        return { site: siteInfo(opened), proxyUrl };
+      }
+      case 'sites.close':
+        conn.subscriptions.delete(`site:${String(params.id)}`);
+        return null;
+      case 'sites.pickFolder':
+        return pickFolder({ initial: typeof params?.start === 'string' && params.start ? params.start : undefined });
+      case 'sites.inspectFolder':
+        return inspectFolder(String(params.path ?? ''));
+      // Is the dev server up? / Which folder does it run from? (Separate: finding the folder can take seconds.)
+      case 'sites.probe':
+      case 'sites.detect': {
+        let url: string;
+        try {
+          url = normalizeSiteUrl(String(params.url ?? ''));
+        } catch {
+          return method === 'sites.probe' ? { reachable: false } : { folder: null };
+        }
+        return method === 'sites.probe' ? { reachable: await reachable(url) } : { folder: await detectFolderForUrl(url).catch(() => null) };
+      }
+      // ---- voice input (transcribed on this machine) ----
+      case 'speech.status':
+        return speech?.status() ?? NO_SPEECH;
+      case 'speech.install':
+        if (!speech) throw new Error(NO_SPEECH.error);
+        // Progress and failures arrive as `speech` pushes.
+        void speech.install().catch(() => {});
+        return speech.status();
+      case 'speech.preload':
+        void speech?.preload();
+        return null;
+      case 'speech.transcribe': {
+        if (!speech) throw new Error(NO_SPEECH.error);
+        const { text } = await speech.transcribe(decodePcm16(String(params.audio ?? '')), Number(params.sampleRate) || 16_000);
+        return { text };
+      }
       case 'agent.reset':
         agents.chat(String(params.fileId)).reset();
         return null;

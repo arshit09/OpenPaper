@@ -19,9 +19,9 @@ await build({
   format: 'esm',
   target: 'node20',
   sourcemap: true,
-  // npm dependencies of this package stay external; workspace code (core) and its
-  // small pure-JS dependencies are bundled in.
-  external: [...Object.keys(pkg.dependencies).filter((d) => d !== '@openpaper/core'), 'esbuild'],
+  // npm dependencies of this package stay external (optional ones too: sherpa-onnx-node is a
+  // native addon, loaded lazily); workspace code (core) and its small pure-JS dependencies are bundled in.
+  external: [...Object.keys({ ...pkg.dependencies, ...pkg.optionalDependencies }).filter((d) => d !== '@openpaper/core'), 'esbuild'],
   // (src/cli.ts carries the #!/usr/bin/env node line; esbuild keeps it first.)
   banner: {
     js: "import { createRequire as __opCreateRequire } from 'node:module'; const require = __opCreateRequire(import.meta.url);",

@@ -9,7 +9,8 @@ import { writeFileAtomic } from '../fs-utils.ts';
 /**
  * Runs the built-in agent on the user's own Claude Code install, so it uses their Claude Code sign-in.
  * OpenPaper never reads or handles those credentials: it launches the unmodified `claude` program in
- * headless mode, connected to OpenPaper's MCP endpoint with only the design tools enabled.
+ * headless mode, connected to OpenPaper's MCP endpoint with only the design tools enabled. For a live
+ * site it runs in the site's project folder with only the file tools instead.
  */
 
 export interface ClaudeCodeStatus {
@@ -124,7 +125,15 @@ export interface ClaudeCodeRun {
   effort: string;
   systemPrompt: string;
   signal: AbortSignal;
+  /**
+   * Edit code in this project folder instead of designing: Claude Code's own file tools and default
+   * system prompt (with `systemPrompt` appended), run from the folder, so it also reads its CLAUDE.md.
+   */
+  project?: string;
 }
+
+/** File tools for live-site runs. No shell: the user's dev server is already running and hot-reloads. */
+const PROJECT_TOOLS = 'Read,Edit,Write,Glob,Grep';
 
 /** Run one turn of headless Claude Code and yield its stream-json messages until it exits. */
 export async function* runClaudeCode(host: ClaudeCodeHost, run: ClaudeCodeRun): AsyncGenerator<ClaudeCodeMessage> {
@@ -132,28 +141,41 @@ export async function* runClaudeCode(host: ClaudeCodeHost, run: ClaudeCodeRun): 
   if (!exe) throw new Error(NOT_INSTALLED);
 
   await mkdir(host.dir, { recursive: true });
-  const mcpConfig = join(host.dir, 'mcp.json');
-  const promptFile = join(host.dir, 'system-prompt.md');
-  await writeFileAtomic(mcpConfig, JSON.stringify({ mcpServers: { openpaper: { type: 'http', url: host.mcpUrl } } }, null, 2));
-  await writeFileAtomic(promptFile, run.systemPrompt);
-
-  const args = [
-    '-p',
-    '--output-format', 'stream-json',
-    '--verbose',
-    '--include-partial-messages',
-    '--mcp-config', mcpConfig,
-    '--strict-mcp-config',
-    // Only the design tools: no shell, file or web tools, and nothing waits on a permission prompt.
-    '--tools', '',
-    '--allowedTools', 'mcp__openpaper',
-    '--permission-mode', 'dontAsk',
-    '--system-prompt-file', promptFile,
-    '--model', run.model,
-    '--effort', run.effort,
-    ...(run.resume ? ['--resume', run.resume] : []),
-  ];
-  const child = spawnClaude(exe, args, host.dir);
+  const stream = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages'];
+  const turn = ['--model', run.model, '--effort', run.effort, ...(run.resume ? ['--resume', run.resume] : [])];
+  let args: string[];
+  if (run.project) {
+    const promptFile = join(host.dir, 'site-prompt.md');
+    await writeFileAtomic(promptFile, run.systemPrompt);
+    args = [
+      ...stream,
+      '--strict-mcp-config',
+      // File tools only. Edits inside the project folder are accepted; anything that would ask is refused.
+      '--tools', PROJECT_TOOLS,
+      '--allowedTools', PROJECT_TOOLS,
+      '--permission-mode', 'acceptEdits',
+      '--permission-prompts', 'none',
+      '--append-system-prompt-file', promptFile,
+      ...turn,
+    ];
+  } else {
+    const mcpConfig = join(host.dir, 'mcp.json');
+    const promptFile = join(host.dir, 'system-prompt.md');
+    await writeFileAtomic(mcpConfig, JSON.stringify({ mcpServers: { openpaper: { type: 'http', url: host.mcpUrl } } }, null, 2));
+    await writeFileAtomic(promptFile, run.systemPrompt);
+    args = [
+      ...stream,
+      '--mcp-config', mcpConfig,
+      '--strict-mcp-config',
+      // Only the design tools: no shell, file or web tools, and nothing waits on a permission prompt.
+      '--tools', '',
+      '--allowedTools', 'mcp__openpaper',
+      '--permission-mode', 'dontAsk',
+      '--system-prompt-file', promptFile,
+      ...turn,
+    ];
+  }
+  const child = spawnClaude(exe, args, run.project ?? host.dir);
   const exited = new Promise<{ code: number | null; error: Error | null }>((resolve) => {
     child.once('error', (error) => resolve({ code: null, error }));
     child.once('close', (code) => resolve({ code, error: null }));

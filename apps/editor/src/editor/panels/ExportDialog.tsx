@@ -3,8 +3,18 @@ import { X, Download, Loader2 } from 'lucide-react';
 import { displayName } from '@openpaper/core';
 import { useEditor, setState, toast } from '../../state/store.ts';
 import { client } from '../../sync/session.ts';
+import { Select } from '../../ui/Select.tsx';
 
 type Format = 'png' | 'jpg' | 'webp' | 'svg' | 'pdf';
+
+const FORMATS: { value: Format; label: string }[] = [
+  { value: 'png', label: 'PNG' },
+  { value: 'jpg', label: 'JPG' },
+  { value: 'webp', label: 'WebP' },
+  { value: 'svg', label: 'SVG (vector layers)' },
+  { value: 'pdf', label: 'PDF' },
+];
+const SCALES = [0.5, 1, 2, 3, 4].map((s) => ({ value: String(s), label: `${s}x` }));
 
 function download(base64: string, mimeType: string, name: string) {
   const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
@@ -62,23 +72,11 @@ export function ExportDialog() {
           <div className="op-grid-2">
             <label className="op-field">
               <span className="op-label">Format</span>
-              <select className="op-input" value={format} onChange={(e) => setFormat(e.target.value as Format)}>
-                <option value="png">PNG</option>
-                <option value="jpg">JPG</option>
-                <option value="webp">WebP</option>
-                <option value="svg">SVG (vector layers)</option>
-                <option value="pdf">PDF</option>
-              </select>
+              <Select value={format} options={FORMATS} onChange={setFormat} />
             </label>
             <label className="op-field">
               <span className="op-label">Scale</span>
-              <select className="op-input" value={scale} disabled={format === 'pdf' || format === 'svg'} onChange={(e) => setScale(Number(e.target.value))}>
-                {[0.5, 1, 2, 3, 4].map((s) => (
-                  <option key={s} value={s}>
-                    {s}x
-                  </option>
-                ))}
-              </select>
+              <Select value={String(scale)} options={SCALES} disabled={format === 'pdf' || format === 'svg'} onChange={(v) => setScale(Number(v))} />
             </label>
           </div>
           <button className="op-btn primary" style={{ marginTop: 4 }} disabled={busy || !targets.length} onClick={() => void run()}>

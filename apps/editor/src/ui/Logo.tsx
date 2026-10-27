@@ -1,3 +1,5 @@
+import type { CSSProperties } from 'react';
+
 // The OpenPaper mark: a disc of paper with one edge peeled back (masters in docs/brand/logo).
 // The sheet follows the text colour, so it flips with the theme; the fold stays brand grey.
 const SHEET = 'M83.55 0.18A108 108 0 1 0 215.82 132.45Z';
@@ -21,5 +23,19 @@ export function Logo({ size = 22, withText = true }: { size?: number; withText?:
         {withText && <path d={WORDMARK} fill="currentColor" />}
       </svg>
     </span>
+  );
+}
+
+// The design agent ("Paper Buddy"): the same peeled disc on a 24px grid, with two eyes cut through the sheet.
+const AGENT_SHEET =
+  'M9.62 1.52A10.5 10.5 0 1 0 22.48 14.38A10.5 10.5 0 0 1 9.62 1.52ZM7.6 12.6a1.2 1.2 0 0 1 1.2 1.2v1.6a1.2 1.2 0 0 1-2.4 0v-1.6a1.2 1.2 0 0 1 1.2-1.2ZM12.2 12.6a1.2 1.2 0 0 1 1.2 1.2v1.6a1.2 1.2 0 0 1-2.4 0v-1.6a1.2 1.2 0 0 1 1.2-1.2Z';
+const AGENT_FOLD = 'M9.62 1.52A10.5 10.5 0 0 0 22.48 14.38Z';
+
+export function AgentMark({ size = 16, className, style }: { size?: number; className?: string; style?: CSSProperties }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className} style={style} aria-hidden>
+      <path d={AGENT_SHEET} fill="currentColor" fillRule="evenodd" />
+      <path d={AGENT_FOLD} fill={FOLD_COLOR} />
+    </svg>
   );
 }

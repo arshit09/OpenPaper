@@ -217,6 +217,16 @@ export const SHORTCUTS: Shortcut[] = [
   // ---- Edit ----
   { id: 'undo', group: 'Edit', label: 'Undo', keys: ['Mod+Z'], repeat: true, run: () => void undo() },
   { id: 'redo', group: 'Edit', label: 'Redo', keys: ['Mod+Shift+Z', 'Mod+Y'], repeat: true, run: () => void redo() },
+  {
+    id: 'ask-agent',
+    group: 'Edit',
+    label: 'Ask the agent (about the selection)',
+    keys: ['Mod+K'],
+    run: (_e, s) => {
+      if (s.selection.length) setState({ selectionPrompt: true });
+      else document.querySelector<HTMLTextAreaElement>('.op-dock-composer textarea')?.focus();
+    },
+  },
   { id: 'cut', group: 'Edit', label: 'Cut', show: ['Mod+X'] },
   { id: 'copy', group: 'Edit', label: 'Copy (as HTML)', show: ['Mod+C'] },
   { id: 'paste', group: 'Edit', label: 'Paste (into a selected frame)', show: ['Mod+V'] },

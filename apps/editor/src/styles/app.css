@@ -31,6 +31,8 @@
   --op-left-w: 248px;
   --op-right-w: 272px;
   --op-ease: cubic-bezier(0.2, 0, 0, 1);
+  /* Moves at once, then settles: for panels that open on click. */
+  --op-ease-out: cubic-bezier(0.32, 0.72, 0, 1);
   --op-fast: 0.12s;
   color-scheme: light;
 }
@@ -252,9 +254,6 @@ textarea.op-input {
   padding: 6px 7px;
   resize: vertical;
   line-height: 1.45;
-}
-select.op-input {
-  padding: 0 4px;
 }
 
 .op-label {
@@ -634,6 +633,63 @@ select.op-input {
   background: var(--op-border);
 }
 
+/* Custom dropdown (ui/Select.tsx): an .op-input trigger and a popover list. */
+.op-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 5px 0 7px;
+  text-align: left;
+  cursor: default;
+}
+.op-select > .op-truncate {
+  flex: 1;
+}
+.op-select-chevron {
+  flex-shrink: 0;
+  color: var(--op-text-3);
+}
+.op-select[aria-expanded='true'] {
+  border-color: var(--op-accent);
+  background: var(--op-panel);
+}
+.op-select:disabled {
+  opacity: 0.45;
+  border-color: transparent;
+}
+.op-select-menu {
+  min-width: 0;
+  max-width: 320px;
+  max-height: 320px;
+  overflow-y: auto;
+  animation: op-select-in 0.12s var(--op-ease) both;
+}
+.op-select-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px 0 6px;
+  border-radius: var(--op-radius-sm);
+  white-space: nowrap;
+  cursor: default;
+}
+.op-select-option[data-active] {
+  background: var(--op-accent);
+  color: var(--op-accent-text);
+}
+.op-select-check {
+  display: inline-flex;
+  width: 14px;
+  flex-shrink: 0;
+}
+@keyframes op-select-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+}
+
 .op-dialog-backdrop {
   position: fixed;
   inset: 0;
@@ -846,9 +902,10 @@ select.op-input {
 /* ---------- Built-in agent dock ---------- */
 .op-dock {
   position: absolute;
-  left: 50%;
+  left: 0;
+  right: 0;
   bottom: 16px;
-  transform: translateX(-50%);
+  margin: 0 auto;
   width: min(560px, calc(100% - 32px));
   z-index: 40;
   display: flex;
@@ -858,21 +915,39 @@ select.op-input {
   border: 1px solid var(--op-border);
   box-shadow: var(--op-shadow);
   overflow: hidden;
+  transition: border-color 0.2s var(--op-ease-out);
+  /* Its own compositor layer, so opening and closing repaint the dock and not the canvas under it.
+     (Centered with margins, not translateX(-50%), which can land on a half pixel and blur the text.) */
+  will-change: transform;
 }
-/* The conversation stays mounted and folds open/closed by animating its row height. */
+.op-dock:focus-within {
+  border-color: var(--op-border-strong);
+}
+/* The conversation stays mounted and folds open/closed by animating its row height. Its content keeps
+   its open size the whole time, so the fold only clips it: nothing reflows or scrolls mid-animation. */
 .op-dock-body {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows 0.2s var(--op-ease);
+  transition: grid-template-rows 0.24s var(--op-ease-out);
 }
 .op-dock-body.open {
   grid-template-rows: 1fr;
+  transition-duration: 0.32s;
 }
 .op-dock-body > div {
   min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  opacity: 0;
+  transition: opacity 0.14s ease;
+}
+.op-dock-body.open > div {
+  opacity: 1;
+  transition: opacity 0.22s ease 0.04s;
+}
+.op-dock-body > div > * {
+  flex-shrink: 0;
 }
 .op-dock-row {
   display: flex;
@@ -887,6 +962,12 @@ select.op-input {
   align-items: flex-end;
   gap: 8px;
   padding: 8px;
+  border-top: 1px solid transparent;
+  transition: border-color 0.24s var(--op-ease-out);
+}
+/* Separate the prompt from the conversation above it while the dock is open. */
+.op-dock-body.open + .op-dock-composer {
+  border-top-color: var(--op-border);
 }
 .op-dock-composer textarea {
   resize: none;
@@ -909,7 +990,27 @@ select.op-input {
 .op-dock-composer > .op-dock-spark {
   flex-shrink: 0;
   margin: 0 0 9px 4px;
-  color: var(--op-agent);
+  color: var(--op-text);
+}
+/* The mark and the expand button fold out of the composer while the conversation is open, instead of
+   popping out and jolting the prompt sideways. */
+.op-dock-composer > .op-dock-fold {
+  overflow: hidden;
+  transition:
+    width 0.24s var(--op-ease-out),
+    margin 0.24s var(--op-ease-out),
+    opacity 0.16s ease,
+    transform 0.24s var(--op-ease-out),
+    background-color var(--op-fast) ease,
+    color var(--op-fast) ease;
+}
+.op-dock-body.open + .op-dock-composer > .op-dock-fold {
+  width: 0;
+  /* Swallow the flex gap next to it too. */
+  margin-left: 0;
+  margin-right: -8px;
+  opacity: 0;
+  transform: scale(0.6);
 }
 .op-thinking {
   height: 22px;
@@ -923,11 +1024,133 @@ select.op-input {
   background: var(--op-active);
   color: var(--op-text);
 }
+
+.op-thinking-text {
+  margin: 2px 0 6px;
+  padding-left: 8px;
+  border-left: 2px solid var(--op-border-strong);
+}
+
+/* Markdown in agent replies (ui/MarkdownView.tsx). */
+.op-md {
+  overflow-wrap: anywhere;
+}
+.op-md > :first-child {
+  margin-top: 0;
+}
+.op-md > :last-child {
+  margin-bottom: 0;
+}
+.op-md p,
+.op-md ul,
+.op-md ol,
+.op-md pre,
+.op-md blockquote,
+.op-md .op-md-table {
+  margin: 0 0 8px;
+}
+.op-md h1,
+.op-md h2,
+.op-md h3,
+.op-md h4,
+.op-md h5,
+.op-md h6 {
+  margin: 12px 0 4px;
+  font-size: inherit;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.op-md h1 {
+  font-size: 15px;
+}
+.op-md h2 {
+  font-size: 14px;
+}
+.op-md h3 {
+  font-size: 13px;
+}
+.op-md strong {
+  font-weight: 600;
+}
+.op-md ul,
+.op-md ol {
+  padding-left: 18px;
+}
+.op-md li {
+  margin: 2px 0;
+}
+.op-md li::marker {
+  color: var(--op-text-3);
+}
+.op-md li > p,
+.op-md li > ul,
+.op-md li > ol {
+  margin: 0;
+}
+.op-md li > p + p {
+  margin-top: 6px;
+}
+.op-md a {
+  color: var(--op-accent);
+  text-decoration: none;
+}
+.op-md a:hover {
+  text-decoration: underline;
+}
+.op-md code {
+  padding: 0 4px;
+  border-radius: 4px;
+  border: 1px solid var(--op-border);
+  background: var(--op-panel-2);
+  font-family: var(--op-mono);
+  font-size: 0.92em;
+}
+.op-md pre {
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--op-border);
+  background: var(--op-panel-2);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.op-md pre code {
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: inherit;
+  white-space: pre;
+}
+.op-md blockquote {
+  padding-left: 10px;
+  border-left: 2px solid var(--op-border-strong);
+  color: var(--op-text-2);
+}
+.op-md hr {
+  height: 1px;
+  margin: 10px 0;
+  border: none;
+  background: var(--op-border);
+}
+.op-md-table table {
+  border-collapse: collapse;
+  font-size: 11.5px;
+}
+.op-md-table th,
+.op-md-table td {
+  padding: 4px 8px;
+  border: 1px solid var(--op-border);
+  text-align: left;
+  vertical-align: top;
+}
+.op-md-table th {
+  background: var(--op-panel-2);
+  font-weight: 600;
+}
 /* Fields next to 28px buttons in dialogs and the dock match their height. */
 .op-dock input.op-input,
-.op-dock select.op-input,
+.op-dock .op-select,
 .op-dialog input.op-input,
-.op-dialog select.op-input {
+.op-dialog .op-select {
   height: 28px;
 }
 
@@ -1020,6 +1243,314 @@ select.op-input {
   color: var(--op-text);
 }
 
+/* ---------- Ask the agent about what you point at (ui/PointPrompt.tsx) ---------- */
+.op-point-btn {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--op-border-strong);
+  background: var(--op-panel);
+  color: var(--op-text);
+  box-shadow: var(--op-shadow);
+  pointer-events: auto;
+  cursor: pointer;
+  z-index: 30;
+  animation: op-point-in 0.16s var(--op-ease-out) both;
+  transition:
+    transform var(--op-fast) var(--op-ease),
+    border-color var(--op-fast) ease;
+}
+.op-point-btn:hover {
+  transform: scale(1.08);
+  border-color: var(--op-text-3);
+}
+.op-point-btn:active {
+  transform: scale(0.96);
+}
+.op-point-btn:focus-visible {
+  outline: 2px solid var(--op-accent);
+  outline-offset: 1px;
+}
+.op-point-prompt {
+  position: absolute;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  background: var(--op-panel);
+  border: 1px solid var(--op-border-strong);
+  box-shadow: var(--op-shadow);
+  pointer-events: auto;
+  overflow: hidden;
+  cursor: default;
+  user-select: text;
+  animation: op-point-in 0.18s var(--op-ease-out) both;
+}
+.op-point-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 4px 4px 4px 10px;
+}
+.op-point-row textarea {
+  flex: 1;
+  resize: none;
+  min-height: 30px;
+  max-height: 120px;
+  padding: 6px 2px;
+  background: transparent;
+  border: none;
+  font-size: 13px;
+  line-height: 18px;
+}
+.op-point-row textarea:hover,
+.op-point-row textarea:focus {
+  background: transparent;
+  border: none;
+}
+.op-point-row > button {
+  margin-bottom: 1px;
+}
+.op-point-mark {
+  flex-shrink: 0;
+  margin-bottom: 7px;
+  color: var(--op-text);
+}
+.op-point-status {
+  padding: 8px 10px 4px;
+  border-top: 1px solid var(--op-border);
+  color: var(--op-text-2);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.op-btn.op-point-link {
+  height: 22px;
+  margin-left: -6px;
+  padding: 0 6px;
+  gap: 4px;
+  color: var(--op-text-3);
+  font-size: 11px;
+}
+.op-clamp-3 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+/* What a chat message pointed at, above its bubble. */
+.op-chat-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid var(--op-border);
+  background: var(--op-panel-2);
+  color: var(--op-text-2);
+  font-size: 10.5px;
+}
+@keyframes op-point-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+
+/* ---------- Voice input (ui/VoiceButton.tsx) ---------- */
+.op-voice {
+  position: relative;
+}
+.op-voice.recording,
+.op-voice.recording:hover:not(:disabled) {
+  border-radius: 999px;
+  background: var(--op-text);
+  color: var(--op-panel);
+  /* The ring breathes with the input level (--level, 0–1, set every frame). */
+  box-shadow: 0 0 0 calc(2px + var(--level, 0) * 7px) color-mix(in srgb, var(--op-text) 16%, transparent);
+  transition: box-shadow 0.08s linear;
+}
+/* Download progress (--progress, 0–1) as a ring around the mic. */
+.op-voice.downloading::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: 999px;
+  background: conic-gradient(var(--op-text) calc(var(--progress, 0) * 1turn), var(--op-border) 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+  pointer-events: none;
+}
+.op-voice-panel {
+  position: fixed;
+  z-index: 1000;
+  width: 284px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--op-border);
+  background: var(--op-raised);
+  box-shadow: var(--op-shadow);
+  font-size: 12px;
+  animation: op-point-in 0.16s var(--op-ease-out) both;
+}
+.op-voice-panel .op-label {
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.op-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--op-active);
+  overflow: hidden;
+}
+.op-progress > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--op-text);
+  transition: width 0.2s linear;
+}
+
+/* ---------- Live site (site/SiteView.tsx) ---------- */
+.op-site {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--op-canvas);
+}
+.op-site-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: var(--op-topbar-h);
+  padding: 0 8px;
+  background: var(--op-panel);
+  border-bottom: 1px solid var(--op-border);
+  flex-shrink: 0;
+  min-width: 0;
+}
+.op-site-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 34%;
+}
+.op-btn.op-site-folder {
+  height: 24px;
+  min-width: 0;
+  padding: 0 7px;
+  gap: 4px;
+  color: var(--op-text-3);
+  font-size: 11px;
+  font-family: var(--op-mono);
+}
+.op-site-address {
+  flex: 1;
+  min-width: 120px;
+  max-width: 520px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 28px;
+  padding: 0 2px 0 3px;
+  border-radius: var(--op-radius-sm);
+  background: var(--op-panel-2);
+  border: 1px solid var(--op-border);
+}
+.op-site-address .op-input {
+  height: 24px;
+  padding: 0 6px;
+  border: none;
+  background: transparent;
+  font-family: var(--op-mono);
+  font-size: 11.5px;
+}
+.op-site-address .op-input:hover,
+.op-site-address .op-input:focus {
+  border: none;
+  background: transparent;
+}
+.op-btn.op-site-select {
+  background: var(--op-text);
+  border-color: var(--op-text);
+  color: var(--op-panel);
+}
+.op-btn.op-site-select:hover:not(:disabled) {
+  background: var(--op-text);
+  filter: brightness(1.15);
+}
+.op-segmented {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border-radius: var(--op-radius-sm);
+  background: var(--op-panel-2);
+  border: 1px solid var(--op-border);
+}
+.op-segmented .op-icon-btn {
+  width: 26px;
+  height: 22px;
+}
+.op-segmented .op-icon-btn.pressed {
+  background: var(--op-panel);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.op-site-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+}
+.op-site-frame {
+  width: 100%;
+  height: 100%;
+  background: #fff;
+}
+.op-site-frame.device {
+  height: calc(100% - 32px);
+  margin-top: 16px;
+  max-width: calc(100% - 32px);
+  border-radius: 12px;
+  border: 1px solid var(--op-border-strong);
+  box-shadow: var(--op-shadow);
+  overflow: hidden;
+}
+.op-site-frame iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+.op-site-hint {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 16px;
+  line-height: 1.45;
+}
+.op-file-thumb.op-site-thumb {
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px;
+  font-family: var(--op-mono);
+  font-size: 11px;
+}
+.op-file-thumb.op-site-thumb > span {
+  max-width: 100%;
+}
+
 /* ---------- Motion ---------- */
 @keyframes op-fade-in {
   from {
@@ -1065,10 +1596,23 @@ select.op-input {
   .op-card,
   .op-file-card,
   .op-crumb,
+  .op-dock,
   .op-dock-body,
-  .op-shader-thumb {
+  .op-dock-body > div,
+  .op-dock-composer,
+  .op-dock-composer > .op-dock-fold,
+  .op-shader-thumb,
+  .op-point-btn,
+  .op-voice.recording,
+  .op-progress > i {
     transition: none;
   }
+  .op-point-btn,
+  .op-point-prompt,
+  .op-voice-panel {
+    animation: none;
+  }
+  .op-select-menu,
   .op-dialog-backdrop,
   .op-dialog,
   .op-toast,

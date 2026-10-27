@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FilePlus2, Folder, FileText, Bot, Trash2, Pencil, Sparkles } from 'lucide-react';
-import type { ResourceInfo } from '@openpaper/core';
+import { FilePlus2, Folder, FileText, Bot, Trash2, Pencil, Sparkles, AppWindow } from 'lucide-react';
+import type { ResourceInfo, SiteInfo } from '@openpaper/core';
 import { useEditor, setState, toast } from '../state/store.ts';
 import { client, refreshResources } from '../sync/session.ts';
 import { Logo } from '../ui/Logo.tsx';
+import { SiteDialog } from '../site/SiteDialog.tsx';
 
 function timeAgo(iso: string): string {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
@@ -18,9 +19,14 @@ export function Home() {
   const connection = useEditor((s) => s.connection);
   const agents = useEditor((s) => s.agents);
   const [folderId, setFolderId] = useState<string | null>(null);
+  const [sites, setSites] = useState<SiteInfo[]>([]);
+  /** The live-site dialog: adding one (site null) or editing one. */
+  const [siteDialog, setSiteDialog] = useState<{ site: SiteInfo | null } | null>(null);
 
   useEffect(() => {
-    if (connection === 'open') void refreshResources();
+    if (connection !== 'open') return;
+    void refreshResources();
+    client.request<SiteInfo[]>('sites.list').then(setSites).catch(() => {});
   }, [connection]);
 
   const items = useMemo(
@@ -49,6 +55,12 @@ export function Home() {
     await client.request('resource.rename', { resourceId: r.id, name });
   }
 
+  async function removeSite(site: SiteInfo) {
+    if (!confirm(`Remove "${site.name}" from OpenPaper? Your project folder and its files stay as they are.`)) return;
+    await client.request('sites.delete', { id: site.id });
+    setSites((list) => list.filter((s) => s.id !== site.id));
+  }
+
   async function remove(r: ResourceInfo) {
     if (!confirm(`Delete "${r.name}"? This cannot be undone.`)) return;
     await client.request('resource.delete', { resourceId: r.id });
@@ -74,6 +86,9 @@ export function Home() {
         <button className="op-btn outline" onClick={() => setState({ showConnect: true })}>
           <Bot size={15} /> Connect an agent
         </button>
+        <button className="op-btn outline" title="Open the site you're building and edit it with the agent" onClick={() => setSiteDialog({ site: null })}>
+          <AppWindow size={15} /> Open live site
+        </button>
         <button className="op-btn primary" onClick={createFile}>
           <FilePlus2 size={15} /> New file
         </button>
@@ -81,6 +96,57 @@ export function Home() {
 
       <main className="op-scroll" style={{ flex: 1, padding: '28px 32px' }}>
         <div style={{ maxWidth: 1080, margin: '0 auto' }}>
+          {!folder && sites.length > 0 && (
+            <section style={{ marginBottom: 32 }}>
+              <div className="op-row" style={{ marginBottom: 18, gap: 10 }}>
+                <h1 style={{ flex: 1, fontSize: 20, margin: 0, fontWeight: 650, lineHeight: '28px' }}>Live sites</h1>
+                <button className="op-btn" onClick={() => setSiteDialog({ site: null })}>
+                  <AppWindow size={14} /> Add site
+                </button>
+              </div>
+              <div className="op-file-grid">
+                {sites.map((site) => {
+                  const openSite = () => (location.hash = `#/site/${site.id}`);
+                  return (
+                    <div
+                      key={site.id}
+                      className="op-file-card"
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Open site ${site.name}`}
+                      onClick={openSite}
+                      onKeyDown={(e) => {
+                        if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
+                        e.preventDefault();
+                        openSite();
+                      }}
+                    >
+                      <div className="op-file-thumb op-site-thumb">
+                        <AppWindow size={28} />
+                        <span className="op-truncate">{site.url.replace(/^https?:\/\//, '').replace(/\/$/, '')}</span>
+                      </div>
+                      <div className="op-file-meta">
+                        <div>
+                          <div className="op-truncate" style={{ fontWeight: 550 }} title={site.name}>
+                            {site.name}
+                          </div>
+                          <div className="op-label op-truncate" title={site.folder}>
+                            {site.folder}
+                          </div>
+                        </div>
+                        <button className="op-icon-btn small" title="Edit" onClick={(e) => (e.stopPropagation(), setSiteDialog({ site }))}>
+                          <Pencil size={13} />
+                        </button>
+                        <button className="op-icon-btn small" title="Remove" onClick={(e) => (e.stopPropagation(), void removeSite(site))}>
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
           <div className="op-row" style={{ marginBottom: 18, gap: 10 }}>
             <h1 className="op-truncate" style={{ flex: 1, fontSize: 20, margin: 0, fontWeight: 650, lineHeight: '28px' }} title={folder?.name}>
               {folder ? (
@@ -121,6 +187,9 @@ export function Home() {
                 </button>
                 <button className="op-btn outline" onClick={() => setState({ showConnect: true })}>
                   <Bot size={15} /> Connect an agent
+                </button>
+                <button className="op-btn outline" onClick={() => setSiteDialog({ site: null })}>
+                  <AppWindow size={15} /> Open live site
                 </button>
               </div>
             </div>
@@ -165,6 +234,17 @@ export function Home() {
           {agents.length > 0 && <p className="op-label" style={{ marginTop: 16 }}>{agents.length} agent(s) connected</p>}
         </div>
       </main>
+      {siteDialog && (
+        <SiteDialog
+          site={siteDialog.site ?? undefined}
+          onClose={() => setSiteDialog(null)}
+          onSaved={(saved) => {
+            setSiteDialog(null);
+            if (siteDialog.site) setSites((list) => list.map((s) => (s.id === saved.id ? saved : s)));
+            else location.hash = `#/site/${saved.id}`;
+          }}
+        />
+      )}
     </div>
   );
 }

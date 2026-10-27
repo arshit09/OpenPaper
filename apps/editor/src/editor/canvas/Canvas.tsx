@@ -170,6 +170,6 @@ const TEXT_INPUTS = /^(text|search|email|url|tel|password|number|date|datetime-l
 export function isTyping(e: Event): boolean {
   const t = e.target as HTMLElement | null;
   if (!t || typeof t.tagName !== 'string') return false;
-  if (t.isContentEditable || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT') return true;
+  if (t.isContentEditable || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.getAttribute('role') === 'combobox') return true;
   return t.tagName === 'INPUT' && TEXT_INPUTS.test((t as HTMLInputElement).type || 'text');
 }

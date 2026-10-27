@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import Anthropic from '@anthropic-ai/sdk';
-import type { AgentEvent } from '@openpaper/core';
+import { createSubtree, type AgentEvent, type SiteElementInfo, type SiteInfo } from '@openpaper/core';
 import { AgentService } from '../src/agent/agent.ts';
 import { claudeCodeStatus } from '../src/agent/claude-code.ts';
 import { AgentSettings } from '../src/agent/settings.ts';
@@ -228,7 +228,7 @@ if (args[0] === '--version') { console.log('9.9.9 (Claude Code)'); process.exit(
 if (args[0] === 'auth') { console.log(JSON.stringify({ loggedIn: true, authMethod: 'claude.ai', subscriptionType: 'max' })); process.exit(0); }
 let prompt = '';
 process.stdin.on('data', (d) => (prompt += d)).on('end', () => {
-  fs.appendFileSync(log, JSON.stringify({ args, prompt }) + '\\n');
+  fs.appendFileSync(log, JSON.stringify({ args, prompt, cwd: process.cwd() }) + '\\n');
   const out = (m) => process.stdout.write(JSON.stringify(m) + '\\n');
   const delta = (text) => out({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text } } });
   out({ type: 'system', subtype: 'init', session_id: 'sess-1', mcp_servers: [{ name: 'openpaper', status: 'connected' }] });
@@ -240,8 +240,11 @@ process.stdin.on('data', (d) => (prompt += d)).on('end', () => {
   out({ type: 'stream_event', event: { type: 'message_start' } });
   delta('Adding ');
   delta('an artboard.');
-  out({ type: 'stream_event', event: { type: 'content_block_start', content_block: { type: 'tool_use', id: 't1', name: 'mcp__openpaper__create_artboard' } } });
-  out({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: 'mcp__openpaper__create_artboard', input: { name: 'Board' } }] } });
+  const tool = prompt.includes('SITE_EDIT')
+    ? { id: 't1', name: 'Edit', input: { file_path: require('node:path').join(process.cwd(), 'src', 'App.tsx'), old_string: 'a', new_string: 'b' } }
+    : { id: 't1', name: 'mcp__openpaper__create_artboard', input: { name: 'Board' } };
+  out({ type: 'stream_event', event: { type: 'content_block_start', content_block: { type: 'tool_use', id: 't1', name: tool.name } } });
+  out({ type: 'assistant', message: { content: [{ type: 'tool_use', ...tool }] } });
   if (prompt.includes('HANG')) { setInterval(() => {}, 1000); return; }
   out({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: [{ type: 'text', text: 'ok' }] }] } });
   out({ type: 'stream_event', event: { type: 'message_start' } });
@@ -257,7 +260,7 @@ describe('built-in design agent on Claude Code', () => {
     (await readFile(log, 'utf8'))
       .trim()
       .split('\n')
-      .map((l) => JSON.parse(l) as { args: string[]; prompt: string });
+      .map((l) => JSON.parse(l) as { args: string[]; prompt: string; cwd: string });
 
   beforeAll(async () => {
     const dir = await mkdtemp(join(home, 'fake-claude-'));
@@ -282,6 +285,39 @@ describe('built-in design agent on Claude Code', () => {
     });
     return agents.chat(doc.id);
   }
+
+  /** A chat for a live site whose project lives in a temp folder. */
+  async function siteChat(runner: 'claude-code' | 'api' = 'claude-code') {
+    const folder = await mkdtemp(join(home, 'site-project-'));
+    const site: SiteInfo = { id: 'site1', name: 'My site', url: 'http://localhost:5173/', folder, createdAt: '', updatedAt: '' };
+    const settings = new AgentSettings(join(folder, '..', `site-${runner}-${Date.now()}.json`), async () => null);
+    await settings.update({ runner });
+    const agents = new AgentService({
+      runtime: new ToolRuntime(server.env),
+      settings,
+      getDoc: () => undefined,
+      viewFor: () => null,
+      getSite: (id) => (id === site.id ? site : undefined),
+      emit: () => {},
+      claudeCode: { mcpUrl: 'http://127.0.0.1:1/mcp', dir: join(home, 'claude-code'), command },
+    });
+    return { chat: agents.chat(`site:${site.id}`), folder };
+  }
+
+  const element: SiteElementInfo = {
+    selector: 'main > section.hero > a.btn',
+    tag: 'a',
+    classes: ['btn', 'primary'],
+    text: 'Get started',
+    html: '<a class="btn primary" href="/signup">Get started</a>',
+    rect: { x: 10, y: 20, width: 120, height: 40 },
+    attributes: { href: '/signup' },
+    styles: { 'border-radius': '4px' },
+    ancestors: [{ tag: 'section', classes: ['hero'] }],
+    source: { file: 'src/Hero.tsx', line: 12, column: 7 },
+    components: ['Hero', 'App'],
+    framework: 'react',
+  };
 
   it('runs a turn on Claude Code with only the design tools, then resumes its session', async () => {
     const events: AgentEvent[] = [];
@@ -342,5 +378,49 @@ describe('built-in design agent on Claude Code', () => {
     expect((await settings.info()).runner).toBe('api');
     await settings.update({ runner: 'claude-code' });
     expect(await settings.info()).toMatchObject({ runner: 'claude-code', claudeCode: { loggedIn: true, plan: 'max' } });
+  });
+
+  it('tells the agent which layers the user pointed at', async () => {
+    const chat = await claudeCodeChat('Pointing');
+    const live = await server.env.hub.get(chat.fileId);
+    const rootId = live.doc.pages[live.doc.pageList.find((p) => p.type === 'page')!.id]!.rootId;
+    const board = live.transact({ kind: 'user', id: 'u', name: 'u' }, 'Add', (tx) =>
+      createSubtree(tx, rootId, { component: 'Frame', label: 'Home', styles: { width: '400px', height: '400px' }, children: [{ component: 'Frame', label: 'Card' }] })
+    );
+    const card = live.doc.nodes[board.id]!.children[0]!;
+    await chat.send('Make it darker', { target: { label: 'Card', nodeIds: [card] } });
+    expect(chat.items[0]).toMatchObject({ kind: 'user', text: 'Make it darker', target: 'Card' });
+    const prompt = (await calls()).at(-1)!.prompt;
+    expect(prompt).toContain('<target>');
+    expect(prompt).toContain(`${card} Frame "Card" in "Home"`);
+    expect(prompt.indexOf('<target>')).toBeLessThan(prompt.indexOf('Make it darker'));
+  });
+
+  it('edits a live site in its project folder with only the file tools', async () => {
+    const { chat, folder } = await siteChat();
+    await chat.send('SITE_EDIT make this rounder', { target: { label: 'a “Get started”', elements: [element] }, page: 'http://localhost:5173/pricing' });
+
+    const run = (await calls()).at(-1)!;
+    const arg = (flag: string) => run.args[run.args.indexOf(flag) + 1];
+    expect(run.cwd).toBe(folder);
+    expect(arg('--tools')).toBe('Read,Edit,Write,Glob,Grep');
+    expect(arg('--permission-mode')).toBe('acceptEdits');
+    expect(arg('--permission-prompts')).toBe('none');
+    expect(run.args).not.toContain('--mcp-config');
+    expect(run.args).not.toContain('--system-prompt-file');
+    expect(await readFile(arg('--append-system-prompt-file')!, 'utf8')).toContain("OpenPaper's live-site agent");
+    expect(run.prompt).toContain(`project folder: ${folder}`);
+    expect(run.prompt).toContain('page: http://localhost:5173/pricing');
+    expect(run.prompt).toContain('source: src/Hero.tsx:12:7');
+    expect(run.prompt).toContain('components: Hero < App (react)');
+    expect(chat.items.find((i) => i.kind === 'tool')).toMatchObject({ summary: 'Edited src/App.tsx', status: 'done' });
+  });
+
+  it('asks for Claude Code to edit a live site', async () => {
+    const { chat } = await siteChat('api');
+    await chat.send('Make it blue');
+    const last = chat.items.at(-1)!;
+    expect(last).toMatchObject({ kind: 'notice', level: 'error' });
+    expect(last.kind === 'notice' && last.text).toContain('Claude Code');
   });
 });

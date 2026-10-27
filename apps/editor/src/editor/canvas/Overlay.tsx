@@ -4,6 +4,7 @@ import { useEditor, getState, setState } from '../../state/store.ts';
 import { screenRectOf, worldToScreen, type Rect } from './geometry.ts';
 import { getGestureView, pressNode, startResize, subscribeGesture, type ResizeHandle } from './interactions.ts';
 import { LiveCursors, LiveLayer } from './LiveLayer.tsx';
+import { SelectionPrompt } from './SelectionPrompt.tsx';
 import { command } from '../../sync/session.ts';
 
 const HANDLES: ResizeHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
@@ -289,6 +290,9 @@ export function Overlay() {
       })}
 
       <LiveCursors />
+
+      {/* Ask the agent about the selection (on top of pins and cursors) */}
+      {!gesture.marquee && <SelectionPrompt rects={rects} />}
     </div>
   );
 }

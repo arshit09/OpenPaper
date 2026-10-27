@@ -12,6 +12,7 @@ import {
 } from '@openpaper/core';
 import { getState, setState, toast, useEditor } from '../../state/store.ts';
 import { command } from '../../sync/session.ts';
+import { Select } from '../../ui/Select.tsx';
 import { currentShaderFrame } from './ShaderLayer.tsx';
 
 type Patch = Record<string, unknown>;
@@ -208,13 +209,7 @@ function ParamControl({ p, props, nodes }: { p: ShaderParam; props: ShaderProps;
         <div className="op-row">
           <ParamLabel text={p.label} />
           {p.kind === 'enum' && p.control === 'select' ? (
-            <select className="op-input" value={current} onChange={(e) => void commit({ [p.name]: e.target.value })}>
-              {options.map((o) => (
-                <option key={o} value={o}>
-                  {o}
-                </option>
-              ))}
-            </select>
+            <Select value={current} options={options.map((o) => ({ value: o, label: o }))} onChange={(v) => void commit({ [p.name]: v })} />
           ) : (
             <div className="op-toolbar" style={{ padding: 2, flexWrap: 'wrap' }}>
               {options.map((o) => (

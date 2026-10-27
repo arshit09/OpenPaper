@@ -4,6 +4,9 @@ import { fileURLToPath } from 'node:url';
 import type { LayoutMap } from '@openpaper/core';
 import { AgentService } from './agent/agent.ts';
 import { AgentSettings } from './agent/settings.ts';
+import { SpeechService } from './speech/service.ts';
+import { SiteProxies } from './sites/proxy.ts';
+import { SiteStore } from './sites/store.ts';
 import { createApp } from './app.ts';
 import { AssetResolver } from './assets.ts';
 import { FontService } from './fonts/fonts.ts';
@@ -133,25 +136,36 @@ export async function startServer(opts: StartOptions): Promise<RunningServer> {
   const runtime = new ToolRuntime(env);
   const mcp = createMcpHttpHandler(runtime);
   const agentSettings = new AgentSettings(paths.config);
+  const siteStore = new SiteStore(join(paths.home, 'sites.json'));
+  await siteStore.init();
+  // Proxied sites may talk to the editor wherever it's served from (and to the Vite editor in dev).
+  const siteProxies = new SiteProxies({
+    editorOrigins: [url, `http://localhost:${port}`, ...(opts.dev ? ['http://127.0.0.1:5173', 'http://localhost:5173'] : [])],
+    store: siteStore,
+  });
   const agents = new AgentService({
     runtime,
     settings: agentSettings,
     getDoc: (fileId) => hub.peek(fileId)?.doc,
     viewFor: (fileId) => views.viewFor(fileId),
+    getSite: (id) => siteStore.get(id),
     emit: (fileId, event) => views.broadcast(fileId, { t: 'agent', fileId, event }),
     claudeCode: { mcpUrl: `${url}${MCP_PATH}`, dir: join(paths.home, 'claude-code') },
   });
-  sync = createSyncServer({ env, policy, mcpLaunch: mcpLaunchCommand, agents, agentSettings, figmaSettings });
+  const speech = new SpeechService({ dir: join(paths.home, 'models'), onStatus: (status) => views.broadcast(null, { t: 'speech', status }) });
+  sync = createSyncServer({ env, policy, mcpLaunch: mcpLaunchCommand, agents, agentSettings, figmaSettings, speech, sites: { store: siteStore, proxies: siteProxies } });
   tailwind.warmup();
 
   let closing: Promise<void> | null = null;
   const close = () => {
     closing ??= (async () => {
       agents.stopAll();
+      speech.close();
       mcp.close();
       sync.close();
       presence.close();
       tailwind.close();
+      await siteProxies.closeAll();
       await hub.flushAll();
       await headless.close();
       await new Promise<void>((r) => server.close(() => r()));

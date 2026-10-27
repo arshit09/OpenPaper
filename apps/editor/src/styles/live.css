@@ -129,14 +129,36 @@
 .op-live-cursor.on {
   opacity: 1;
 }
+/* The root sits on the pen tip; the arrow's tip and the I-beam's middle are placed on it. */
 .op-live-cursor svg {
+  position: absolute;
   display: block;
   filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.3));
 }
+.op-live-cursor .op-live-arrow {
+  left: -3px;
+  top: -2px;
+}
+.op-live-cursor .op-live-ibeam {
+  left: -5px;
+  top: -10px;
+  display: none;
+}
+/* Typing: an I-beam rides the caret. */
+.op-live-cursor.type .op-live-arrow {
+  display: none;
+}
+.op-live-cursor.type .op-live-ibeam {
+  display: block;
+}
+.op-live-cursor.type .op-live-cursor-name {
+  left: 8px;
+  top: 9px;
+}
 .op-live-cursor-name {
   position: absolute;
-  left: 15px;
-  top: 17px;
+  left: 12px;
+  top: 15px;
   padding: 0 6px;
   border-radius: 4px;
   background: var(--c);
