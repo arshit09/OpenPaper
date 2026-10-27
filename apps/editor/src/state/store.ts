@@ -56,8 +56,6 @@ export interface EditorState {
   focusedThreadId: string | null;
   /** An agent opened another file; the editor offers to switch to it. */
   agentOpened: { fileId: string; pageId: string | null; agentName: string } | null;
-  /** Nodes an agent just created or changed (brief highlight on the canvas). */
-  flashes: Array<{ id: string; color: string; at: number; kind: 'write' | 'edit' }>;
   /** A comment being written (placed with the comment tool). */
   pendingComment: { nodeId: string | null; world: { x: number; y: number } } | null;
   /** Built-in agent chat for the open file. */
@@ -68,6 +66,14 @@ export interface EditorState {
   shaderPreview: Record<string, ShaderProps>;
   /** Pending question for a Figma paste with images and no Figma token. */
   figmaPrompt: { images: number; resolve: (choice: 'with-images' | 'without-images' | 'cancel') => void } | null;
+  /** Keyboard shortcuts help dialog. */
+  showShortcuts: boolean;
+  /** Show/hide UI (`.` or Ctrl+\): only the canvas stays. */
+  uiHidden: boolean;
+  /** Side panels collapsed (Shift+\): the top bar stays. */
+  panelsCollapsed: boolean;
+  /** Comment pins hidden on the canvas (Shift+C). */
+  commentsHidden: boolean;
 }
 
 export const useEditor = create<EditorState>(() => ({
@@ -91,12 +97,15 @@ export const useEditor = create<EditorState>(() => ({
   toasts: [],
   focusedThreadId: null,
   agentOpened: null,
-  flashes: [],
   pendingComment: null,
   agentChat: { items: [], running: false, usage: null, open: false },
   showShaders: false,
   shaderPreview: {},
   figmaPrompt: null,
+  showShortcuts: false,
+  uiHidden: false,
+  panelsCollapsed: false,
+  commentsHidden: false,
 }));
 
 export const getState = useEditor.getState;

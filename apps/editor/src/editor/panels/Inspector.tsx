@@ -4,9 +4,19 @@ import {
   AlignLeft,
   AlignRight,
   AlignJustify,
+  ALargeSmall,
   ArrowDown,
   ArrowRight,
+  Contrast,
   Move,
+  MoveHorizontal,
+  MoveVertical,
+  RotateCw,
+  Square,
+  SquareDashed,
+  SquareRoundCorner,
+  UnfoldHorizontal,
+  UnfoldVertical,
   WrapText,
 } from 'lucide-react';
 import {
@@ -21,6 +31,12 @@ import {
 import { useEditor } from '../../state/store.ts';
 import { ShaderInspector } from '../shaders/ShaderInspector.tsx';
 import { client, command } from '../../sync/session.ts';
+
+/** The untruncated name for tooltips (text layers are named after their first 20 characters). */
+export function fullName(node: NodeRecord): string {
+  const text = node.component === 'Text' && !node.labelIsModified ? node.textValue?.replace(/\s+/g, ' ').trim() : '';
+  return text || displayName(node);
+}
 
 function useSelectedNodes(): NodeRecord[] {
   const doc = useEditor((s) => s.doc);
@@ -45,13 +61,16 @@ function StyleField({
   nodes,
   prop,
   label,
+  hint,
   placeholder,
   unitless,
   width,
 }: {
   nodes: NodeRecord[];
   prop: string;
-  label?: string;
+  label?: React.ReactNode;
+  /** Tooltip naming the property (for icon labels). */
+  hint?: string;
   placeholder?: string;
   unitless?: boolean;
   width?: number;
@@ -67,7 +86,11 @@ function StyleField({
   };
   return (
     <label style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, width }}>
-      {label && <span className="op-label" style={{ width: 16, flexShrink: 0, textAlign: 'center' }}>{label}</span>}
+      {label && (
+        <span className="op-field-icon" title={hint}>
+          {label}
+        </span>
+      )}
       <input
         className="op-input"
         value={draft}
@@ -100,7 +123,7 @@ function ColorField({ nodes, prop, label }: { nodes: NodeRecord[]; prop: string;
   useEffect(() => setDraft(value ?? ''), [value]);
   return (
     <div className="op-row">
-      <span className="op-label" style={{ width: 56, flexShrink: 0 }}>
+      <span className="op-label op-prop-label">
         {label}
       </span>
       <label className="op-swatch" style={{ cursor: 'pointer' }}>
@@ -179,7 +202,7 @@ function SizeRow({ nodes, prop }: { nodes: NodeRecord[]; prop: 'width' | 'height
   };
   return (
     <div className="op-row">
-      <StyleField nodes={nodes} prop={prop} label={prop === 'width' ? 'W' : 'H'} placeholder={`${measured}`} />
+      <StyleField nodes={nodes} prop={prop} label={prop === 'width' ? 'W' : 'H'} hint={prop === 'width' ? 'Width' : 'Height'} placeholder={`${measured}`} />
       <select className="op-input" style={{ width: 70, flex: 'none' }} value={mode} onChange={(e) => setMode(e.target.value as SizeMode)}>
         <option value="fixed">Fixed</option>
         <option value="hug">Hug</option>
@@ -240,7 +263,7 @@ function PageSettings() {
   return (
     <Section title="Page">
       <div className="op-row">
-        <span className="op-label" style={{ width: 56 }}>
+        <span className="op-label op-prop-label">
           Canvas
         </span>
         <label className="op-swatch" style={{ cursor: 'pointer' }}>
@@ -285,24 +308,24 @@ export function Inspector() {
   return (
     <div>
       <div className="op-section" style={{ paddingBottom: 8 }}>
-        <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div className="op-truncate" style={{ fontWeight: 600 }} title={nodes.length === 1 ? fullName(first) : undefined}>
           {nodes.length === 1 ? displayName(first) : `${nodes.length} layers`}
         </div>
-        <div className="op-label">{nodes.length === 1 ? first.component : 'Mixed selection'}</div>
+        <div className="op-label op-truncate">{nodes.length === 1 ? first.component : 'Mixed selection'}</div>
       </div>
 
       <Section title={positioned ? 'Position & size' : 'Size'}>
         {positioned && (
           <div className="op-grid-2">
-            <StyleField nodes={nodes} prop="left" label="X" />
-            <StyleField nodes={nodes} prop="top" label="Y" />
+            <StyleField nodes={nodes} prop="left" label="X" hint="X position" />
+            <StyleField nodes={nodes} prop="top" label="Y" hint="Y position" />
           </div>
         )}
         <SizeRow nodes={nodes} prop="width" />
         <SizeRow nodes={nodes} prop="height" />
         <div className="op-grid-2">
-          <StyleField nodes={nodes} prop="rotate" label="↻" placeholder="0deg" unitless />
-          <StyleField nodes={nodes} prop="zIndex" label="Z" placeholder="auto" unitless />
+          <StyleField nodes={nodes} prop="rotate" label={<RotateCw size={12} />} hint="Rotation" placeholder="0deg" unitless />
+          <StyleField nodes={nodes} prop="zIndex" label="Z" hint="Z-index" placeholder="auto" unitless />
         </div>
       </Section>
 
@@ -334,8 +357,14 @@ export function Inspector() {
           {layout && layout !== 'free' && (
             <>
               <div className="op-grid-2">
-                <StyleField nodes={nodes} prop="gap" label="⇿" placeholder="0" />
-                <StyleField nodes={nodes} prop="padding" label="▢" placeholder="0" />
+                <StyleField
+                  nodes={nodes}
+                  prop="gap"
+                  label={layout === 'column' ? <UnfoldVertical size={12} /> : <UnfoldHorizontal size={12} />}
+                  hint="Gap"
+                  placeholder="0"
+                />
+                <StyleField nodes={nodes} prop="padding" label={<SquareDashed size={12} />} hint="Padding" placeholder="0" />
               </div>
               <div className="op-grid-2">
                 <select className="op-input" value={common(nodes, 'alignItems') ?? ''} onChange={(e) => apply(nodes, { alignItems: e.target.value || null })}>
@@ -355,7 +384,9 @@ export function Inspector() {
               </div>
             </>
           )}
-          {layout !== 'column' && layout !== 'row' && layout !== 'wrap' && <StyleField nodes={nodes} prop="padding" label="▢" placeholder="0" />}
+          {layout !== 'column' && layout !== 'row' && layout !== 'wrap' && (
+            <StyleField nodes={nodes} prop="padding" label={<SquareDashed size={12} />} hint="Padding" placeholder="0" />
+          )}
           <label className="op-row" style={{ cursor: 'pointer' }}>
             <input type="checkbox" checked={common(nodes, 'overflow') === 'clip'} onChange={(e) => apply(nodes, { overflow: e.target.checked ? 'clip' : null })} />
             Clip content
@@ -367,7 +398,7 @@ export function Inspector() {
         <ColorField nodes={nodes} prop="backgroundColor" label="Fill" />
         {common(nodes, 'backgroundImage') && (
           <div className="op-row">
-            <span className="op-label" style={{ width: 56 }}>
+            <span className="op-label op-prop-label">
               Image
             </span>
             <select className="op-input" value={common(nodes, 'backgroundSize') ?? 'cover'} onChange={(e) => apply(nodes, { backgroundSize: e.target.value })}>
@@ -382,12 +413,12 @@ export function Inspector() {
           </div>
         )}
         <div className="op-grid-2">
-          <StyleField nodes={nodes} prop="opacity" label="◐" placeholder="1" unitless />
-          <StyleField nodes={nodes} prop="borderRadius" label="◜" placeholder="0" />
+          <StyleField nodes={nodes} prop="opacity" label={<Contrast size={12} />} hint="Opacity" placeholder="1" unitless />
+          <StyleField nodes={nodes} prop="borderRadius" label={<SquareRoundCorner size={12} />} hint="Corner radius" placeholder="0" />
         </div>
-        <StyleField nodes={nodes} prop="border" label="▭" placeholder="1px solid #E5E5E5" />
+        <StyleField nodes={nodes} prop="border" label={<Square size={12} />} hint="Border" placeholder="1px solid #E5E5E5" />
         <div className="op-row">
-          <span className="op-label" style={{ width: 56 }}>
+          <span className="op-label op-prop-label">
             Shadow
           </span>
           <select
@@ -422,7 +453,7 @@ export function Inspector() {
             </datalist>
           </label>
           <div className="op-grid-2">
-            <StyleField nodes={nodes} prop="fontSize" label="Aa" placeholder="16px" />
+            <StyleField nodes={nodes} prop="fontSize" label={<ALargeSmall size={13} />} hint="Font size" placeholder="16px" />
             <select className="op-input" value={common(nodes, 'fontWeight') ?? '400'} onChange={(e) => apply(nodes, { fontWeight: e.target.value })}>
               {WEIGHTS.map((w) => (
                 <option key={w} value={w}>
@@ -432,8 +463,8 @@ export function Inspector() {
             </select>
           </div>
           <div className="op-grid-2">
-            <StyleField nodes={nodes} prop="lineHeight" label="↕" placeholder="normal" unitless />
-            <StyleField nodes={nodes} prop="letterSpacing" label="↔" placeholder="0em" unitless />
+            <StyleField nodes={nodes} prop="lineHeight" label={<MoveVertical size={12} />} hint="Line height" placeholder="normal" unitless />
+            <StyleField nodes={nodes} prop="letterSpacing" label={<MoveHorizontal size={12} />} hint="Letter spacing" placeholder="0em" unitless />
           </div>
           <ColorField nodes={nodes} prop="color" label="Color" />
           <div className="op-row">

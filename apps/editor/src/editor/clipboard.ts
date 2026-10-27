@@ -2,12 +2,90 @@ import { useEffect } from 'react';
 import { nodesToHtml, readerOf, FREEFORM_DISPLAY } from '@openpaper/core';
 import { getState, setState, toast } from '../state/store.ts';
 import { command } from '../sync/session.ts';
-import { clientToWorld, viewportRect, worldRectOf } from './canvas/geometry.ts';
+import { clientToWorld, elementFor, unionRects, viewportRect, worldRectOf, type Rect } from './canvas/geometry.ts';
 import { isTyping } from './canvas/Canvas.tsx';
 
 const MARKER = '<!--openpaper-->';
 /** Figma puts its layers on the clipboard as a base64 payload between (figma) markers. */
 const FIGMA_PAYLOAD = /\(figma\)[A-Za-z0-9+/=\s]+\(\/figma\)/;
+const LOOKS_LIKE_HTML = /^\s*<[a-z!][\s\S]*>\s*$/i;
+
+type Placement = { parentId: string; index?: number; at?: { x: number; y: number } };
+
+/** Paste on top: into the selection's parent, right above it and at its position. */
+function onTopPlacement(): Placement | null {
+  const s = getState();
+  const doc = s.doc;
+  if (!doc) return null;
+  const nodes = s.selection.map((id) => doc.nodes[id]).filter((n) => !!n?.parentId);
+  if (!nodes.length) return null;
+  const parentId = nodes[0]!.parentId!;
+  const parent = doc.nodes[parentId]!;
+  const siblings = nodes.filter((n) => n!.parentId === parentId);
+  const index = Math.max(...siblings.map((n) => parent.children.indexOf(n!.id))) + 1;
+  const positioned = parent.component === 'PageRoot' || parent.styles.display === FREEFORM_DISPLAY || siblings.every((n) => n!.styles.position === 'absolute');
+  if (!positioned) return { parentId, index };
+  const r = unionRects(nodes.map((n) => worldRectOf(n!.id)).filter((x): x is Rect => !!x));
+  if (!r) return { parentId, index };
+  let origin = { x: 0, y: 0 };
+  if (parent.component !== 'PageRoot') {
+    const pr = worldRectOf(parentId);
+    const el = elementFor(parentId) as HTMLElement | null;
+    if (pr) origin = { x: pr.x + (el?.clientLeft ?? 0), y: pr.y + (el?.clientTop ?? 0) };
+  }
+  return { parentId, index, at: { x: Math.round(r.x - origin.x), y: Math.round(r.y - origin.y) } };
+}
+
+let pasteOnTopArmed = 0;
+
+/** Ctrl+Shift+V: the browser's paste event that follows goes on top of the selection. */
+export function armPasteOnTop() {
+  const armedAt = Date.now();
+  pasteOnTopArmed = armedAt;
+  // Some browsers send no paste event for Ctrl+Shift+V: read the clipboard instead.
+  setTimeout(() => {
+    if (pasteOnTopArmed !== armedAt) return;
+    pasteOnTopArmed = 0;
+    void readClipboardMarkup().then((html) => {
+      if (html) void pasteHtml(html, onTopPlacement());
+    });
+  }, 250);
+}
+
+async function readClipboardMarkup(): Promise<string | null> {
+  try {
+    for (const item of await navigator.clipboard.read()) {
+      if (item.types.includes('text/html')) {
+        const html = await (await item.getType('text/html')).text();
+        if (html) return html;
+      }
+      if (item.types.includes('text/plain')) {
+        const text = await (await item.getType('text/plain')).text();
+        if (LOOKS_LIKE_HTML.test(text)) return text;
+      }
+    }
+  } catch {
+    const text = await navigator.clipboard.readText().catch(() => '');
+    if (LOOKS_LIKE_HTML.test(text)) return text;
+  }
+  return null;
+}
+
+/** Ctrl+Shift+R: each selected layer is replaced by the copied layers, in its place. */
+export async function pasteToReplace() {
+  const s = getState();
+  const doc = s.doc;
+  if (!doc) return;
+  const ids = s.selection.filter((id) => doc.nodes[id]?.parentId);
+  if (!ids.length) return;
+  const html = await readClipboardMarkup();
+  if (!html || FIGMA_PAYLOAD.test(html)) {
+    toast('Copy layers first, then paste to replace');
+    return;
+  }
+  const result = await command<{ ids: string[] }>({ type: 'insertHtml', parentId: doc.nodes[ids[0]!]!.parentId!, html: html.replace(MARKER, ''), replaceIds: ids });
+  if (result.ids?.length) setState({ selection: result.ids });
+}
 
 /** Where pasted/dropped content goes: the selected frame, the selection's parent, or the page. */
 function pasteTarget(): string | null {
@@ -85,10 +163,15 @@ export async function insertImageFiles(files: Blob[], clientPoint?: { x: number;
   if (ids.length) setState({ selection: ids, tool: 'select' });
 }
 
-async function pasteHtml(html: string) {
-  const target = pasteTarget();
+async function pasteHtml(html: string, placement: Placement | null = null) {
+  const target = placement?.parentId ?? pasteTarget();
   if (!target) return;
-  const result = await command<{ ids: string[] }>({ type: 'insertHtml', parentId: target, html: html.replace(MARKER, '') });
+  const result = await command<{ ids: string[] }>({
+    type: 'insertHtml',
+    parentId: target,
+    html: html.replace(MARKER, ''),
+    ...(placement ? { index: placement.index, at: placement.at } : {}),
+  });
   if (result.ids?.length) setState({ selection: result.ids });
 }
 
@@ -145,6 +228,8 @@ export function useClipboard() {
       if (isTypingTarget(e) || !getState().doc) return;
       const data = e.clipboardData;
       if (!data) return;
+      const onTop = pasteOnTopArmed && Date.now() - pasteOnTopArmed < 1000 ? onTopPlacement() : null;
+      pasteOnTopArmed = 0;
       const files = [...data.files].filter((f) => f.type.startsWith('image/'));
       if (files.length) {
         e.preventDefault();
@@ -162,12 +247,12 @@ export function useClipboard() {
       }
       if (html && (html.includes(MARKER) || /<(div|section|svg|img|span|p|h[1-6]|button|a|x-shader)\b/i.test(html))) {
         e.preventDefault();
-        void pasteHtml(html);
+        void pasteHtml(html, onTop);
         return;
       }
-      if (text && /^\s*<[a-z!][\s\S]*>\s*$/i.test(text)) {
+      if (text && LOOKS_LIKE_HTML.test(text)) {
         e.preventDefault();
-        void pasteHtml(text);
+        void pasteHtml(text, onTop);
         return;
       }
       if (text) {
@@ -200,5 +285,5 @@ export function useClipboard() {
 }
 
 function isTypingTarget(e: Event): boolean {
-  return isTyping(e as unknown as KeyboardEvent);
+  return isTyping(e);
 }

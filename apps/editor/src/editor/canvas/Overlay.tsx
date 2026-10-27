@@ -3,6 +3,7 @@ import { displayName, type AgentPresence } from '@openpaper/core';
 import { useEditor, getState, setState } from '../../state/store.ts';
 import { screenRectOf, worldToScreen, type Rect } from './geometry.ts';
 import { getGestureView, pressNode, startResize, subscribeGesture, type ResizeHandle } from './interactions.ts';
+import { LiveCursors, LiveLayer } from './LiveLayer.tsx';
 import { command } from '../../sync/session.ts';
 
 const HANDLES: ResizeHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
@@ -50,50 +51,34 @@ function useScreenRects(ids: string[]): Record<string, Rect | null> {
   return rects.current;
 }
 
-function AgentBadge({ agent, rect }: { agent: AgentPresence; rect: Rect }) {
+/** "Agent is working here": shares the artboard's label row and shrinks to its dots before the name does. */
+function AgentChip({ agent, first }: { agent: AgentPresence; first: boolean }) {
   return (
-    <>
-      <div
-        style={{
-          position: 'absolute',
-          left: rect.x - 2,
-          top: rect.y - 2,
-          width: rect.width + 4,
-          height: rect.height + 4,
-          border: `2px solid ${agent.color}`,
-          borderRadius: 3,
-          pointerEvents: 'none',
-          boxShadow: `0 0 0 4px color-mix(in srgb, ${agent.color} 18%, transparent)`,
-        }}
-      />
-      <div
-        style={{
-          position: 'absolute',
-          left: rect.x + rect.width - 2,
-          top: rect.y - 24,
-          transform: 'translateX(-100%)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          height: 20,
-          padding: '0 8px',
-          borderRadius: 10,
-          background: agent.color,
-          color: '#fff',
-          fontSize: 11,
-          fontWeight: 600,
-          whiteSpace: 'nowrap',
-          pointerEvents: 'none',
-        }}
-      >
-        <span className="op-agent-dots">
-          <i />
-          <i />
-          <i />
-        </span>
-        {agent.name}
-      </div>
-    </>
+    <div className="op-live-chip" style={{ marginLeft: first ? 'auto' : 0, ['--c' as string]: agent.color } as React.CSSProperties}>
+      <span className="op-live-dots">
+        <i />
+        <i />
+        <i />
+      </span>
+      <span className="op-live-chip-name">{agent.name}</span>
+    </div>
+  );
+}
+
+function AgentRing({ agent, rect, inset }: { agent: AgentPresence; rect: Rect; inset: number }) {
+  return (
+    <div
+      className="op-live-ring"
+      style={
+        {
+          left: rect.x - inset,
+          top: rect.y - inset,
+          width: rect.width + inset * 2,
+          height: rect.height + inset * 2,
+          ['--c' as string]: agent.color,
+        } as React.CSSProperties
+      }
+    />
   );
 }
 
@@ -110,82 +95,78 @@ export function Overlay() {
   });
   const doc = useEditor((s) => s.doc);
   const pageId = useEditor((s) => s.pageId);
+  const commentsHidden = useEditor((s) => s.commentsHidden);
   const gesture = useSyncExternalStore(subscribeGesture, getGestureView);
-  const flashes = useEditor((s) => s.flashes);
 
   const agentBoards = agents.flatMap((a) => a.workingOn.map((id) => ({ a, id })));
-  const tracked = [
-    ...new Set([...selection, ...(hoverId ? [hoverId] : []), ...topLevel, ...agentBoards.map((x) => x.id), ...flashes.map((f) => f.id)]),
-  ];
+  const boardAgents = new Map<string, AgentPresence[]>();
+  for (const { a, id } of agentBoards) boardAgents.set(id, [...(boardAgents.get(id) ?? []), a]);
+  const tracked = [...new Set([...selection, ...(hoverId ? [hoverId] : []), ...topLevel, ...agentBoards.map((x) => x.id)])];
   const rects = useScreenRects(tracked);
   if (!doc) return null;
 
   const single = selection.length === 1 ? doc.nodes[selection[0]!] : undefined;
   const singleRect = single ? rects[single.id] : null;
   const showHandles = !!single && !!singleRect && !single.isLocked && tool === 'select' && !editingTextId && single.component !== 'PageRoot';
-  const threads = Object.values(doc.comments).filter((t) => !t.deletedAt && t.pageId === pageId && t.status === 'open');
+  const threads = commentsHidden ? [] : Object.values(doc.comments).filter((t) => !t.deletedAt && t.pageId === pageId && t.status === 'open');
 
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
-      {/* Artboard labels */}
+      {/* Agent edits playing back: build outlines, fading deletions */}
+      <LiveLayer />
+
+      {/* Artboard labels, with the chip of any agent working on the artboard at the right end */}
       {topLevel.map((id) => {
         const node = doc.nodes[id];
         const r = rects[id];
         if (!node || !r || node.component !== 'Frame' || r.width < 24) return null;
         const selected = selection.includes(id);
+        const working = r.width >= 48 ? boardAgents.get(id) : undefined;
         return (
           <div
             key={`label-${id}`}
-            data-op-overlay-ui
-            onPointerDown={(e) => {
-              if (e.button !== 0 || tool !== 'select') return;
-              e.stopPropagation();
-              pressNode(e.nativeEvent, id);
-            }}
-            onDoubleClick={(e) => {
-              e.stopPropagation();
-              const name = prompt('Rename artboard', displayName(node));
-              if (name) void command({ type: 'rename', nodeId: id, name });
-            }}
-            style={{
-              position: 'absolute',
-              left: r.x,
-              top: r.y - 20,
-              maxWidth: Math.max(40, r.width),
-              height: 18,
-              lineHeight: '18px',
-              fontSize: 11,
-              color: selected ? 'var(--op-selection)' : 'var(--op-text-2)',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              pointerEvents: 'auto',
-              cursor: 'default',
-              userSelect: 'none',
-            }}
+            style={{ position: 'absolute', left: r.x, top: r.y - 20, width: Math.max(40, r.width), height: 18, display: 'flex', alignItems: 'center', gap: 6 }}
           >
-            {displayName(node)}
+            <div
+              data-op-overlay-ui
+              title={displayName(node)}
+              onPointerDown={(e) => {
+                if (e.button !== 0 || tool !== 'select') return;
+                e.stopPropagation();
+                pressNode(e.nativeEvent, id);
+              }}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                const name = prompt('Rename artboard', displayName(node));
+                if (name) void command({ type: 'rename', nodeId: id, name });
+              }}
+              style={{
+                flex: '0 1 auto',
+                minWidth: 0,
+                height: 18,
+                lineHeight: '18px',
+                fontSize: 11,
+                color: selected ? 'var(--op-selection)' : 'var(--op-text-2)',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                pointerEvents: 'auto',
+                cursor: 'default',
+                userSelect: 'none',
+              }}
+            >
+              {displayName(node)}
+            </div>
+            {working?.map((a, i) => <AgentChip key={a.sessionId} agent={a} first={i === 0} />)}
           </div>
-        );
-      })}
-
-      {/* What an agent just wrote/changed */}
-      {flashes.map((f) => {
-        const r = rects[f.id];
-        if (!r) return null;
-        return (
-          <div
-            key={`flash-${f.id}-${f.at}`}
-            className={`op-flash ${f.kind}`}
-            style={{ left: r.x, top: r.y, width: r.width, height: r.height, ['--flash' as string]: f.color } as React.CSSProperties}
-          />
         );
       })}
 
       {/* Agent working indicators */}
       {agentBoards.map(({ a, id }) => {
         const r = rects[id];
-        return r ? <AgentBadge key={`agent-${a.sessionId}-${id}`} agent={a} rect={r} /> : null;
+        const inset = 3 + (boardAgents.get(id)?.indexOf(a) ?? 0) * 4;
+        return r ? <AgentRing key={`agent-${a.sessionId}-${id}`} agent={a} rect={r} inset={inset} /> : null;
       })}
 
       {/* Hover */}
@@ -306,6 +287,8 @@ export function Overlay() {
           </button>
         );
       })}
+
+      <LiveCursors />
     </div>
   );
 }

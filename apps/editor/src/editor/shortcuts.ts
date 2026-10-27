@@ -1,225 +1,401 @@
 import { useEffect } from 'react';
-import { FREEFORM_DISPLAY, parentKindOf, pxValue } from '@openpaper/core';
-import { getState, setState, type Tool } from '../state/store.ts';
-import { command, redo, undo } from '../sync/session.ts';
-import { isTyping, zoomBy, zoomToFit } from './canvas/Canvas.tsx';
-import { cancelGesture } from './canvas/interactions.ts';
-import { setCamera } from '../state/store.ts';
-import { viewportRect } from './canvas/geometry.ts';
+import { getState, setState, type EditorState, type Tool } from '../state/store.ts';
+import { redo, undo } from '../sync/session.ts';
+import { isTyping, zoomStep, zoomTo, zoomToFit } from './canvas/Canvas.tsx';
+import { cancelGesture, endZoomMode, gestureKind, refreshGesture, resetModes, setModes, setSpaceHeld, startKeyPan } from './canvas/interactions.ts';
+import { isMacPlatform, matchBinding, type Modifier } from './hotkeys.ts';
+import * as act from './actions.ts';
+import { armPasteOnTop, pasteToReplace } from './clipboard.ts';
 
-const TOOL_KEYS: Record<string, Tool> = {
-  v: 'select',
-  h: 'hand',
-  f: 'frame',
-  a: 'frame',
-  r: 'rectangle',
-  o: 'ellipse',
-  t: 'text',
-  p: 'pencil',
-  c: 'comment',
-};
+export const MAC = isMacPlatform();
 
-function selected() {
-  const s = getState();
-  return s.doc ? s.selection.map((id) => s.doc!.nodes[id]).filter((n) => !!n) : [];
+export const SHORTCUT_GROUPS = ['Tools', 'View', 'Selection', 'Edit', 'Arrange', 'Text'] as const;
+export type ShortcutGroup = (typeof SHORTCUT_GROUPS)[number];
+
+/**
+ * One keyboard shortcut. The key handler and the help dialog both read this registry.
+ * Bindings use `hotkeys.ts` notation; `Mod` is Ctrl (⌘ on macOS).
+ */
+export interface Shortcut {
+  id: string;
+  label: string;
+  group: ShortcutGroup;
+  keys?: string[];
+  /** Shown in the help instead of `keys` (when the full list is noisy). */
+  show?: string[];
+  /** Mouse gestures, shown in the help only; the canvas handles them. */
+  gestures?: string[];
+  /** Spring-loaded: active while the key is held. */
+  hold?: boolean;
+  /** Modifiers that may be held or not. */
+  tolerate?: Modifier[];
+  /** Keeps firing while the key auto-repeats. */
+  repeat?: boolean;
+  /** Leave the browser's default action alone (the paste event). */
+  native?: boolean;
+  /** Also works while a dialog is open. */
+  global?: boolean;
+  when?: (s: EditorState) => boolean;
+  /** Return false to let the key fall through; a function runs when the key is released. */
+  run?: (e: KeyboardEvent, s: EditorState) => void | false | (() => void);
 }
 
-function nudge(dx: number, dy: number) {
-  const s = getState();
-  const doc = s.doc;
-  if (!doc) return;
-  const updates = selected()
-    .filter((n) => {
-      const parent = n!.parentId ? doc.nodes[n!.parentId] : undefined;
-      const kind = parentKindOf(parent);
-      return !n!.isLocked && (kind === 'root' || kind === 'freeform' || n!.styles.position === 'absolute');
-    })
-    .map((n) => ({
-      nodeIds: [n!.id],
-      styles: { left: `${(pxValue(n!.styles.left) ?? 0) + dx}px`, top: `${(pxValue(n!.styles.top) ?? 0) + dy}px` },
-    }));
-  if (updates.length) void command({ type: 'updateStyles', updates });
+const hasSelection = (s: EditorState) => s.selection.length > 0;
+const tool = (t: Tool) => () => setState({ tool: t });
+const ARROWS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+const arrow = (e: KeyboardEvent, step: number) => ({
+  dx: e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0,
+  dy: e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0,
+});
+const DIGITS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+const up = (e: KeyboardEvent) => (e.code === 'Period' ? 1 : -1);
+
+/** Codes of keys currently down (arrow panning reads them). */
+const pressed = new Set<string>();
+
+export const SHORTCUTS: Shortcut[] = [
+  // ---- Tools ----
+  { id: 'tool-move', group: 'Tools', label: 'Move', keys: ['V'], run: tool('select') },
+  { id: 'tool-hand', group: 'Tools', label: 'Hand', keys: ['H'], run: tool('hand') },
+  { id: 'tool-frame', group: 'Tools', label: 'Frame', keys: ['F', 'A'], run: tool('frame') },
+  { id: 'tool-rectangle', group: 'Tools', label: 'Rectangle', keys: ['R'], run: tool('rectangle') },
+  { id: 'tool-ellipse', group: 'Tools', label: 'Ellipse', keys: ['O'], run: tool('ellipse') },
+  {
+    id: 'tool-text',
+    group: 'Tools',
+    label: 'Text (edits a selected text layer)',
+    keys: ['T'],
+    run: (_e, s) => {
+      const node = s.selection.length === 1 ? s.doc?.nodes[s.selection[0]!] : undefined;
+      if (node?.component === 'Text' && !node.isLocked) setState({ editingTextId: node.id });
+      else setState({ tool: 'text' });
+    },
+  },
+  { id: 'tool-pencil', group: 'Tools', label: 'Pencil', keys: ['P'], run: tool('pencil') },
+  { id: 'tool-comment', group: 'Tools', label: 'Comment', keys: ['C', 'Y'], run: tool('comment') },
+  { id: 'shaders', group: 'Tools', label: 'Shaders', keys: ['S'], run: (_e, s) => setState({ showShaders: !s.showShaders }) },
+  { id: 'eyedropper', group: 'Tools', label: 'Pick color (fills the selection, or copies it)', keys: ['I'], run: () => void act.eyedropper() },
+  { id: 'place-image', group: 'Tools', label: 'Place image', keys: ['Mod+Shift+K'], run: act.placeImage },
+  {
+    id: 'pan',
+    group: 'Tools',
+    label: 'Pan (hold and drag)',
+    keys: ['Space'],
+    hold: true,
+    gestures: ['Middle-drag'],
+    tolerate: ['Alt', 'Shift'],
+    run: () => {
+      setSpaceHeld(true);
+      return () => setSpaceHeld(false);
+    },
+  },
+  {
+    id: 'zoom-tool',
+    group: 'Tools',
+    label: 'Zoom tool: click to zoom in, Alt+click out, drag an area',
+    keys: MAC ? ['Z'] : ['Z', 'Ctrl+Space'],
+    hold: true,
+    tolerate: ['Alt'],
+    run: () => {
+      setModes({ zoom: true });
+      return endZoomMode;
+    },
+  },
+  {
+    id: 'escape',
+    group: 'Tools',
+    label: 'Back to Move, then select parent',
+    keys: ['Escape'],
+    tolerate: ['Ctrl'],
+    run: (e, s) => {
+      if (gestureKind()) cancelGesture();
+      else if (s.showShaders) setState({ showShaders: false });
+      else if (s.tool !== 'select') setState({ tool: 'select' });
+      else if (e.ctrlKey) setState({ selection: [] });
+      else act.selectParent();
+    },
+  },
+
+  // ---- View ----
+  { id: 'zoom-in', group: 'View', label: 'Zoom in', keys: ['=', '+', 'Mod+=', 'Mod++'], show: ['+', 'Mod++'], repeat: true, run: () => zoomStep(1) },
+  { id: 'zoom-out', group: 'View', label: 'Zoom out', keys: ['-', 'Mod+-', 'Mod+Shift+-'], show: ['-', 'Mod+-'], repeat: true, run: () => zoomStep(-1) },
+  { id: 'zoom-100', group: 'View', label: 'Zoom to 100%', keys: ['Shift+0', 'Mod+0'], run: () => zoomTo(1) },
+  { id: 'zoom-fit', group: 'View', label: 'Zoom to fit', keys: ['Shift+1'], run: () => zoomToFit() },
+  {
+    id: 'zoom-selection',
+    group: 'View',
+    label: 'Zoom to selection',
+    keys: ['Shift+2'],
+    run: (_e, s) => zoomToFit(s.selection.length ? s.selection : undefined),
+  },
+  { id: 'zoom-wheel', group: 'View', label: 'Zoom at the pointer', gestures: ['Mod+Scroll', 'Pinch'] },
+  { id: 'scroll-pan', group: 'View', label: 'Scroll / scroll sideways', gestures: ['Scroll', 'Shift+Scroll'] },
+  {
+    id: 'pan-arrows',
+    group: 'View',
+    label: 'Pan (nothing selected; Shift = faster)',
+    keys: ARROWS,
+    show: ['Arrows'],
+    tolerate: ['Shift'],
+    repeat: true,
+    when: (s) => !hasSelection(s),
+    run: () =>
+      startKeyPan(() => {
+        const l = pressed.has('ArrowLeft');
+        const r = pressed.has('ArrowRight');
+        const u = pressed.has('ArrowUp');
+        const d = pressed.has('ArrowDown');
+        if (!l && !r && !u && !d) return null;
+        return { x: (l ? 1 : 0) - (r ? 1 : 0), y: (u ? 1 : 0) - (d ? 1 : 0), fast: pressed.has('ShiftLeft') || pressed.has('ShiftRight') };
+      }),
+  },
+  { id: 'artboard-next', group: 'View', label: 'Next / previous artboard', keys: ['N', 'Shift+N'], repeat: true, run: (e) => act.goToArtboard(e.shiftKey ? -1 : 1) },
+  { id: 'page-next', group: 'View', label: 'Next / previous page', keys: ['PageDown', 'PageUp'], repeat: true, run: (e) => act.goToPage(e.key === 'PageUp' ? -1 : 1) },
+  {
+    id: 'measure',
+    group: 'View',
+    label: 'Measure distances (hover another layer)',
+    keys: ['Alt'],
+    hold: true,
+    tolerate: ['Mod', 'Ctrl', 'Shift'],
+    run: () => {
+      setModes({ alt: true });
+      return () => setModes({ alt: false });
+    },
+  },
+  {
+    id: 'toggle-ui',
+    group: 'View',
+    label: 'Show / hide UI',
+    keys: ['.', 'Mod+.', 'Mod+\\'],
+    show: ['.', 'Mod+\\'],
+    run: (_e, s) => {
+      setState({ uiHidden: !s.uiHidden });
+      if (!s.uiHidden) act.notify('ui', `UI hidden. Press . or ${MAC ? '⌘\\' : 'Ctrl+\\'} to bring it back`, 2400);
+    },
+  },
+  {
+    id: 'collapse-panels',
+    group: 'View',
+    label: 'Collapse / expand panels',
+    keys: ['Shift+\\', 'Shift+.', 'Mod+Shift+\\'],
+    run: (_e, s) => setState(s.uiHidden ? { uiHidden: false, panelsCollapsed: false } : { panelsCollapsed: !s.panelsCollapsed }),
+  },
+  { id: 'panel-layers', group: 'View', label: 'Layers panel', keys: ['Alt+1'], run: () => setState({ uiHidden: false, panelsCollapsed: false, leftTab: 'layers' }) },
+  { id: 'panel-tokens', group: 'View', label: 'Tokens panel', keys: ['Alt+2'], run: () => setState({ uiHidden: false, panelsCollapsed: false, leftTab: 'tokens' }) },
+  {
+    id: 'toggle-comments',
+    group: 'View',
+    label: 'Show / hide comments',
+    keys: ['Shift+C'],
+    run: (_e, s) => {
+      setState({ commentsHidden: !s.commentsHidden });
+      act.notify('comments', s.commentsHidden ? 'Comments visible' : 'Comments hidden');
+    },
+  },
+  {
+    id: 'help',
+    group: 'View',
+    label: 'Keyboard shortcuts',
+    keys: ['Ctrl+Shift+/', 'Mod+Shift+/', 'Mod+/'],
+    show: MAC ? ['Ctrl+Shift+?', 'Mod+/'] : ['Ctrl+Shift+?', 'Ctrl+/'],
+    global: true,
+    run: (_e, s) => setState({ showShortcuts: !s.showShortcuts }),
+  },
+
+  // ---- Selection ----
+  { id: 'select-all', group: 'Selection', label: 'Select all', keys: ['Mod+A'], run: act.selectAll },
+  { id: 'select-others', group: 'Selection', label: 'Select others', keys: ['Mod+Shift+A'], run: act.selectOthers },
+  { id: 'select-next', group: 'Selection', label: 'Select next / previous', keys: ['Tab', 'Shift+Tab'], repeat: true, run: (e) => act.selectSibling(e.shiftKey ? -1 : 1) },
+  { id: 'select-children', group: 'Selection', label: 'Select children / edit text', keys: ['Enter'], repeat: true, run: act.selectChildren },
+  { id: 'select-parent', group: 'Selection', label: 'Select parent', keys: ['Shift+Enter', '\\'], repeat: true, run: act.selectParent },
+  { id: 'select-add', group: 'Selection', label: 'Add to / remove from selection', gestures: ['Shift+Click'] },
+  { id: 'select-deep', group: 'Selection', label: 'Select inside frames', gestures: ['Mod+Click'] },
+  { id: 'select-drill', group: 'Selection', label: 'Select one level deeper / edit text', gestures: ['Double-click'] },
+  { id: 'select-area', group: 'Selection', label: 'Select an area', gestures: ['Drag on empty canvas'] },
+
+  // ---- Edit ----
+  { id: 'undo', group: 'Edit', label: 'Undo', keys: ['Mod+Z'], repeat: true, run: () => void undo() },
+  { id: 'redo', group: 'Edit', label: 'Redo', keys: ['Mod+Shift+Z', 'Mod+Y'], repeat: true, run: () => void redo() },
+  { id: 'cut', group: 'Edit', label: 'Cut', show: ['Mod+X'] },
+  { id: 'copy', group: 'Edit', label: 'Copy (as HTML)', show: ['Mod+C'] },
+  { id: 'paste', group: 'Edit', label: 'Paste (into a selected frame)', show: ['Mod+V'] },
+  { id: 'paste-on-top', group: 'Edit', label: 'Paste on top of the selection', keys: ['Mod+Shift+V'], native: true, run: armPasteOnTop },
+  { id: 'paste-replace', group: 'Edit', label: 'Paste to replace the selection', keys: ['Mod+Shift+R'], when: hasSelection, run: () => void pasteToReplace() },
+  { id: 'copy-styles', group: 'Edit', label: 'Copy styles', keys: ['Mod+Alt+C'], when: hasSelection, run: act.copyStyles },
+  { id: 'paste-styles', group: 'Edit', label: 'Paste styles', keys: ['Mod+Alt+V'], when: hasSelection, run: act.pasteStyles },
+  { id: 'duplicate', group: 'Edit', label: 'Duplicate', keys: ['Mod+D'], repeat: true, run: act.duplicateSelection },
+  { id: 'duplicate-drag', group: 'Edit', label: 'Duplicate by dragging', gestures: ['Alt+Drag'] },
+  { id: 'delete', group: 'Edit', label: 'Delete', keys: ['Delete', 'Backspace'], run: act.deleteSelection },
+  { id: 'rename', group: 'Edit', label: 'Rename', keys: ['Mod+R', 'F2'], when: hasSelection, run: act.rename },
+  { id: 'opacity', group: 'Edit', label: 'Opacity (1 = 10%, 0 = 100%, two digits quickly)', keys: DIGITS, show: ['0…9'], repeat: true, when: hasSelection, run: (e) => act.opacityKey(Number(e.code.slice(-1))) },
+  { id: 'hide', group: 'Edit', label: 'Show / hide', keys: ['Mod+Shift+H'], run: act.toggleVisibility },
+  { id: 'lock', group: 'Edit', label: 'Lock / unlock', keys: ['Mod+Shift+L'], run: act.toggleLock },
+  { id: 'unlock-all', group: 'Edit', label: 'Unlock all', keys: ['Mod+Shift+Alt+L'], run: act.unlockAll },
+  { id: 'copy-png', group: 'Edit', label: 'Copy as PNG', keys: ['Mod+Shift+C'], when: hasSelection, run: act.copyAsPng },
+  { id: 'copy-tailwind', group: 'Edit', label: 'Copy as Tailwind', keys: ['Alt+T'], when: hasSelection, run: () => void act.copyAsCode('tailwind') },
+  { id: 'copy-react', group: 'Edit', label: 'Copy as React (inline styles)', keys: ['Alt+R'], when: hasSelection, run: () => void act.copyAsCode('inline-styles') },
+  { id: 'copy-link', group: 'Edit', label: 'Copy link to the selection', keys: ['Mod+L'], run: act.copyLink },
+  { id: 'export', group: 'Edit', label: 'Export', keys: ['Mod+Shift+E'], run: () => setState({ showExport: true }) },
+  { id: 'save', group: 'Edit', label: 'Save (automatic)', keys: ['Mod+S'], run: () => act.notify('save', 'OpenPaper saves your changes automatically') },
+  {
+    id: 'home',
+    group: 'Edit',
+    label: 'Back to all files',
+    keys: ['Mod+Shift+D'],
+    run: () => {
+      location.hash = '#/';
+    },
+  },
+
+  // ---- Arrange ----
+  {
+    id: 'nudge',
+    group: 'Arrange',
+    label: 'Nudge (Shift = 10px); flex children change places',
+    keys: ARROWS,
+    show: ['Arrows', 'Shift+Arrows'],
+    tolerate: ['Shift', 'Alt'],
+    repeat: true,
+    when: hasSelection,
+    run: (e) => {
+      const { dx, dy } = arrow(e, e.shiftKey ? 10 : 1);
+      act.nudge(dx, dy);
+    },
+  },
+  {
+    id: 'resize-keys',
+    group: 'Arrange',
+    label: 'Resize (Shift = 10px)',
+    keys: ARROWS.map((k) => `Mod+${k}`),
+    show: ['Mod+Arrows'],
+    tolerate: ['Shift'],
+    repeat: true,
+    when: hasSelection,
+    run: (e) => {
+      const { dx, dy } = arrow(e, e.shiftKey ? 10 : 1);
+      act.resizeBy(dx, dy);
+    },
+  },
+  { id: 'move-axis', group: 'Arrange', label: 'Move along one axis', gestures: ['Shift+Drag'] },
+  { id: 'resize-center', group: 'Arrange', label: 'Resize from the center / keep proportions', gestures: ['Alt+Drag handle', 'Shift+Drag handle'] },
+  { id: 'draw-center', group: 'Arrange', label: 'Draw from the center / as a square', gestures: ['Alt+Draw', 'Shift+Draw'] },
+  { id: 'forward', group: 'Arrange', label: 'Bring forward', keys: ['Mod+]', 'Mod+Alt+ArrowDown'], repeat: true, run: () => act.reorder(1) },
+  { id: 'backward', group: 'Arrange', label: 'Send backward', keys: ['Mod+[', 'Mod+Alt+ArrowUp'], repeat: true, run: () => act.reorder(-1) },
+  { id: 'front', group: 'Arrange', label: 'Bring to front', keys: MAC ? [']', 'Mod+Alt+]'] : [']', 'Mod+Shift+]', 'Mod+Alt+]'], run: () => act.reorder('front') },
+  { id: 'back', group: 'Arrange', label: 'Send to back', keys: MAC ? ['[', 'Mod+Alt+['] : ['[', 'Mod+Shift+[', 'Mod+Alt+['], run: () => act.reorder('back') },
+  { id: 'group', group: 'Arrange', label: 'Group', keys: ['Mod+G'], when: hasSelection, run: () => void act.wrap('Group') },
+  { id: 'wrap-frame', group: 'Arrange', label: 'Wrap in frame', keys: ['Mod+Alt+G', 'Shift+F'], when: hasSelection, run: () => void act.wrap('Frame') },
+  { id: 'ungroup', group: 'Arrange', label: 'Ungroup', keys: ['Mod+Shift+G', 'Mod+Backspace'], when: hasSelection, run: () => void act.ungroup() },
+  { id: 'add-flex', group: 'Arrange', label: 'Add flex layout (wraps when already flex)', keys: ['Shift+A'], when: hasSelection, run: () => void act.addFlex() },
+  { id: 'remove-flex', group: 'Arrange', label: 'Remove flex layout', keys: ['Alt+Shift+A'], when: hasSelection, run: act.removeFlex },
+  { id: 'align-left', group: 'Arrange', label: 'Align left', keys: ['Alt+A'], when: hasSelection, run: () => act.align('left') },
+  { id: 'align-right', group: 'Arrange', label: 'Align right', keys: ['Alt+D'], when: hasSelection, run: () => act.align('right') },
+  { id: 'align-top', group: 'Arrange', label: 'Align top', keys: ['Alt+W'], when: hasSelection, run: () => act.align('top') },
+  { id: 'align-bottom', group: 'Arrange', label: 'Align bottom', keys: ['Alt+S'], when: hasSelection, run: () => act.align('bottom') },
+  { id: 'align-center-x', group: 'Arrange', label: 'Align horizontal centers', keys: ['Alt+H', 'Alt+Shift+S'], when: hasSelection, run: () => act.align('centerX') },
+  { id: 'align-center-y', group: 'Arrange', label: 'Align vertical centers', keys: ['Alt+V', 'Alt+Shift+W'], when: hasSelection, run: () => act.align('centerY') },
+  { id: 'distribute-x', group: 'Arrange', label: 'Distribute horizontally', keys: [MAC ? 'Ctrl+Alt+H' : 'Alt+Shift+H'], when: hasSelection, run: () => act.distribute('x') },
+  { id: 'distribute-y', group: 'Arrange', label: 'Distribute vertically', keys: [MAC ? 'Ctrl+Alt+V' : 'Alt+Shift+V'], when: hasSelection, run: () => act.distribute('y') },
+  { id: 'flip-x', group: 'Arrange', label: 'Flip horizontal', keys: ['Shift+H'], when: hasSelection, run: () => act.flip('x') },
+  { id: 'flip-y', group: 'Arrange', label: 'Flip vertical', keys: ['Shift+V'], when: hasSelection, run: () => act.flip('y') },
+  { id: 'resize-fit', group: 'Arrange', label: 'Resize to fit content', keys: ['Mod+Alt+Shift+R'], when: hasSelection, run: act.resizeToFit },
+  { id: 'resize-fill', group: 'Arrange', label: 'Resize to fill the parent', keys: ['Mod+Alt+Shift+F'], when: hasSelection, run: act.resizeToFill },
+  { id: 'clip', group: 'Arrange', label: 'Clip content', keys: ['Alt+C'], when: hasSelection, run: act.toggleClip },
+  { id: 'swap-fill', group: 'Arrange', label: 'Swap fill and border', keys: ['Shift+X'], when: hasSelection, run: act.swapFillAndStroke },
+
+  // ---- Text ----
+  { id: 'bold', group: 'Text', label: 'Bold', keys: ['Mod+B'], when: hasSelection, run: act.toggleBold },
+  { id: 'italic', group: 'Text', label: 'Italic', keys: ['Mod+I'], when: hasSelection, run: act.toggleItalic },
+  { id: 'underline', group: 'Text', label: 'Underline', keys: ['Mod+U'], when: hasSelection, run: () => act.toggleDecoration('underline') },
+  { id: 'strikethrough', group: 'Text', label: 'Strikethrough', keys: ['Mod+Shift+X'], when: hasSelection, run: () => act.toggleDecoration('line-through') },
+  { id: 'text-left', group: 'Text', label: 'Align text left', keys: ['Mod+Alt+L'], when: hasSelection, run: () => act.alignText('left') },
+  { id: 'text-center', group: 'Text', label: 'Align text center', keys: ['Mod+Alt+T'], when: hasSelection, run: () => act.alignText('center') },
+  { id: 'text-right', group: 'Text', label: 'Align text right', keys: ['Mod+Alt+R'], when: hasSelection, run: () => act.alignText('right') },
+  { id: 'text-justify', group: 'Text', label: 'Justify text', keys: ['Mod+Alt+J'], when: hasSelection, run: () => act.alignText('justify') },
+  { id: 'font-size', group: 'Text', label: 'Font size − / +', keys: ['Mod+Shift+,', 'Mod+Shift+.'], repeat: true, when: hasSelection, run: (e) => act.textStep('fontSize', up(e)) },
+  { id: 'font-weight', group: 'Text', label: 'Font weight − / +', keys: ['Mod+Alt+,', 'Mod+Alt+.'], repeat: true, when: hasSelection, run: (e) => act.textStep('fontWeight', up(e)) },
+  { id: 'line-height', group: 'Text', label: 'Line height − / +', keys: ['Alt+Shift+,', 'Alt+Shift+.'], repeat: true, when: hasSelection, run: (e) => act.textStep('lineHeight', up(e)) },
+  { id: 'letter-spacing', group: 'Text', label: 'Letter spacing − / +', keys: ['Alt+,', 'Alt+.'], repeat: true, when: hasSelection, run: (e) => act.textStep('letterSpacing', up(e)) },
+];
+
+/** A modal dialog is up (ours, or any other `.op-dialog-backdrop` / aria-modal dialog). */
+function dialogOpen(s: EditorState): boolean {
+  return s.showExport || s.showConnect || !!s.figmaPrompt || s.showShortcuts || !!document.querySelector('.op-dialog-backdrop, [aria-modal="true"]');
 }
 
-function reorder(delta: number | 'front' | 'back') {
-  const s = getState();
-  const doc = s.doc;
-  if (!doc) return;
-  const moves = selected().map((n) => {
-    const parent = doc.nodes[n!.parentId!]!;
-    const idx = parent.children.indexOf(n!.id);
-    const max = parent.children.length - 1;
-    const index = delta === 'front' ? max : delta === 'back' ? 0 : Math.max(0, Math.min(max, idx + delta));
-    return { nodeId: n!.id, parentId: parent.id, index };
-  });
-  if (moves.length) void command({ type: 'move', moves });
+/** Spring-loaded shortcuts waiting for their key to come up (keyed by e.code). */
+const releases = new Map<string, () => void>();
+
+function releaseAll() {
+  for (const release of releases.values()) release();
+  releases.clear();
+  pressed.clear();
 }
 
 export function useShortcuts() {
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      pressed.add(e.code);
+      if (e.isComposing) return;
+      // Shift / Alt reshape a drag in progress (axis lock, duplicate, resize from the center).
+      if (e.key === 'Shift' || e.key === 'Alt') refreshGesture({ shiftKey: e.shiftKey, altKey: e.altKey });
       if (isTyping(e)) return;
       const s = getState();
-      if (!s.doc) return;
-      const mod = e.metaKey || e.ctrlKey;
-      const key = e.key.toLowerCase();
-
-      if (mod && key === 'z') {
-        e.preventDefault();
-        void (e.shiftKey ? redo() : undo());
-        return;
-      }
-      if (mod && key === 'y') {
-        e.preventDefault();
-        void redo();
-        return;
-      }
-      if (mod && key === 'd') {
-        e.preventDefault();
-        if (s.selection.length) {
-          void command<{ ids: string[] }>({ type: 'duplicate', nodeIds: s.selection, offset: { x: 16, y: 16 } }).then((r) => r.ids?.length && setState({ selection: r.ids }));
-        }
-        return;
-      }
-      if (mod && key === 'g') {
-        e.preventDefault();
-        if (!s.selection.length) return;
-        if (e.shiftKey) void command<{ ids: string[] }>({ type: 'ungroup', nodeIds: s.selection }).then((r) => setState({ selection: r.ids ?? [] }));
-        else void command<{ ids: string[] }>({ type: 'group', nodeIds: s.selection }).then((r) => setState({ selection: r.ids ?? [] }));
-        return;
-      }
-      if (mod && key === 'a') {
-        e.preventDefault();
-        const doc = s.doc;
-        const first = s.selection[0] ? doc.nodes[s.selection[0]] : undefined;
-        const parentId = first?.parentId ?? (s.pageId ? doc.pages[s.pageId]?.rootId : undefined);
-        if (parentId) setState({ selection: [...(doc.nodes[parentId]?.children ?? [])] });
-        return;
-      }
-      if (mod && (key === ']' || key === '[')) {
-        e.preventDefault();
-        reorder(key === ']' ? (e.altKey ? 'front' : 1) : e.altKey ? 'back' : -1);
-        return;
-      }
-      if (mod && e.shiftKey && key === 'h') {
-        e.preventDefault();
-        const nodes = selected();
-        if (nodes.length) void command({ type: 'setFlags', nodeIds: s.selection, isVisible: !nodes.every((n) => n!.isVisible) });
-        return;
-      }
-      if (mod && e.shiftKey && key === 'l') {
-        e.preventDefault();
-        const nodes = selected();
-        if (nodes.length) void command({ type: 'setFlags', nodeIds: s.selection, isLocked: !nodes.every((n) => n!.isLocked) });
-        return;
-      }
-      if (mod && (key === '=' || key === '+')) {
-        e.preventDefault();
-        zoomBy(1.25);
-        return;
-      }
-      if (mod && key === '-') {
-        e.preventDefault();
-        zoomBy(0.8);
-        return;
-      }
-      if (mod) return;
-
-      if (e.shiftKey && e.code === 'Digit1') {
-        e.preventDefault();
-        zoomToFit();
-        return;
-      }
-      if (e.shiftKey && e.code === 'Digit2') {
-        e.preventDefault();
-        if (s.selection.length) zoomToFit(s.selection);
-        return;
-      }
-      if (e.shiftKey && e.code === 'Digit0') {
-        e.preventDefault();
-        const vr = viewportRect();
-        const cam = s.pageId ? s.cameras[s.pageId] : undefined;
-        if (cam) {
-          const wx = (vr.width / 2 - cam.x) / cam.zoom;
-          const wy = (vr.height / 2 - cam.y) / cam.zoom;
-          setCamera({ zoom: 1, x: vr.width / 2 - wx, y: vr.height / 2 - wy });
-        }
-        return;
-      }
-      if (e.shiftKey && key === 'a') {
-        // Toggle flex layout on the selection (like auto layout).
-        e.preventDefault();
-        const nodes = selected().filter((n) => n!.component === 'Frame');
-        if (!nodes.length) return;
-        const on = nodes.some((n) => !String(n!.styles.display ?? '').includes('flex'));
-        void command({
-          type: 'updateStyles',
-          updates: nodes.map((n) => ({
-            nodeIds: [n!.id],
-            styles: on ? { display: 'flex', flexDirection: 'column', gap: n!.styles.gap ?? '8px' } : { display: FREEFORM_DISPLAY, flexDirection: null, gap: null },
-          })),
-        });
-        return;
-      }
-
-      switch (e.key) {
-        case 'Escape': {
-          cancelGesture();
-          if (s.tool !== 'select') setState({ tool: 'select' });
-          else if (s.selection.length) {
-            const parentId = s.doc.nodes[s.selection[0]!]?.parentId;
-            const parent = parentId ? s.doc.nodes[parentId] : undefined;
-            setState({ selection: parent && parent.component !== 'PageRoot' ? [parent.id] : [] });
-          }
+      if (!s.doc || s.editingTextId) return;
+      if (e.key === 'Alt') e.preventDefault(); // a lone Alt focuses the browser menu on Windows
+      const dialog = dialogOpen(s);
+      for (const sc of SHORTCUTS) {
+        if (!sc.run || !sc.keys || (dialog && !sc.global)) continue;
+        if (!sc.keys.some((k) => matchBinding(k, e, MAC, sc.tolerate))) continue;
+        if (sc.when && !sc.when(s)) continue;
+        if (e.repeat && !sc.repeat) {
+          if (!sc.native) e.preventDefault();
           return;
         }
-        case 'Enter': {
-          e.preventDefault();
-          const node = s.selection.length === 1 ? s.doc.nodes[s.selection[0]!] : undefined;
-          if (!node) return;
-          if (e.shiftKey) {
-            const parent = node.parentId ? s.doc.nodes[node.parentId] : undefined;
-            if (parent && parent.component !== 'PageRoot') setState({ selection: [parent.id] });
-          } else if (node.component === 'Text') setState({ editingTextId: node.id });
-          else if (node.children.length) setState({ selection: [...node.children] });
-          return;
+        const result = sc.run(e, s);
+        if (result === false) continue;
+        if (!sc.native) e.preventDefault();
+        if (typeof result === 'function') {
+          releases.get(e.code)?.();
+          releases.set(e.code, result);
         }
-        case 'Delete':
-        case 'Backspace':
-          if (s.selection.length) {
-            e.preventDefault();
-            void command({ type: 'delete', nodeIds: s.selection });
-          }
-          return;
-        case 'ArrowLeft':
-        case 'ArrowRight':
-        case 'ArrowUp':
-        case 'ArrowDown': {
-          if (!s.selection.length) return;
-          e.preventDefault();
-          const step = e.shiftKey ? 10 : 1;
-          const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
-          const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
-          nudge(dx, dy);
-          return;
-        }
-        case 'F2': {
-          const node = s.selection.length === 1 ? s.doc.nodes[s.selection[0]!] : undefined;
-          if (!node) return;
-          const name = prompt('Rename layer', node.label);
-          if (name) void command({ type: 'rename', nodeId: node.id, name });
-          return;
-        }
-      }
-      if (!e.altKey && !e.shiftKey && key === 's') {
-        setState({ showShaders: !s.showShaders });
+        // Keys must not also activate a focused button or checkbox.
+        const focused = document.activeElement as HTMLElement | null;
+        if (focused && focused !== document.body && !focused.closest('.op-dialog-backdrop')) focused.blur?.();
         return;
-      }
-      if (!e.altKey && !e.shiftKey && TOOL_KEYS[key]) {
-        setState({ tool: TOOL_KEYS[key] });
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    const onKeyUp = (e: KeyboardEvent) => {
+      pressed.delete(e.code);
+      if (e.key === 'Shift' || e.key === 'Alt') refreshGesture({ shiftKey: e.shiftKey, altKey: e.altKey });
+      const release = releases.get(e.code);
+      if (release) {
+        releases.delete(e.code);
+        release();
+      }
+      if (e.key === 'Alt') {
+        setModes({ alt: false });
+        if (!isTyping(e)) e.preventDefault();
+      }
+    };
+    // Keys released while the window is in the background never send keyup.
+    const onBlur = () => {
+      releaseAll();
+      cancelGesture();
+      resetModes();
+    };
+    const onVisibility = () => document.visibilityState === 'hidden' && onBlur();
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+      document.removeEventListener('visibilitychange', onVisibility);
+      onBlur();
+    };
   }, []);
 }

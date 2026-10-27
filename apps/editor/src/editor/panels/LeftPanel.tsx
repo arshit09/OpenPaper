@@ -4,6 +4,7 @@ import { displayName, isAncestorOf, readerOf, type NodeRecord } from '@openpaper
 import { useEditor, setState, getState } from '../../state/store.ts';
 import { command } from '../../sync/session.ts';
 import { TokensPanel } from './TokensPanel.tsx';
+import { fullName } from './Inspector.tsx';
 
 function iconFor(n: NodeRecord) {
   switch (n.component) {
@@ -25,12 +26,12 @@ function PagesSection() {
   const [renaming, setRenaming] = useState<string | null>(null);
 
   return (
-    <div style={{ borderBottom: '1px solid var(--op-border)', padding: '6px 6px 8px' }}>
-      <div className="op-row" style={{ padding: '0 4px 4px 6px', minHeight: 28 }}>
-        <button className="op-icon-btn small" onClick={() => setOpen(!open)}>
+    <div style={{ borderBottom: '1px solid var(--op-border)', padding: '6px 6px 8px', flexShrink: 0 }}>
+      <div className="op-panel-header">
+        <button className="op-icon-btn small" aria-expanded={open} title={open ? 'Collapse pages' : 'Expand pages'} onClick={() => setOpen(!open)}>
           {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         </button>
-        <span style={{ fontWeight: 600, flex: 1 }}>Pages</span>
+        <span className="title">Pages</span>
         <button
           className="op-icon-btn small"
           title="Add page"
@@ -85,7 +86,9 @@ function PagesSection() {
                     }}
                   />
                 ) : (
-                  <span className="name">{page.name}</span>
+                  <span className="name" title={page.name}>
+                    {page.name}
+                  </span>
                 )}
                 <span className="actions">
                   <button
@@ -165,7 +168,7 @@ function LayerRow({ id, depth, expanded, toggle }: { id: string; depth: number; 
     <>
       <div
         className={`op-tree-row${selected ? ' selected' : ''}${!node.isVisible ? ' dim' : ''}${drop ? ` drop-${drop}` : ''}`}
-        style={{ paddingLeft: 6 + depth * 14, background: hovered && !selected ? 'var(--op-hover)' : undefined }}
+        style={{ paddingLeft: 8 + depth * 14, background: hovered && !selected ? 'var(--op-hover)' : undefined }}
         draggable
         onDragStart={(e) => {
           dragIds = getState().selection.includes(id) ? getState().selection : [id];
@@ -198,6 +201,9 @@ function LayerRow({ id, depth, expanded, toggle }: { id: string; depth: number; 
         <button
           className="op-icon-btn small"
           style={{ visibility: hasKids ? 'visible' : 'hidden', width: 16 }}
+          tabIndex={hasKids ? undefined : -1}
+          aria-expanded={hasKids ? isOpen : undefined}
+          aria-label={isOpen ? 'Collapse' : 'Expand'}
           onClick={(e) => {
             e.stopPropagation();
             toggle(id);
@@ -223,7 +229,9 @@ function LayerRow({ id, depth, expanded, toggle }: { id: string; depth: number; 
             }}
           />
         ) : (
-          <span className="name">{displayName(node)}</span>
+          <span className="name" title={fullName(node)}>
+            {displayName(node)}
+          </span>
         )}
         <span className={`actions${!node.isVisible || node.isLocked ? ' pinned' : ''}`}>
           <button
@@ -288,8 +296,8 @@ function LayersSection() {
   const empty = useMemo(() => rootChildren.length === 0, [rootChildren]);
   return (
     <div className="op-scroll" style={{ flex: 1, padding: '6px 6px 24px' }}>
-      <div className="op-label" style={{ padding: '4px 8px 6px' }}>
-        Layers
+      <div className="op-panel-header" style={{ paddingLeft: 10 }}>
+        <span className="title">Layers</span>
       </div>
       {empty ? (
         <div className="op-empty">
@@ -306,22 +314,24 @@ export function LeftPanel() {
   const tab = useEditor((s) => s.leftTab);
   return (
     <div className="op-panel left">
-      <div className="op-tabs">
-        <button className={`op-tab${tab === 'layers' ? ' active' : ''}`} onClick={() => setState({ leftTab: 'layers' })}>
-          Layers
+      <div className="op-tabs" role="tablist">
+        <button role="tab" aria-selected={tab === 'layers'} className={`op-tab${tab === 'layers' ? ' active' : ''}`} onClick={() => setState({ leftTab: 'layers' })}>
+          <span className="op-tab-label">Layers</span>
         </button>
-        <button className={`op-tab${tab === 'tokens' ? ' active' : ''}`} onClick={() => setState({ leftTab: 'tokens' })}>
-          Tokens
+        <button role="tab" aria-selected={tab === 'tokens'} className={`op-tab${tab === 'tokens' ? ' active' : ''}`} onClick={() => setState({ leftTab: 'tokens' })}>
+          <span className="op-tab-label">Tokens</span>
         </button>
       </div>
-      {tab === 'layers' ? (
-        <>
-          <PagesSection />
-          <LayersSection />
-        </>
-      ) : (
-        <TokensPanel />
-      )}
+      <div key={tab} className="op-tab-panel">
+        {tab === 'layers' ? (
+          <>
+            <PagesSection />
+            <LayersSection />
+          </>
+        ) : (
+          <TokensPanel />
+        )}
+      </div>
     </div>
   );
 }

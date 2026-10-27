@@ -59,17 +59,45 @@ export async function executeCommand(
   if (cmd.type === 'insertHtml') {
     const resolved = await services.assets.resolveAll(collectImageUrls(cmd.html));
     return live.transact(actor, 'Paste', (tx) => {
-      const imported = importHtml(cmd.html, {
-        resolveImage: (u) => (resolved.has(u) ? resolved.get(u) : undefined),
-        nodeExists: (id) => !!tx.getNode(id),
-      });
-      if (!imported.roots.length) throw new OpError('Nothing to paste');
+      const importRoots = () => {
+        const imported = importHtml(cmd.html, {
+          resolveImage: (u) => (resolved.has(u) ? resolved.get(u) : undefined),
+          nodeExists: (id) => !!tx.getNode(id),
+        });
+        if (!imported.roots.length) throw new OpError('Nothing to paste');
+        return imported;
+      };
+      // Paste to replace: every target gets its own copy, in its slot and position.
+      if (cmd.replaceIds?.length) {
+        const ids: string[] = [];
+        for (const targetId of cmd.replaceIds) {
+          const target = tx.getNode(targetId);
+          if (!target?.parentId || target.component === 'PageRoot') continue;
+          const spot = { x: pxValue(target.styles.left) ?? 0, y: pxValue(target.styles.top) ?? 0 };
+          const parent = tx.getNode(target.parentId)!;
+          const onRoot = parent.component === 'PageRoot';
+          const roots = importRoots().roots;
+          // An absolutely positioned layer in a flow frame: its replacement keeps that spot.
+          if (!onRoot && !isFreeform(parent) && target.styles.position === 'absolute') {
+            for (const r of roots) Object.assign(r.styles, { position: 'absolute', left: `${spot.x}px`, top: `${spot.y}px` });
+          }
+          ids.push(...insertImported(tx, roots, targetId, 'replace', onRoot ? { placeTopLevel: () => spot } : {}).topLevelIds);
+        }
+        return { ids };
+      }
+      const imported = importRoots();
       const parent = tx.getNode(cmd.parentId);
       if (!parent) throw new OpError(`Node not found: ${cmd.parentId}`);
       const placed: Array<{ minX: number; minY: number; maxX: number; maxY: number }> = [];
       // Keep the pasted layers' arrangement: one free spot for their bounding box.
       let spots: Array<{ x: number; y: number }> | null = null;
-      if (cmd.keepLayout && parent.component === 'PageRoot') {
+      if (cmd.at && parent.component === 'PageRoot') {
+        spots = imported.roots.map(() => ({ x: cmd.at!.x, y: cmd.at!.y }));
+      } else if (cmd.at) {
+        // In a flow frame the layers float at that spot, like the absolutely positioned layers they cover.
+        const pos = isFreeform(parent) ? {} : { position: 'absolute' };
+        for (const r of imported.roots) Object.assign(r.styles, pos, { left: `${cmd.at.x}px`, top: `${cmd.at.y}px` });
+      } else if (cmd.keepLayout && parent.component === 'PageRoot') {
         const boxes = imported.roots.map((r) => ({
           x: pxValue(r.styles.left) ?? 0,
           y: pxValue(r.styles.top) ?? 0,
@@ -97,6 +125,7 @@ export async function executeCommand(
               }
             : undefined,
       });
+      if (cmd.index !== undefined) result.topLevelIds.forEach((id, i) => moveNode(tx, id, cmd.parentId, cmd.index! + i));
       return { ids: result.topLevelIds };
     });
   }
@@ -185,16 +214,19 @@ export async function executeCommand(
           const src = tx.getNode(id);
           if (!src?.parentId) continue;
           const parent = tx.getNode(src.parentId)!;
-          const { rootId, idMap: map } = duplicateSubtree(tx, id, src.parentId, parent.children.indexOf(id) + 1);
+          const place = cmd.place?.[id];
+          const { rootId, idMap: map } = duplicateSubtree(tx, id, src.parentId, place?.index ?? parent.children.indexOf(id) + 1);
           Object.assign(idMap, map);
           ids.push(rootId);
-          if (parent.component === 'PageRoot') {
+          if (place) {
+            if (place.styles) patchStyles(tx, rootId, place.styles);
+          } else if (parent.component === 'PageRoot') {
             const r = freeformRect(src);
             const spot = findFreeSpot(topLevelBoxes(tx, parent, null, new Set([rootId])), r.width || 400, r.height || 300, {
               anchor: { minX: r.left, minY: r.top, maxX: r.left + (r.width || 400), maxY: r.top + (r.height || 300) },
             });
             patchStyles(tx, rootId, { left: `${spot.x}px`, top: `${spot.y}px` });
-          } else if (cmd.offset && isFreeform(parent)) {
+          } else if (cmd.offset && (isFreeform(parent) || src.styles.position === 'absolute')) {
             const r = freeformRect(src);
             patchStyles(tx, rootId, { left: `${r.left + cmd.offset.x}px`, top: `${r.top + cmd.offset.y}px` });
           }
@@ -211,9 +243,12 @@ export async function executeCommand(
         const parentId = nodes[0]!.parentId!;
         if (nodes.some((n) => n.parentId !== parentId)) throw new OpError('Only layers with the same parent can be grouped');
         const parent = tx.getNode(parentId)!;
-        const order = [...nodes].sort((a, b) => parent.children.indexOf(a.id) - parent.children.indexOf(b.id));
-        const index = parent.children.indexOf(order[0]!.id);
-        const freeform = isFreeform(parent);
+        const byLayer = [...nodes].sort((a, b) => parent.children.indexOf(a.id) - parent.children.indexOf(b.id));
+        const order = cmd.ordered ? nodes : byLayer;
+        const index = parent.children.indexOf(byLayer[0]!.id);
+        // Absolutely positioned layers in a flow frame are wrapped like freeform ones, in place.
+        const absolute = !isFreeform(parent) && nodes.every((n) => n.styles.position === 'absolute');
+        const freeform = isFreeform(parent) || absolute;
         const rects = order.map(freeformRect);
         const minX = Math.min(...rects.map((r) => r.left));
         const minY = Math.min(...rects.map((r) => r.top));
@@ -224,20 +259,31 @@ export async function executeCommand(
           parentId,
           {
             component: 'Frame',
-            label: 'Group',
+            label: cmd.label?.trim() || 'Group',
             styles: freeform
-              ? { left: `${minX}px`, top: `${minY}px`, width: `${maxX - minX}px`, height: `${maxY - minY}px`, display: FREEFORM_DISPLAY }
+              ? {
+                  ...(absolute ? { position: 'absolute' } : {}),
+                  left: `${minX}px`,
+                  top: `${minY}px`,
+                  width: `${maxX - minX}px`,
+                  height: `${maxY - minY}px`,
+                  display: FREEFORM_DISPLAY,
+                }
               : { display: 'flex', flexDirection: parent.styles.flexDirection?.startsWith('row') ? 'row' : 'column', gap: parent.styles.gap ?? '0px' },
           },
           index
         );
+        // A wrapper that lays out its children (flex, grid) takes them out of absolute positioning.
+        const laidOut = /flex|grid/.test(String(cmd.styles?.display ?? ''));
         order.forEach((n, i) => {
           moveNode(tx, n.id, frame.id, i);
-          if (freeform) {
+          if (laidOut) patchStyles(tx, n.id, { position: null, left: null, top: null, right: null, bottom: null });
+          else if (freeform) {
             const r = freeformRect(n);
             patchStyles(tx, n.id, { left: `${r.left - minX}px`, top: `${r.top - minY}px` });
           }
         });
+        if (cmd.styles) patchStyles(tx, frame.id, cmd.styles);
         return { ids: [frame.id] };
       }
       case 'ungroup': {
@@ -248,11 +294,13 @@ export async function executeCommand(
           const parent = tx.getNode(frame.parentId)!;
           let index = parent.children.indexOf(id);
           const offset = freeformRect(frame);
+          // Children of a freeform frame keep their place (as absolute layers when the parent is a flow frame).
+          const keepPlace = isFreeform(frame) && (isFreeform(parent) || frame.styles.position === 'absolute');
           for (const childId of [...frame.children]) {
             moveNode(tx, childId, parent.id, index++);
-            if (isFreeform(parent) && isFreeform(frame)) {
+            if (keepPlace) {
               const r = freeformRect(tx.getNode(childId)!);
-              patchStyles(tx, childId, { left: `${r.left + offset.left}px`, top: `${r.top + offset.top}px` });
+              patchStyles(tx, childId, { ...(isFreeform(parent) ? {} : { position: 'absolute' }), left: `${r.left + offset.left}px`, top: `${r.top + offset.top}px` });
             }
             ids.push(childId);
           }

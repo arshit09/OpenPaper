@@ -53,6 +53,14 @@ function parseValue(p: Extract<ShaderParam, { kind: 'number' }>, text: string): 
   return p.format === 'percent' ? n / 100 : n;
 }
 
+function ParamLabel({ text }: { text: string }) {
+  return (
+    <span className="op-label op-truncate" style={{ width: 84, flexShrink: 0 }} title={text}>
+      {text}
+    </span>
+  );
+}
+
 function NumberControl({ p, value, onPreview, onCommit }: { p: Extract<ShaderParam, { kind: 'number' }>; value: number; onPreview: (v: number) => void; onCommit: (v: number) => void }) {
   const [draft, setDraft] = useState(formatValue(p, value));
   const pending = useRef<number | null>(null);
@@ -63,9 +71,7 @@ function NumberControl({ p, value, onPreview, onCommit }: { p: Extract<ShaderPar
   };
   return (
     <div className="op-row">
-      <span className="op-label" style={{ width: 84, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.label}>
-        {p.label}
-      </span>
+      <ParamLabel text={p.label} />
       <input
         className="op-slider"
         type="range"
@@ -144,13 +150,11 @@ function ImageControl({ value, label, onCommit }: { value: string | undefined; l
   const name = value ? decodeURIComponent(value.split('/').pop() ?? value).slice(0, 40) : 'Sample image';
   return (
     <div className="op-row">
-      <span className="op-label" style={{ width: 84, flexShrink: 0 }}>
-        {label}
-      </span>
-      <span className="op-label" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={value}>
+      <ParamLabel text={label} />
+      <span className="op-label op-truncate" style={{ flex: 1 }} title={value}>
         {name}
       </span>
-      <label className="op-btn" style={{ cursor: 'pointer' }}>
+      <label className="op-btn outline compact" style={{ cursor: 'pointer', height: 26 }}>
         {busy ? 'Uploading…' : 'Choose…'}
         <input
           type="file"
@@ -202,9 +206,7 @@ function ParamControl({ p, props, nodes }: { p: ShaderParam; props: ShaderProps;
       const label = (o: string) => (p.kind === 'boolean' ? (o === 'true' ? 'On' : 'Off') : o);
       return (
         <div className="op-row">
-          <span className="op-label" style={{ width: 84, flexShrink: 0 }}>
-            {p.label}
-          </span>
+          <ParamLabel text={p.label} />
           {p.kind === 'enum' && p.control === 'select' ? (
             <select className="op-input" value={current} onChange={(e) => void commit({ [p.name]: e.target.value })}>
               {options.map((o) => (
@@ -233,9 +235,7 @@ function ParamControl({ p, props, nodes }: { p: ShaderParam; props: ShaderProps;
     case 'color':
       return (
         <div className="op-row">
-          <span className="op-label" style={{ width: 84, flexShrink: 0 }}>
-            {p.label}
-          </span>
+          <ParamLabel text={p.label} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <ColorInput value={typeof value === 'string' ? value : '#000000'} onCommit={(v) => void commit({ [p.name]: v })} />
           </div>
@@ -333,8 +333,8 @@ export function ShaderInspector({ nodes }: { nodes: NodeRecord[] }) {
         </div>
         <div className="op-grid-2">
           {shaderPresets(def).map((preset) => (
-            <button key={preset.name} className="op-btn" style={{ justifyContent: 'center' }} onClick={() => void commit({}, preset.name)}>
-              {preset.name}
+            <button key={preset.name} className="op-btn outline" style={{ minWidth: 0 }} title={`Apply the ${preset.name} preset`} onClick={() => void commit({}, preset.name)}>
+              <span className="op-truncate">{preset.name}</span>
             </button>
           ))}
         </div>

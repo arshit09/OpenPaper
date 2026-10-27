@@ -15,12 +15,15 @@ import {
   Plug,
   ChevronLeft,
   Blend,
+  Keyboard,
 } from 'lucide-react';
 import { useEditor, setState, type Tool } from '../state/store.ts';
 import { command, redo, undo } from '../sync/session.ts';
 import { zoomBy, zoomToFit } from './canvas/Canvas.tsx';
 import { Logo } from '../ui/Logo.tsx';
 import { insertImageFiles } from './clipboard.ts';
+import { MAC } from './shortcuts.ts';
+import { bindingLabel } from './hotkeys.ts';
 
 const TOOLS: Array<{ id: Tool; label: string; key: string; icon: typeof Frame }> = [
   { id: 'select', label: 'Move', key: 'V', icon: MousePointer2 },
@@ -54,7 +57,6 @@ export function TopBar() {
             className="op-input"
             autoFocus
             defaultValue={doc.name}
-            style={{ maxWidth: 240, fontWeight: 600 }}
             onBlur={(e) => {
               setEditingName(false);
               const name = e.currentTarget.value.trim();
@@ -66,11 +68,15 @@ export function TopBar() {
             }}
           />
         ) : (
-          <button className="op-btn" style={{ fontWeight: 600, maxWidth: 260, overflow: 'hidden' }} onDoubleClick={() => setEditingName(true)} title="Double-click to rename">
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.name}</span>
+          <button className="op-btn op-filename" onDoubleClick={() => setEditingName(true)} title={`${doc.name}\nDouble-click to rename`}>
+            <span>{doc.name}</span>
           </button>
         )}
-        {connection !== 'open' && <span className="op-badge" style={{ color: 'var(--op-danger)' }}>Reconnecting…</span>}
+        {connection !== 'open' && (
+          <span className="op-badge" style={{ color: 'var(--op-danger)', flexShrink: 0 }}>
+            Reconnecting…
+          </span>
+        )}
       </div>
 
       <div className="op-toolbar">
@@ -103,29 +109,25 @@ export function TopBar() {
       </div>
 
       <div className="right">
-        <div style={{ display: 'flex', marginRight: 6 }}>
-          {agents.slice(0, 4).map((a) => (
-            <span
-              key={a.sessionId}
-              title={`${a.name}${a.lastTool ? ` — ${a.lastTool.replace(/_/g, ' ')}` : ''}`}
-              style={{
-                width: 26,
-                height: 26,
-                borderRadius: 13,
-                marginLeft: -6,
-                border: '2px solid var(--op-panel)',
-                background: a.color,
-                color: '#fff',
-                display: 'grid',
-                placeItems: 'center',
-                fontSize: 11,
-                fontWeight: 700,
-              }}
-            >
-              {a.name.slice(0, 1).toUpperCase()}
-            </span>
-          ))}
-        </div>
+        {agents.length > 0 && (
+          <div className="op-avatars">
+            {agents.slice(0, MAX_AVATARS).map((a) => (
+              <span
+                key={a.sessionId}
+                className="op-avatar"
+                title={`${a.name}${a.lastTool ? ` — ${a.lastTool.replace(/_/g, ' ')}` : ''}`}
+                style={{ background: a.color }}
+              >
+                {initials(a.name)}
+              </span>
+            ))}
+            {agents.length > MAX_AVATARS && (
+              <span className="op-avatar" title={agents.slice(MAX_AVATARS).map((a) => a.name).join(', ')} style={{ background: 'var(--op-text-3)' }}>
+                +{agents.length - MAX_AVATARS}
+              </span>
+            )}
+          </div>
+        )}
         <button className="op-icon-btn" title="Undo (Ctrl+Z)" onClick={() => void undo()}>
           <Undo2 size={16} />
         </button>
@@ -133,15 +135,26 @@ export function TopBar() {
           <Redo2 size={16} />
         </button>
         <button className="op-btn" title="Zoom (Shift+1 fit, Shift+0 100%)" onClick={() => zoomToFit()} onContextMenu={(e) => (e.preventDefault(), zoomBy(1))}>
-          {Math.round(zoom * 100)}%
+          <span className="op-zoom">{Math.round(zoom * 100)}%</span>
         </button>
         <button className="op-icon-btn" title="Export" onClick={() => setState({ showExport: true })}>
           <Download size={16} />
         </button>
-        <button className="op-btn primary" onClick={() => setState({ showConnect: true })}>
-          <Plug size={14} /> Connect agent
+        <button className="op-icon-btn" title={`Keyboard shortcuts (${bindingLabel('Mod+/', MAC)})`} onClick={() => setState({ showShortcuts: true })}>
+          <Keyboard size={16} />
+        </button>
+        <button className="op-btn primary" title="Connect agent" onClick={() => setState({ showConnect: true })}>
+          <Plug size={14} /> <span className="op-connect-label">Connect agent</span>
         </button>
       </div>
     </div>
   );
+}
+
+const MAX_AVATARS = 3;
+
+/** "Claude Code" → "CC", "Cursor" → "C": tells agents apart when their names share a first letter. */
+function initials(name: string): string {
+  const words = name.split(/\s+/).filter(Boolean);
+  return (words.length > 1 ? words[0]![0]! + words[1]![0]! : (words[0]?.[0] ?? '?')).toUpperCase();
 }

@@ -1,12 +1,16 @@
-import { useEffect, useMemo, useRef, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useSyncExternalStore, type CSSProperties } from 'react';
 import { BASE_CSS, tokenVars } from '@openpaper/core';
 import { camera, getState, setCamera, useEditor } from '../../state/store.ts';
 import { pushView } from '../../sync/session.ts';
 import { NodeView } from './NodeView.tsx';
 import { Overlay } from './Overlay.tsx';
 import { TextEditor } from './TextEditor.tsx';
+import { DragGhost } from './DragGhost.tsx';
+import { MeasureOverlay } from './MeasureOverlay.tsx';
+import { ZoomOverlay } from './ZoomOverlay.tsx';
 import { setViewportElement, unionRects, worldRectOf, viewportRect } from './geometry.ts';
-import { onDoubleClick, onPointerDown, onPointerMove, onPointerUp, onWheel, setSpaceHeld, spaceHeld } from './interactions.ts';
+import { fitRect, getModes, onDoubleClick, onPointerDown, onPointerMove, onPointerUp, onWheel, setModes, subscribeModes, zoomAt } from './interactions.ts';
+import { nextZoomLevel } from './canvas-math.ts';
 import { useDocumentFonts } from './fonts.ts';
 
 const CURSORS: Record<string, string> = {
@@ -33,21 +37,23 @@ export function zoomToFit(ids?: string[], padding = 80) {
     setCamera({ x: vr.width / 2 - 360, y: 80, zoom: 1 });
     return;
   }
-  const zoom = Math.min(4, Math.max(0.02, Math.min((vr.width - padding * 2) / rect.width, (vr.height - padding * 2) / rect.height)));
-  setCamera({
-    zoom,
-    x: vr.width / 2 - (rect.x + rect.width / 2) * zoom,
-    y: vr.height / 2 - (rect.y + rect.height / 2) * zoom,
-  });
+  fitRect(rect, padding);
 }
 
 export function zoomBy(factor: number) {
   const vr = viewportRect();
-  const cam = camera();
-  const z = Math.min(256, Math.max(0.02, cam.zoom * factor));
-  const wx = (vr.width / 2 - cam.x) / cam.zoom;
-  const wy = (vr.height / 2 - cam.y) / cam.zoom;
-  setCamera({ zoom: z, x: vr.width / 2 - wx * z, y: vr.height / 2 - wy * z });
+  zoomAt(camera().zoom * factor, vr.width / 2, vr.height / 2);
+}
+
+/** Zoom to an exact level around the viewport center. */
+export function zoomTo(zoom: number) {
+  const vr = viewportRect();
+  zoomAt(zoom, vr.width / 2, vr.height / 2);
+}
+
+/** Zoom in/out to the next stop (… 50%, 100%, 200% …). */
+export function zoomStep(direction: 1 | -1) {
+  zoomTo(nextZoomLevel(camera().zoom, direction));
 }
 
 export function Canvas() {
@@ -55,6 +61,7 @@ export function Canvas() {
   const pageId = useEditor((s) => s.pageId);
   const cam = useEditor((s) => (s.pageId && s.cameras[s.pageId]) || null);
   const tool = useEditor((s) => s.tool);
+  const modes = useSyncExternalStore(subscribeModes, getModes);
   const rootChildren = useEditor((s) => {
     const page = s.doc && s.pageId ? s.doc.pages[s.pageId] : undefined;
     return page ? s.doc!.nodes[page.rootId]?.children : undefined;
@@ -70,34 +77,19 @@ export function Canvas() {
     if (!el) return;
     const wheel = (e: WheelEvent) => onWheel(e);
     el.addEventListener('wheel', wheel, { passive: false });
-    const move = (e: PointerEvent) => onPointerMove(e);
+    const move = (e: PointerEvent) => {
+      // Alt may go down while another window has focus; pointer events still report it.
+      if (e.altKey !== getModes().alt) setModes({ alt: e.altKey });
+      onPointerMove(e);
+    };
     const up = (e: PointerEvent) => onPointerUp(e);
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
-    const keyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !isTyping(e)) {
-        if (!spaceHeld) {
-          setSpaceHeld(true);
-          el.style.cursor = 'grab';
-        }
-        e.preventDefault();
-      }
-    };
-    const keyUp = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
-        setSpaceHeld(false);
-        el.style.cursor = '';
-      }
-    };
-    window.addEventListener('keydown', keyDown);
-    window.addEventListener('keyup', keyUp);
     return () => {
       setViewportElement(null);
       el.removeEventListener('wheel', wheel);
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
-      window.removeEventListener('keydown', keyDown);
-      window.removeEventListener('keyup', keyUp);
     };
   }, []);
 
@@ -126,6 +118,15 @@ export function Canvas() {
     transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`,
     ...vars,
   } as CSSProperties;
+  const cursor = modes.panning
+    ? 'grabbing'
+    : modes.zoom
+      ? modes.alt
+        ? 'zoom-out'
+        : 'zoom-in'
+      : modes.space
+        ? 'grab'
+        : (CURSORS[tool] ?? 'default');
 
   return (
     <div
@@ -135,7 +136,7 @@ export function Canvas() {
         position: 'relative',
         overflow: 'hidden',
         background: canvasColor || 'var(--op-canvas)',
-        cursor: CURSORS[tool] ?? 'default',
+        cursor,
         touchAction: 'none',
         userSelect: 'none',
       }}
@@ -153,14 +154,22 @@ export function Canvas() {
       <style>{BASE_CSS}</style>
       <div data-op-world style={worldStyle}>
         {rootChildren?.map((id) => <NodeView key={id} id={id} />)}
+        <DragGhost />
         <TextEditor />
       </div>
       <Overlay />
+      <MeasureOverlay />
+      <ZoomOverlay />
     </div>
   );
 }
 
-export function isTyping(e: KeyboardEvent): boolean {
+const TEXT_INPUTS = /^(text|search|email|url|tel|password|number|date|datetime-local|month|time|week|range)$/i;
+
+/** Is the event aimed at something that takes typing (text fields, editable text, selects, sliders)? */
+export function isTyping(e: Event): boolean {
   const t = e.target as HTMLElement | null;
-  return !!t && (t.isContentEditable || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
+  if (!t || typeof t.tagName !== 'string') return false;
+  if (t.isContentEditable || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT') return true;
+  return t.tagName === 'INPUT' && TEXT_INPUTS.test((t as HTMLInputElement).type || 'text');
 }

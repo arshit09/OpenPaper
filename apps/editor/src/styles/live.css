@@ -1,0 +1,159 @@
+/* Live agent preview: presentation only, never layout (see editor/canvas/live.ts). */
+
+/* A layer an agent just wrote, waiting for its turn to build. Keeps its box. */
+[data-op-pending] {
+  visibility: hidden !important;
+}
+
+.op-live-hud {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* Deleted layers fading out, on the same camera as the canvas (same base styles as the world). */
+.op-live-ghosts {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 16px;
+  line-height: normal;
+  color: #000;
+}
+.op-live-ghosts img,
+.op-live-ghosts svg,
+.op-live-ghosts video {
+  display: block;
+}
+.op-live-ghosts * {
+  pointer-events: none !important;
+}
+.op-live-ghost {
+  position: absolute;
+}
+
+/* Agent working on an artboard: a breathing ring in the agent's colour. */
+.op-live-ring {
+  position: absolute;
+  pointer-events: none;
+  border: 2px solid var(--c);
+  border-radius: 4px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 16%, transparent);
+  animation: op-live-breathe 2.8s ease-in-out infinite;
+}
+@keyframes op-live-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* Agent chip at the right end of the artboard label row. It gives way first: name, then dots only. */
+.op-live-chip {
+  flex: 0 1000 auto;
+  min-width: 26px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--c);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  pointer-events: none;
+}
+.op-live-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.op-live-dots {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 2px;
+  align-items: center;
+}
+.op-live-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 2px;
+  background: currentColor;
+  animation: op-live-dot 1s ease-in-out infinite;
+}
+.op-live-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.op-live-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes op-live-dot {
+  0%,
+  100% {
+    transform: translateY(1px);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translateY(-2px);
+    opacity: 1;
+  }
+}
+
+/* The agent's write head. */
+.op-live-cursors {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.op-live-cursor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  will-change: transform;
+}
+.op-live-cursor.on {
+  opacity: 1;
+}
+.op-live-cursor svg {
+  display: block;
+  filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.3));
+}
+.op-live-cursor-name {
+  position: absolute;
+  left: 15px;
+  top: 17px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--c);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 17px;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .op-live-ring,
+  .op-live-dots i {
+    animation: none;
+  }
+  .op-live-cursors {
+    display: none;
+  }
+}

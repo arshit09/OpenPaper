@@ -1,5 +1,7 @@
+import { flushSync } from 'react-dom';
 import type { AgentChatItem, AgentUsage, EditorCommand, OpenFileResult, ResourceInfo, ViewState } from '@openpaper/core';
 import { applyServerPatch, getState, setDocument, setState, toast, useEditor } from '../state/store.ts';
+import { applyLive, flushLive, noteAgentReads, planLive } from '../editor/canvas/live.ts';
 import { SyncClient } from './client.ts';
 
 export const client = new SyncClient();
@@ -9,30 +11,19 @@ client.onState((connection) => setState({ connection }));
 client.subscribe((message) => {
   switch (message.t) {
     case 'patch': {
-      const before = getState().doc;
-      applyServerPatch(message.fileId, message.version, message.patch);
-      if (message.actor.kind === 'agent' && before?.id === message.fileId && message.patch.nodes?.upsert.length) {
-        const color = getState().agents.find((a) => a.sessionId === message.actor.id)?.color ?? '#8B5CF6';
-        const at = Date.now();
-        const upserts = message.patch.nodes.upsert.filter((n) => n.component !== 'PageRoot');
-        const newIds = new Set(upserts.filter((n) => !before.nodes[n.id]).map((n) => n.id));
-        const flashes = upserts
-          .filter((n) => {
-            const old = before.nodes[n.id];
-            // New: only the outermost new node of a written group flashes.
-            if (!old) return !newIds.has(n.parentId ?? '');
-            // Existing: flash real edits (styles/text), not parents that merely gained children.
-            return old.styles !== n.styles && JSON.stringify(old.styles) !== JSON.stringify(n.styles) || old.textValue !== n.textValue;
-          })
-          .map((n) => ({ id: n.id, color, at, kind: before.nodes[n.id] ? ('edit' as const) : ('write' as const) }))
-          .slice(0, 40);
-        setState((s) => ({ flashes: [...s.flashes.filter((f) => at - f.at < 1500), ...flashes] }));
-        setTimeout(() => setState((s) => ({ flashes: s.flashes.filter((f) => Date.now() - f.at < 1400) })), 1500);
-      }
+      // Agent edits play back on the canvas: decide what to hide before the new layers render,
+      // commit synchronously, then start the reveal before the browser paints.
+      const plan = planLive(message.fileId, message.patch, message.actor, message.label);
+      flushSync(() => applyServerPatch(message.fileId, message.version, message.patch));
+      if (plan) applyLive(plan);
       break;
     }
     case 'presence':
-      if (getState().doc?.id === message.fileId) setState({ agents: message.agents });
+      if (getState().doc?.id === message.fileId) {
+        const prev = getState().agents;
+        setState({ agents: message.agents });
+        noteAgentReads(message.agents, prev);
+      }
       break;
     case 'activity':
       if (getState().doc?.id === message.fileId) {
@@ -142,6 +133,7 @@ export async function refreshResources(): Promise<ResourceInfo[]> {
 
 export async function openFile(fileId: string, opts: { keepView?: boolean; pageId?: string } = {}): Promise<void> {
   const result = await client.request<OpenFileResult>('file.open', { fileId });
+  flushLive();
   if (!opts.keepView) setState({ selection: [], pageId: opts.pageId ?? null, hoverId: null });
   else if (opts.pageId) setState({ pageId: opts.pageId });
   setDocument(result.doc, result.version);
@@ -156,6 +148,7 @@ export async function openFile(fileId: string, opts: { keepView?: boolean; pageI
 export function closeFile(): void {
   const doc = getState().doc;
   if (doc) client.notify('file.close', { fileId: doc.id });
+  flushLive();
   setState((s) => ({
     doc: null,
     pageId: null,

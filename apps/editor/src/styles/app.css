@@ -21,11 +21,17 @@
   --op-agent: #8b5cf6;
   --op-selection: #0d99ff;
   --op-shadow: 0 6px 24px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+  --op-toast-bg: #1a1a1a;
+  --op-toast-border: transparent;
+  --op-backdrop: rgba(0, 0, 0, 0.32);
+  --op-raised: #ffffff;
   --op-radius: 8px;
   --op-radius-sm: 5px;
   --op-topbar-h: 44px;
   --op-left-w: 248px;
   --op-right-w: 272px;
+  --op-ease: cubic-bezier(0.2, 0, 0, 1);
+  --op-fast: 0.12s;
   color-scheme: light;
 }
 
@@ -44,6 +50,10 @@
     --op-active: #383838;
     --op-accent-soft: rgba(13, 153, 255, 0.2);
     --op-shadow: 0 8px 28px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.4);
+    --op-toast-bg: #333333;
+    --op-toast-border: #444444;
+    --op-backdrop: rgba(0, 0, 0, 0.5);
+    --op-raised: #3a3a3a;
     color-scheme: dark;
   }
 }
@@ -62,6 +72,10 @@
   --op-active: #383838;
   --op-accent-soft: rgba(13, 153, 255, 0.2);
   --op-shadow: 0 8px 28px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.4);
+  --op-toast-bg: #333333;
+  --op-toast-border: #444444;
+  --op-backdrop: rgba(0, 0, 0, 0.5);
+  --op-raised: #3a3a3a;
   color-scheme: dark;
 }
 
@@ -114,9 +128,17 @@ select {
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
+  transition:
+    background-color var(--op-fast) ease,
+    border-color var(--op-fast) ease,
+    color var(--op-fast) ease,
+    filter var(--op-fast) ease;
 }
-.op-btn:hover {
+.op-btn:hover:not(:disabled) {
   background: var(--op-hover);
+}
+.op-btn:active:not(:disabled) {
+  background: var(--op-active);
 }
 .op-btn:disabled {
   opacity: 0.45;
@@ -126,8 +148,13 @@ select {
   background: var(--op-accent);
   color: var(--op-accent-text);
 }
-.op-btn.primary:hover {
+.op-btn.primary:hover:not(:disabled) {
+  background: var(--op-accent);
   filter: brightness(1.06);
+}
+.op-btn.primary:active:not(:disabled) {
+  background: var(--op-accent);
+  filter: brightness(0.94);
 }
 .op-btn.outline {
   border-color: var(--op-border-strong);
@@ -141,24 +168,63 @@ select {
   justify-content: center;
   width: 28px;
   height: 28px;
+  padding: 0;
   border-radius: var(--op-radius-sm);
   border: none;
   background: transparent;
   color: var(--op-text-2);
   cursor: pointer;
   flex-shrink: 0;
+  transition:
+    background-color var(--op-fast) ease,
+    color var(--op-fast) ease,
+    opacity var(--op-fast) ease;
 }
-.op-icon-btn:hover {
+.op-icon-btn:hover:not(:disabled) {
   background: var(--op-hover);
   color: var(--op-text);
 }
-.op-icon-btn.active {
+.op-icon-btn:active:not(:disabled) {
+  background: var(--op-active);
+}
+.op-icon-btn.active,
+.op-icon-btn.active:hover,
+.op-icon-btn.active:active {
   background: var(--op-accent);
   color: var(--op-accent-text);
+}
+.op-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 .op-icon-btn.small {
   width: 22px;
   height: 22px;
+}
+
+/* Keyboard focus ring for chrome controls (mouse clicks don't show it). */
+.op-btn:focus-visible,
+.op-icon-btn:focus-visible,
+.op-tab:focus-visible,
+.op-menu-item:focus-visible,
+.op-shader-tile:focus-visible,
+.op-file-card:focus-visible {
+  outline: 2px solid var(--op-accent);
+  outline-offset: 1px;
+}
+
+.op-truncate {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.op-clamp-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
 }
 
 .op-input {
@@ -170,6 +236,9 @@ select {
   border: 1px solid transparent;
   background: var(--op-panel-2);
   outline: none;
+  transition:
+    border-color var(--op-fast) ease,
+    background-color var(--op-fast) ease;
 }
 .op-input:hover {
   border-color: var(--op-border);
@@ -192,6 +261,22 @@ select.op-input {
   color: var(--op-text-3);
   font-size: 11px;
 }
+/* Fixed label column for inspector rows (Fill, Shadow, …) so their controls line up. */
+.op-prop-label {
+  width: 56px;
+  flex-shrink: 0;
+}
+/* Icon or letter in front of an inspector field. */
+.op-field-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--op-text-3);
+  font-size: 11px;
+}
 
 .op-kbd {
   font-family: var(--op-mono);
@@ -202,6 +287,7 @@ select.op-input {
 .op-scroll {
   overflow: auto;
   scrollbar-width: thin;
+  scrollbar-color: var(--op-border-strong) transparent;
 }
 
 /* ---------- Layout ---------- */
@@ -217,9 +303,11 @@ select.op-input {
 }
 .op-panel {
   background: var(--op-panel);
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 .op-panel.left {
   border-right: 1px solid var(--op-border);
@@ -246,6 +334,63 @@ select.op-input {
 }
 .op-topbar .right {
   justify-content: flex-end;
+  container-type: inline-size;
+}
+.op-topbar .right > * {
+  flex-shrink: 0;
+}
+/* Too narrow for the full cluster: Connect agent collapses to its icon (it keeps its tooltip). */
+@container (max-width: 379px) {
+  .op-connect-label {
+    display: none;
+  }
+}
+.op-filename {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 280px;
+  font-weight: 600;
+}
+.op-filename > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.op-topbar .op-input {
+  width: 240px;
+  height: 28px;
+  font-weight: 600;
+}
+/* Fixed width so the cluster doesn't shift as the zoom label changes. */
+.op-zoom {
+  min-width: 36px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.op-btn:has(> .op-zoom) {
+  padding: 0 6px;
+}
+.op-avatars {
+  display: flex;
+  align-items: center;
+  padding: 0 6px 0 2px;
+}
+.op-avatar {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--op-panel);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  cursor: default;
+  user-select: none;
+  animation: op-pop-in 0.18s var(--op-ease) both;
+}
+.op-avatar + .op-avatar {
+  margin-left: -2px;
 }
 .op-toolbar {
   display: flex;
@@ -285,28 +430,108 @@ select.op-input {
   gap: 6px;
 }
 
+/* Tabs never wrap: when the row is tight, labels shrink with an ellipsis and counts stay whole. */
 .op-tabs {
   display: flex;
+  align-items: center;
+  flex-shrink: 0;
   gap: 2px;
-  padding: 6px 8px;
+  min-width: 0;
+  padding: 6px;
   border-bottom: 1px solid var(--op-border);
+  overflow: hidden;
 }
 .op-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex: 0 1 auto;
+  min-width: 0;
   height: 26px;
-  padding: 0 9px;
+  padding: 0 6px;
   border-radius: var(--op-radius-sm);
   border: none;
   background: transparent;
   color: var(--op-text-2);
   cursor: pointer;
   font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background-color var(--op-fast) ease,
+    color var(--op-fast) ease;
+}
+.op-tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Text segmented control: the selected segment is raised above the track. */
+.op-segmented {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 2px;
+  border-radius: 7px;
+}
+.op-segmented .op-tab {
+  height: 24px;
+}
+.op-segmented .op-tab.active {
+  background: var(--op-raised);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+.op-btn.compact {
+  padding: 0 8px;
+  gap: 4px;
 }
 .op-tab:hover {
   color: var(--op-text);
 }
 .op-tab.active {
+  flex-shrink: 0;
   background: var(--op-panel-2);
   color: var(--op-text);
+}
+.op-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--op-agent);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  animation: op-pop-in 0.18s var(--op-ease) both;
+}
+.op-tab-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  animation: op-fade-in 0.14s ease-out both;
+}
+
+/* Section headers inside the side panels (Pages, Layers). */
+.op-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 28px;
+  padding: 0 4px 0 6px;
+  font-weight: 600;
+  font-size: 11.5px;
+  color: var(--op-text);
+  user-select: none;
+}
+.op-panel-header > .title {
+  flex: 1;
+  min-width: 0;
 }
 
 /* ---------- Tree rows (pages / layers) ---------- */
@@ -322,9 +547,16 @@ select.op-input {
   color: var(--op-text);
   white-space: nowrap;
   position: relative;
+  transition: background-color var(--op-fast) ease;
 }
 .op-tree-row:hover {
   background: var(--op-hover);
+}
+.op-tree-row > svg {
+  flex-shrink: 0;
+}
+.op-tree-row .op-input {
+  height: 22px;
 }
 .op-tree-row.selected {
   background: var(--op-accent-soft);
@@ -406,14 +638,16 @@ select.op-input {
   position: fixed;
   inset: 0;
   z-index: 900;
-  background: rgba(0, 0, 0, 0.32);
+  background: var(--op-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 16px;
+  animation: op-fade-in 0.14s ease-out both;
 }
 .op-dialog {
   width: min(640px, 100%);
+  max-width: 100%;
   max-height: min(760px, 100%);
   display: flex;
   flex-direction: column;
@@ -422,19 +656,42 @@ select.op-input {
   border: 1px solid var(--op-border);
   box-shadow: var(--op-shadow);
   overflow: hidden;
+  animation: op-dialog-in 0.18s var(--op-ease) both;
 }
 .op-dialog header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px;
+  gap: 12px;
+  flex-shrink: 0;
+  min-height: 52px;
+  padding: 0 10px 0 16px;
   border-bottom: 1px solid var(--op-border);
   font-size: 14px;
   font-weight: 600;
 }
+.op-dialog header > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
 .op-dialog .body {
   padding: 16px;
   overflow: auto;
+  scrollbar-width: thin;
+}
+.op-dialog .footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.op-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
 .op-code {
@@ -457,17 +714,26 @@ select.op-input {
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 8px;
+  width: max-content;
+  max-width: calc(100vw - 32px);
   z-index: 1100;
   pointer-events: none;
 }
 .op-toast {
+  max-width: min(480px, calc(100vw - 32px));
   padding: 8px 14px;
   border-radius: var(--op-radius);
-  background: #1a1a1a;
+  border: 1px solid var(--op-toast-border);
+  background: var(--op-toast-bg);
   color: #fff;
   box-shadow: var(--op-shadow);
   font-size: 12.5px;
+  line-height: 1.45;
+  text-align: center;
+  overflow-wrap: anywhere;
+  animation: op-toast-in 0.2s var(--op-ease) both;
 }
 
 .op-empty {
@@ -505,79 +771,320 @@ select.op-input {
   font-weight: 500;
   background: var(--op-panel-2);
   color: var(--op-text-2);
+  white-space: nowrap;
+}
+
+/* ---------- Cards (comment threads, notices) ---------- */
+.op-card {
+  border: 1px solid var(--op-border);
+  border-radius: var(--op-radius);
+  padding: 10px;
+  background: var(--op-panel);
+  transition:
+    border-color var(--op-fast) ease,
+    box-shadow var(--op-fast) ease,
+    opacity var(--op-fast) ease;
+}
+.op-card + .op-card {
+  margin-top: 8px;
+}
+.op-card.interactive {
+  cursor: pointer;
+}
+.op-card.interactive:hover {
+  border-color: var(--op-border-strong);
+}
+.op-card.focused,
+.op-card.focused:hover {
+  border-color: var(--op-accent);
+  box-shadow: 0 0 0 3px var(--op-accent-soft);
+}
+.op-card.dashed {
+  border-style: dashed;
+  border-color: var(--op-border-strong);
+}
+.op-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+}
+
+/* ---------- Agents panel ---------- */
+.op-agent-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--op-border);
+}
+.op-agent-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent);
+}
+.op-activity {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 10px;
+  padding: 6px 0;
+}
+.op-activity time {
+  color: var(--op-text-3);
+  font-size: 11px;
+  line-height: 17px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.op-activity .summary {
+  line-height: 17px;
+}
+
+/* ---------- Built-in agent dock ---------- */
+.op-dock {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  width: min(560px, calc(100% - 32px));
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  background: var(--op-panel);
+  border: 1px solid var(--op-border);
+  box-shadow: var(--op-shadow);
+  overflow: hidden;
+}
+/* The conversation stays mounted and folds open/closed by animating its row height. */
+.op-dock-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.2s var(--op-ease);
+}
+.op-dock-body.open {
+  grid-template-rows: 1fr;
+}
+.op-dock-body > div {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.op-dock-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 6px 8px 6px 12px;
+  border-bottom: 1px solid var(--op-border);
+}
+.op-dock-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px;
+}
+.op-dock-composer textarea {
+  resize: none;
+  min-height: 34px;
+  max-height: 140px;
+  padding: 8px 4px;
+  background: transparent;
+  border: none;
+  font-size: 13px;
+  line-height: 18px;
+}
+.op-dock-composer textarea:hover,
+.op-dock-composer textarea:focus {
+  background: transparent;
+  border: none;
+}
+.op-dock-composer > button {
+  margin-bottom: 3px;
+}
+.op-dock-composer > .op-dock-spark {
+  flex-shrink: 0;
+  margin: 0 0 9px 4px;
+  color: var(--op-agent);
+}
+.op-thinking {
+  height: 22px;
+  margin: 0 0 2px -6px;
+  padding: 0 6px;
+  gap: 4px;
+  color: var(--op-text-3);
+  font-size: 11px;
+}
+.op-icon-btn.pressed {
+  background: var(--op-active);
+  color: var(--op-text);
+}
+/* Fields next to 28px buttons in dialogs and the dock match their height. */
+.op-dock input.op-input,
+.op-dock select.op-input,
+.op-dialog input.op-input,
+.op-dialog select.op-input {
+  height: 28px;
+}
+
+/* ---------- Floating banner (agent opened another file) ---------- */
+.op-banner {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 32px);
+  padding: 6px 6px 6px 14px;
+  border-radius: 10px;
+  background: var(--op-panel);
+  border: 1px solid var(--op-border);
+  box-shadow: var(--op-shadow);
+  animation: op-banner-in 0.2s var(--op-ease) both;
+}
+.op-banner > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- Home ---------- */
+.op-home-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 56px;
+  padding: 0 20px;
+  background: var(--op-panel);
+  border-bottom: 1px solid var(--op-border);
+  flex-shrink: 0;
+}
+.op-file-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+.op-file-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--op-panel);
+  border: 1px solid var(--op-border);
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  transition:
+    border-color var(--op-fast) ease,
+    box-shadow var(--op-fast) ease;
+}
+.op-file-card:hover {
+  border-color: var(--op-border-strong);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+}
+.op-file-thumb {
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--op-canvas);
+  color: var(--op-text-3);
+  border-bottom: 1px solid var(--op-border);
+}
+.op-file-card.folder .op-file-thumb {
+  background: var(--op-panel-2);
+}
+.op-file-meta {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 8px 10px 12px;
+}
+.op-file-meta > div {
+  flex: 1;
+  min-width: 0;
+}
+.op-crumb {
+  color: var(--op-text-3);
+  text-decoration: none;
+  transition: color var(--op-fast) ease;
+}
+.op-crumb:hover {
+  color: var(--op-text);
+}
+
+/* ---------- Motion ---------- */
+@keyframes op-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes op-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+@keyframes op-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+}
+@keyframes op-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+@keyframes op-banner-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+}
+@keyframes op-popover-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -4px) scale(0.99);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .op-btn,
+  .op-icon-btn,
+  .op-tab,
+  .op-tree-row,
+  .op-input,
+  .op-card,
+  .op-file-card,
+  .op-crumb,
+  .op-dock-body,
+  .op-shader-thumb {
+    transition: none;
+  }
+  .op-dialog-backdrop,
+  .op-dialog,
+  .op-toast,
+  .op-banner,
+  .op-avatar,
+  .op-count,
+  .op-tab-panel,
+  .op-shader-picker {
+    animation: none;
+  }
 }
 
 /* ---------- Canvas ---------- */
 .op-canvas {
   min-width: 0;
   min-height: 0;
-}
-
-/* Agent "working" indicator: three bouncing dots. */
-.op-agent-dots {
-  display: inline-flex;
-  gap: 2px;
-  align-items: center;
-}
-.op-agent-dots i {
-  width: 4px;
-  height: 4px;
-  border-radius: 2px;
-  background: currentColor;
-  opacity: 0.85;
-  animation: op-dot 1s ease-in-out infinite;
-}
-.op-agent-dots i:nth-child(2) {
-  animation-delay: 0.15s;
-}
-.op-agent-dots i:nth-child(3) {
-  animation-delay: 0.3s;
-}
-@keyframes op-dot {
-  0%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.5;
-  }
-  50% {
-    transform: translateY(-3px);
-    opacity: 1;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .op-agent-dots i {
-    animation: none;
-  }
-}
-
-/* Agent write/edit reveal */
-.op-flash {
-  position: absolute;
-  pointer-events: none;
-  border-radius: 2px;
-  outline: 2px solid var(--flash);
-  background: color-mix(in srgb, var(--flash) 16%, transparent);
-  animation: op-flash 1.4s ease-out forwards;
-}
-.op-flash.edit {
-  background: transparent;
-  outline-style: dashed;
-}
-@keyframes op-flash {
-  0% {
-    opacity: 1;
-  }
-  60% {
-    opacity: 0.7;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .op-flash {
-    animation-duration: 0.01s;
-  }
 }
 
 .op-spin {
@@ -601,6 +1108,7 @@ select.op-input {
   background: var(--op-panel);
   border: 1px solid var(--op-border);
   box-shadow: var(--op-shadow);
+  animation: op-popover-in 0.16s var(--op-ease) both;
 }
 .op-shader-grid {
   display: grid;

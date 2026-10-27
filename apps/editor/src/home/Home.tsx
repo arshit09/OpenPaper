@@ -57,20 +57,10 @@ export function Home() {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--op-panel-2)' }}>
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          height: 56,
-          padding: '0 20px',
-          background: 'var(--op-panel)',
-          borderBottom: '1px solid var(--op-border)',
-        }}
-      >
+      <header className="op-home-header">
         <Logo />
         <div style={{ flex: 1 }} />
-        <span className="op-badge" title="Server connection">
+        <span className="op-badge" title="Server connection" style={{ marginRight: 4 }}>
           <span
             style={{
               width: 7,
@@ -92,19 +82,18 @@ export function Home() {
       <main className="op-scroll" style={{ flex: 1, padding: '28px 32px' }}>
         <div style={{ maxWidth: 1080, margin: '0 auto' }}>
           <div className="op-row" style={{ marginBottom: 18, gap: 10 }}>
-            <h1 style={{ fontSize: 20, margin: 0, fontWeight: 650 }}>
+            <h1 className="op-truncate" style={{ flex: 1, fontSize: 20, margin: 0, fontWeight: 650, lineHeight: '28px' }} title={folder?.name}>
               {folder ? (
                 <>
-                  <a href="#/" onClick={(e) => (e.preventDefault(), setFolderId(null))} style={{ color: 'var(--op-text-3)' }}>
+                  <a href="#/" className="op-crumb" onClick={(e) => (e.preventDefault(), setFolderId(null))}>
                     Files
                   </a>{' '}
-                  / {folder.name}
+                  <span style={{ color: 'var(--op-text-3)' }}>/</span> {folder.name}
                 </>
               ) : (
                 'Files'
               )}
             </h1>
-            <div style={{ flex: 1 }} />
             <button className="op-btn" onClick={createFolder}>
               <Folder size={14} /> New folder
             </button>
@@ -136,47 +125,41 @@ export function Home() {
               </div>
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14 }}>
-              {items.map((r) => (
-                <div
-                  key={r.id}
-                  onClick={() => (r.type === 'folder' ? setFolderId(r.id) : (location.hash = `#/file/${r.id}`))}
-                  style={{
-                    background: 'var(--op-panel)',
-                    border: '1px solid var(--op-border)',
-                    borderRadius: 10,
-                    overflow: 'hidden',
-                    cursor: 'pointer',
-                  }}
-                >
+            <div className="op-file-grid">
+              {items.map((r) => {
+                const openItem = () => (r.type === 'folder' ? setFolderId(r.id) : (location.hash = `#/file/${r.id}`));
+                return (
                   <div
-                    style={{
-                      height: 120,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      background: r.type === 'folder' ? 'var(--op-panel-2)' : 'var(--op-canvas)',
-                      color: 'var(--op-text-3)',
+                    key={r.id}
+                    className={`op-file-card${r.type === 'folder' ? ' folder' : ''}`}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Open ${r.type} ${r.name}`}
+                    onClick={openItem}
+                    onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
+                      e.preventDefault();
+                      openItem();
                     }}
                   >
-                    {r.type === 'folder' ? <Folder size={34} /> : <FileText size={30} />}
-                  </div>
-                  <div className="op-row" style={{ padding: '10px 10px 10px 12px' }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 550, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {r.name}
+                    <div className="op-file-thumb">{r.type === 'folder' ? <Folder size={34} /> : <FileText size={30} />}</div>
+                    <div className="op-file-meta">
+                      <div>
+                        <div className="op-truncate" style={{ fontWeight: 550 }} title={r.name}>
+                          {r.name}
+                        </div>
+                        <div className="op-label op-truncate">{r.type === 'folder' ? 'Folder' : `Edited ${timeAgo(r.updatedAt)}`}</div>
                       </div>
-                      <div className="op-label">{r.type === 'folder' ? 'Folder' : `Edited ${timeAgo(r.updatedAt)}`}</div>
+                      <button className="op-icon-btn small" title="Rename" onClick={(e) => (e.stopPropagation(), void rename(r))}>
+                        <Pencil size={13} />
+                      </button>
+                      <button className="op-icon-btn small" title="Delete" onClick={(e) => (e.stopPropagation(), void remove(r))}>
+                        <Trash2 size={13} />
+                      </button>
                     </div>
-                    <button className="op-icon-btn small" title="Rename" onClick={(e) => (e.stopPropagation(), void rename(r))}>
-                      <Pencil size={13} />
-                    </button>
-                    <button className="op-icon-btn small" title="Delete" onClick={(e) => (e.stopPropagation(), void remove(r))}>
-                      <Trash2 size={13} />
-                    </button>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
           {agents.length > 0 && <p className="op-label" style={{ marginTop: 16 }}>{agents.length} agent(s) connected</p>}

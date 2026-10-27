@@ -13,13 +13,13 @@ function CopyBlock({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <div style={{ position: 'relative' }}>
-      <pre className="op-code" style={{ margin: 0, paddingRight: 36 }}>
+      <pre className="op-code" style={{ margin: 0, paddingRight: 36, minHeight: 34 }}>
         {text}
       </pre>
       <button
         className="op-icon-btn small"
         style={{ position: 'absolute', top: 6, right: 6 }}
-        title="Copy"
+        title={copied ? 'Copied' : 'Copy'}
         onClick={() => {
           void navigator.clipboard.writeText(text);
           setCopied(true);
@@ -67,10 +67,10 @@ export function ConnectDialog() {
     <div className="op-dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div className="op-dialog" role="dialog" aria-label="Connect an agent">
         <header>
-          <span className="op-row">
+          <span>
             <Plug size={16} /> Connect your agent
           </span>
-          <button className="op-icon-btn" onClick={close} aria-label="Close">
+          <button className="op-icon-btn" title="Close" onClick={close} aria-label="Close">
             <X size={16} />
           </button>
         </header>
@@ -87,13 +87,12 @@ export function ConnectDialog() {
                 <button
                   key={h.id}
                   className="op-btn outline"
-                  style={{ justifyContent: 'space-between', height: 'auto', minHeight: 34, padding: '6px 10px' }}
+                  style={{ justifyContent: 'space-between', height: 34, minWidth: 0, padding: '0 10px' }}
+                  title={status[h.id] ? `${h.label}: ${status[h.id]}` : `Add OpenPaper to ${h.label}`}
                   onClick={() => void install(h.id, h.label)}
                 >
-                  <span>{h.label}</span>
-                  <span className="op-label" style={{ textAlign: 'right' }}>
-                    {status[h.id] ?? 'Add'}
-                  </span>
+                  <span className="op-truncate">{h.label}</span>
+                  <span className="op-label op-truncate">{status[h.id] ?? 'Add'}</span>
                 </button>
               ))}
             </div>
@@ -112,7 +111,7 @@ export function ConnectDialog() {
           <section>
             <div className="op-section-title">Streamable HTTP</div>
             <CopyBlock text={info?.url ?? ''} />
-            <p className="op-label" style={{ marginTop: 6 }}>
+            <p className="op-label" style={{ margin: '6px 0 0' }}>
               Works while OpenPaper is running. The stdio command above starts it automatically.
             </p>
           </section>

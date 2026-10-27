@@ -1,0 +1,123 @@
+/* Keyboard shortcuts: help dialog and the view toggles driven by shortcuts. */
+
+.op-dialog.op-shortcuts {
+  width: min(880px, 100%);
+  height: min(720px, 100%);
+  max-height: none;
+}
+.op-shortcuts header {
+  gap: 12px;
+}
+.op-shortcuts header > span {
+  flex-shrink: 0;
+}
+.op-shortcuts-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  max-width: 280px;
+  margin-left: auto;
+  color: var(--op-text-3);
+}
+.op-shortcuts-search .op-input {
+  font-weight: 400;
+}
+/* The body scrolls vertically; columns live inside it, or a fixed height would push them sideways. */
+.op-shortcuts .body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden auto;
+  padding: 8px 20px 20px;
+}
+.op-shortcuts-cols {
+  columns: 2 300px;
+  column-gap: 32px;
+}
+.op-shortcuts-group {
+  break-inside: avoid-column;
+  padding-top: 12px;
+}
+.op-shortcuts-group h3 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--op-text-3);
+}
+.op-shortcuts-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 26px;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--op-border);
+  break-inside: avoid;
+}
+.op-shortcuts-row .label {
+  color: var(--op-text-2);
+  min-width: 0;
+}
+.op-shortcuts-row .keys {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  max-width: 60%;
+}
+.op-shortcuts-row .combo {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.op-shortcuts-row .combo + .combo::before {
+  content: '/';
+  margin-right: 4px;
+  color: var(--op-text-3);
+}
+.op-shortcuts-row kbd {
+  display: inline-block;
+  min-width: 18px;
+  padding: 1px 5px;
+  border: 1px solid var(--op-border-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--op-panel-2);
+  color: var(--op-text);
+  font-family: var(--op-font);
+  font-size: 10.5px;
+  line-height: 15px;
+  text-align: center;
+  white-space: nowrap;
+}
+.op-shortcuts-row .gesture,
+.op-shortcuts-row .hold {
+  font-size: 11px;
+  color: var(--op-text-3);
+  white-space: nowrap;
+}
+.op-shortcuts-row .gesture {
+  margin-left: 2px;
+}
+
+/* Show / hide UI: only the canvas stays (overlays such as the agent dock set display inline). */
+.op-app.op-ui-hidden {
+  grid-template-rows: 1fr;
+}
+.op-app.op-ui-hidden > .op-topbar,
+.op-app.op-ui-hidden .op-main > div > :not(.op-canvas) {
+  display: none !important;
+}
+/* Collapsed panels (and hidden UI): the canvas takes the full width. */
+.op-app.op-ui-hidden .op-main,
+.op-app.op-panels-collapsed .op-main {
+  grid-template-columns: 1fr;
+}
+.op-app.op-ui-hidden .op-main > .op-panel,
+.op-app.op-panels-collapsed .op-main > .op-panel {
+  display: none;
+}

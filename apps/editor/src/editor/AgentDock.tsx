@@ -16,7 +16,7 @@ function KeySetup({ onSaved }: { onSaved: (info: AgentConfigInfo) => void }) {
   const [key, setKey] = useState('');
   const [busy, setBusy] = useState(false);
   return (
-    <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div style={{ padding: '12px 12px 4px', display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ fontWeight: 600 }}>Design with Claude, right here</div>
       <div className="op-label" style={{ lineHeight: 1.5 }}>
         Add an Anthropic API key to chat with the built-in design agent. It's stored only on this computer
@@ -50,45 +50,59 @@ function ItemView({ item }: { item: AgentChatItem }) {
   switch (item.kind) {
     case 'user':
       return (
-        <div style={{ alignSelf: 'flex-end', maxWidth: '85%', padding: '8px 11px', borderRadius: '12px 12px 4px 12px', background: 'var(--op-accent)', color: '#fff', whiteSpace: 'pre-wrap', lineHeight: 1.45 }}>
+        <div
+          style={{
+            alignSelf: 'flex-end',
+            maxWidth: '85%',
+            padding: '8px 11px',
+            borderRadius: '12px 12px 4px 12px',
+            background: 'var(--op-accent)',
+            color: '#fff',
+            whiteSpace: 'pre-wrap',
+            overflowWrap: 'anywhere',
+            lineHeight: 1.45,
+          }}
+        >
           {item.text}
         </div>
       );
     case 'assistant':
       return (
-        <div style={{ maxWidth: '92%', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+        <div style={{ maxWidth: '92%', lineHeight: 1.5 }}>
           {item.thinking && (
-            <button className="op-btn" style={{ height: 22, padding: '0 6px', color: 'var(--op-text-3)', fontSize: 11 }} onClick={() => setShowThinking(!showThinking)}>
+            <button className="op-btn op-thinking" aria-expanded={showThinking} onClick={() => setShowThinking(!showThinking)}>
               {showThinking ? <ChevronUp size={12} /> : <ChevronDown size={12} />} Thinking
             </button>
           )}
           {showThinking && (
-            <div className="op-label" style={{ borderLeft: '2px solid var(--op-border-strong)', paddingLeft: 8, margin: '4px 0 6px', whiteSpace: 'pre-wrap' }}>
+            <div className="op-label" style={{ borderLeft: '2px solid var(--op-border-strong)', paddingLeft: 8, margin: '2px 0 6px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
               {item.thinking}
             </div>
           )}
-          {item.text}
+          <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{item.text}</div>
         </div>
       );
     case 'tool':
       return (
         <div className="op-row" style={{ color: item.status === 'error' ? 'var(--op-danger)' : 'var(--op-text-2)', fontSize: 11.5, minHeight: 20 }}>
           {item.status === 'running' ? (
-            <Loader2 size={13} className="op-spin" />
+            <Loader2 size={13} className="op-spin" style={{ flexShrink: 0 }} />
           ) : item.status === 'done' ? (
-            <Check size={13} style={{ color: 'var(--op-success)' }} />
+            <Check size={13} style={{ color: 'var(--op-success)', flexShrink: 0 }} />
           ) : (
-            <X size={13} />
+            <X size={13} style={{ flexShrink: 0 }} />
           )}
-          <Wrench size={11} style={{ opacity: 0.6 }} />
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.summary}>
+          <Wrench size={11} style={{ opacity: 0.6, flexShrink: 0 }} />
+          <span className="op-truncate" title={item.summary || item.name}>
             {item.summary || item.name}
           </span>
         </div>
       );
     case 'notice':
       return (
-        <div style={{ fontSize: 11.5, color: item.level === 'error' ? 'var(--op-danger)' : 'var(--op-text-3)', lineHeight: 1.45 }}>{item.text}</div>
+        <div style={{ fontSize: 11.5, color: item.level === 'error' ? 'var(--op-danger)' : 'var(--op-text-3)', lineHeight: 1.45, overflowWrap: 'anywhere' }}>
+          {item.text}
+        </div>
       );
   }
 }
@@ -140,36 +154,24 @@ export function AgentDock() {
   const usage = chat.usage;
   return (
     <div
+      className="op-dock"
       data-op-overlay-ui
       onPointerDown={(e) => e.stopPropagation()}
       onKeyDown={(e) => e.stopPropagation()}
-      style={{
-        position: 'absolute',
-        left: '50%',
-        bottom: 16,
-        transform: 'translateX(-50%)',
-        width: 'min(560px, calc(100% - 32px))',
-        zIndex: 40,
-        display: 'flex',
-        flexDirection: 'column',
-        borderRadius: 14,
-        background: 'var(--op-panel)',
-        border: '1px solid var(--op-border)',
-        boxShadow: 'var(--op-shadow)',
-        overflow: 'hidden',
-      }}
     >
-      {open && (
-        <>
-          <div className="op-row" style={{ padding: '8px 10px', borderBottom: '1px solid var(--op-border)' }}>
-            <Sparkles size={14} style={{ color: 'var(--op-agent)' }} />
-            <b style={{ flex: 1 }}>Design agent</b>
+      <div className={`op-dock-body${open ? ' open' : ''}`}>
+        <div inert={!open}>
+          <div className="op-dock-row">
+            <Sparkles size={14} style={{ color: 'var(--op-agent)', flexShrink: 0 }} />
+            <b className="op-truncate" style={{ flex: 1 }}>
+              Design agent
+            </b>
             {usage && (usage.inputTokens > 0 || usage.outputTokens > 0) && (
-              <span className="op-label" title="Tokens this chat (cache reads in parentheses)">
+              <span className="op-label op-truncate" style={{ fontVariantNumeric: 'tabular-nums' }} title="Tokens this chat (cache reads in parentheses)">
                 {Math.round((usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens) / 1000)}k in ({Math.round(usage.cacheReadTokens / 1000)}k cached) · {Math.round(usage.outputTokens / 1000)}k out
               </span>
             )}
-            <button className="op-icon-btn small" title="Settings" onClick={() => setShowSettings(!showSettings)}>
+            <button className={`op-icon-btn small${showSettings ? ' pressed' : ''}`} title="Settings" aria-pressed={showSettings} onClick={() => setShowSettings(!showSettings)}>
               <Settings2 size={13} />
             </button>
             <button className="op-icon-btn small" title="New chat" onClick={() => void client.request('agent.reset', { fileId: doc.id })}>
@@ -180,7 +182,7 @@ export function AgentDock() {
             </button>
           </div>
           {showSettings && config && (
-            <div className="op-row" style={{ padding: '8px 10px', borderBottom: '1px solid var(--op-border)', flexWrap: 'wrap' }}>
+            <div className="op-dock-row" style={{ flexWrap: 'wrap', padding: '8px 12px' }}>
               <select
                 className="op-input"
                 style={{ width: 'auto' }}
@@ -207,7 +209,7 @@ export function AgentDock() {
               </select>
               <span className="op-label">{config.keySource ? KEY_SOURCES[config.keySource] : 'No API key'}</span>
               {config.keySource === 'settings' && (
-                <button className="op-btn" onClick={async () => setConfig(await client.request<AgentConfigInfo>('agent.config.set', { apiKey: null }))}>
+                <button className="op-btn" style={{ marginLeft: 'auto' }} onClick={async () => setConfig(await client.request<AgentConfigInfo>('agent.config.set', { apiKey: null }))}>
                   Remove key
                 </button>
               )}
@@ -231,10 +233,10 @@ export function AgentDock() {
               )}
             </div>
           )}
-        </>
-      )}
-      <div className="op-row" style={{ padding: 8, gap: 8, alignItems: 'flex-end' }}>
-        {!open && <Sparkles size={16} style={{ color: 'var(--op-agent)', marginLeft: 4, marginBottom: 6, flexShrink: 0 }} />}
+        </div>
+      </div>
+      <div className="op-dock-composer">
+        {!open && <Sparkles size={16} className="op-dock-spark" />}
         <textarea
           ref={inputRef}
           className="op-input"
@@ -250,7 +252,6 @@ export function AgentDock() {
             }
             if (e.key === 'Escape') (e.currentTarget as HTMLTextAreaElement).blur();
           }}
-          style={{ resize: 'none', minHeight: 34, maxHeight: 140, background: 'transparent', border: 'none', fontSize: 13 }}
         />
         {!open && chat.items.length > 0 && (
           <button className="op-icon-btn" title="Show conversation" onClick={() => setOpen(true)}>
@@ -262,7 +263,7 @@ export function AgentDock() {
             <Square size={13} />
           </button>
         ) : (
-          <button className="op-icon-btn active" title="Send (Enter)" disabled={!text.trim()} onClick={() => void send()} style={{ opacity: text.trim() ? 1 : 0.5 }}>
+          <button className="op-icon-btn active" title="Send (Enter)" disabled={!text.trim()} onClick={() => void send()}>
             <Send size={14} />
           </button>
         )}

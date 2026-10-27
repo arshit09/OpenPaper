@@ -32,35 +32,36 @@ function CodePanel() {
   if (!id) return <div className="op-empty">Select a layer to see its code.</div>;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, minHeight: 0, flex: 1 }}>
-      <div className="op-row">
-        <div className="op-toolbar" style={{ padding: 2 }}>
+      <div className="op-row" style={{ gap: 4 }}>
+        <div className="op-toolbar op-segmented">
           <button className={`op-tab${format === 'tailwind' ? ' active' : ''}`} onClick={() => setFormat('tailwind')}>
-            Tailwind
+            <span className="op-tab-label">Tailwind</span>
           </button>
           <button className={`op-tab${format === 'inline-styles' ? ' active' : ''}`} onClick={() => setFormat('inline-styles')}>
-            Inline
+            <span className="op-tab-label">Inline</span>
           </button>
         </div>
-        <div style={{ flex: 1 }} />
         <button
-          className="op-btn outline"
+          className="op-btn outline compact"
+          style={{ marginLeft: 'auto' }}
+          title="Copy JSX"
           onClick={() => {
             void navigator.clipboard.writeText(code);
             setCopied(true);
             setTimeout(() => setCopied(false), 1200);
           }}
         >
-          {copied ? <Check size={13} /> : <Copy size={13} />} JSX
+          {copied ? <Check size={12} /> : <Copy size={12} />} JSX
         </button>
         <button
-          className="op-btn outline"
+          className="op-btn outline compact"
           title="Copy as HTML (paste into any AI chat or back into OpenPaper)"
           onClick={() => {
             const html = copySelectionAsHtml();
             if (html) void navigator.clipboard.writeText(html).then(() => toast('HTML copied'));
           }}
         >
-          <Copy size={13} /> HTML
+          <Copy size={12} /> HTML
         </button>
       </div>
       <pre className="op-code" style={{ flex: 1, margin: 0, whiteSpace: 'pre', fontSize: 11 }}>
@@ -117,17 +118,15 @@ function CommentsPanel() {
 
   return (
     <div className="op-scroll" style={{ flex: 1, padding: 10 }}>
-      <div className="op-row" style={{ marginBottom: 8 }}>
-        <span className="op-label" style={{ flex: 1 }}>
-          Press C and click the canvas to comment. Agents can read and resolve threads.
-        </span>
-      </div>
-      <label className="op-row" style={{ marginBottom: 10, cursor: 'pointer' }}>
+      <p className="op-label" style={{ margin: '0 2px 8px', lineHeight: 1.5 }}>
+        Press C and click the canvas to comment. Agents can read and resolve threads.
+      </p>
+      <label className="op-row" style={{ marginBottom: 10, cursor: 'pointer', width: 'fit-content' }}>
         <input type="checkbox" checked={showResolved} onChange={(e) => setShowResolved(e.target.checked)} /> Show resolved
       </label>
       {composer && (
-        <div style={{ border: '1px solid var(--op-accent)', borderRadius: 8, padding: 8, marginBottom: 10 }}>
-          <div className="op-label" style={{ marginBottom: 6 }}>
+        <div className="op-card focused" style={{ marginBottom: 10 }}>
+          <div className="op-label op-truncate" style={{ marginBottom: 6 }}>
             New comment{composer.nodeId && doc.nodes[composer.nodeId] ? ` on “${displayName(doc.nodes[composer.nodeId]!)}”` : ''}
           </div>
           <textarea
@@ -139,11 +138,11 @@ function CommentsPanel() {
             onKeyDown={(e) => e.key === 'Enter' && (e.metaKey || e.ctrlKey) && void submit()}
             placeholder="What should change?"
           />
-          <div className="op-row" style={{ justifyContent: 'flex-end', marginTop: 6 }}>
+          <div className="op-row" style={{ justifyContent: 'flex-end', marginTop: 8 }}>
             <button className="op-btn" onClick={() => setComposer(null)}>
               Cancel
             </button>
-            <button className="op-btn primary" onClick={() => void submit()}>
+            <button className="op-btn primary" disabled={!text.trim()} onClick={() => void submit()}>
               Comment
             </button>
           </div>
@@ -153,25 +152,20 @@ function CommentsPanel() {
       {threads.map((t) => {
         const msgs = t.messages.filter((m) => !m.deletedAt);
         const node = doc.nodes[t.nodeId];
+        const where = node && node.component !== 'PageRoot' ? displayName(node) : doc.pages[t.pageId]?.name;
         return (
           <div
             key={t.id}
+            className={`op-card interactive${focused === t.id ? ' focused' : ''}`}
             onClick={() => {
               setState({ focusedThreadId: t.id, ...(t.pageId !== pageId ? { pageId: t.pageId } : {}) });
               if (node && node.component !== 'PageRoot') setState({ selection: [node.id] });
             }}
-            style={{
-              border: `1px solid ${focused === t.id ? 'var(--op-accent)' : 'var(--op-border)'}`,
-              borderRadius: 8,
-              padding: 10,
-              marginBottom: 8,
-              opacity: t.status === 'resolved' ? 0.6 : 1,
-              cursor: 'pointer',
-            }}
+            style={{ opacity: t.status === 'resolved' ? 0.6 : 1 }}
           >
-            <div className="op-row" style={{ marginBottom: 6 }}>
-              <span className="op-label" style={{ flex: 1 }}>
-                {node && node.component !== 'PageRoot' ? displayName(node) : doc.pages[t.pageId]?.name}
+            <div className="op-card-head" style={{ marginBottom: 4 }}>
+              <span className="op-label op-truncate" style={{ flex: 1 }} title={where}>
+                {where}
               </span>
               <button
                 className="op-icon-btn small"
@@ -186,15 +180,19 @@ function CommentsPanel() {
             </div>
             {msgs.map((m) => (
               <div key={m.id} style={{ marginBottom: 6 }}>
-                <div className="op-row">
-                  <b style={{ fontSize: 11.5 }}>{userName(m.userId)}</b>
-                  <span className="op-label">{timeAgo(m.createdAt)}</span>
+                <div className="op-row" style={{ gap: 6, alignItems: 'baseline' }}>
+                  <b className="op-truncate" style={{ fontSize: 11.5 }}>
+                    {userName(m.userId)}
+                  </b>
+                  <span className="op-label" style={{ flexShrink: 0 }}>
+                    {timeAgo(m.createdAt)}
+                  </span>
                 </div>
-                <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.45 }}>{m.text}</div>
+                <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.45, overflowWrap: 'anywhere' }}>{m.text}</div>
               </div>
             ))}
             {focused === t.id && (
-              <div className="op-row" onClick={(e) => e.stopPropagation()}>
+              <div className="op-row" style={{ marginTop: 2 }} onClick={(e) => e.stopPropagation()}>
                 <input
                   className="op-input"
                   placeholder="Reply…"
@@ -221,14 +219,14 @@ function AgentsPanel() {
   const activity = useEditor((s) => s.activity);
   const doc = useEditor((s) => s.doc)!;
   return (
-    <div className="op-scroll" style={{ flex: 1, padding: 10 }}>
+    <div className="op-scroll" style={{ flex: 1, padding: '10px 12px' }}>
       <div className="op-section-title">Connected agents</div>
       {!agents.length && (
-        <div style={{ border: '1px dashed var(--op-border-strong)', borderRadius: 8, padding: 12, marginBottom: 12, lineHeight: 1.5 }}>
+        <div className="op-card dashed" style={{ padding: 12, marginBottom: 12, lineHeight: 1.5 }}>
           <div className="op-row" style={{ marginBottom: 6 }}>
-            <Bot size={16} /> <b>No agent is working on this file</b>
+            <Bot size={16} style={{ flexShrink: 0 }} /> <b>No agent is working on this file</b>
           </div>
-          <div className="op-label" style={{ marginBottom: 8 }}>
+          <div className="op-label" style={{ marginBottom: 10 }}>
             Connect Claude Code, Cursor, Codex or any MCP client, then ask it to design something in OpenPaper.
           </div>
           <button className="op-btn primary" onClick={() => setState({ showConnect: true })}>
@@ -236,44 +234,54 @@ function AgentsPanel() {
           </button>
         </div>
       )}
-      {agents.map((a) => (
-        <div key={a.sessionId} className="op-row" style={{ padding: '6px 0', borderBottom: '1px solid var(--op-border)' }}>
-          <span style={{ width: 10, height: 10, borderRadius: 5, background: a.color, flexShrink: 0 }} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 600 }}>{a.name}</div>
-            <div className="op-label">
-              {a.workingOn.length ? `Working on ${a.workingOn.map((id) => (doc.nodes[id] ? displayName(doc.nodes[id]!) : id)).join(', ')}` : 'Reading the file'}
+      {agents.map((a) => {
+        const status = a.workingOn.length
+          ? `Working on ${a.workingOn.map((id) => (doc.nodes[id] ? displayName(doc.nodes[id]!) : id)).join(', ')}`
+          : 'Reading the file';
+        return (
+          <div key={a.sessionId} className="op-agent-row">
+            <span className="op-agent-dot" style={{ background: a.color, color: a.color }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="op-truncate" style={{ fontWeight: 600 }}>
+                {a.name}
+              </div>
+              <div className="op-label op-truncate" title={status}>
+                {status}
+              </div>
             </div>
+            <button
+              className="op-icon-btn small"
+              title={`Undo ${a.name}'s last change`}
+              onClick={async () => {
+                const label = await client.request<string | null>('file.undoAgent', { fileId: doc.id, sessionId: a.sessionId });
+                toast(label ? `Undid “${label}” by ${a.name}` : `Nothing to undo for ${a.name}`);
+              }}
+            >
+              <Undo2 size={13} />
+            </button>
           </div>
-          <button
-            className="op-icon-btn small"
-            title={`Undo ${a.name}'s last change`}
-            onClick={async () => {
-              const label = await client.request<string | null>('file.undoAgent', { fileId: doc.id, sessionId: a.sessionId });
-              toast(label ? `Undid “${label}” by ${a.name}` : `Nothing to undo for ${a.name}`);
-            }}
-          >
-            <Undo2 size={13} />
-          </button>
-        </div>
-      ))}
-      <div className="op-section-title" style={{ marginTop: 14 }}>
+        );
+      })}
+      <div className="op-section-title" style={{ marginTop: 14, marginBottom: 2 }}>
         Activity
       </div>
       {!activity.length && <div className="op-label">Tool calls from agents appear here as they happen.</div>}
-      {[...activity].reverse().map((e) => (
-        <div key={e.id} className="op-row" style={{ alignItems: 'flex-start', padding: '5px 0' }}>
-          <span className="op-label" style={{ width: 36, flexShrink: 0 }}>
-            {new Date(e.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ color: e.isError ? 'var(--op-danger)' : undefined, overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.summary}</div>
-            <div className="op-label">
-              {e.actor.name} · {e.tool} · {e.durationMs}ms
+      {[...activity].reverse().map((e) => {
+        const meta = `${e.actor.name} · ${e.tool} · ${e.durationMs}ms`;
+        return (
+          <div key={e.id} className="op-activity">
+            <time dateTime={new Date(e.at).toISOString()}>{new Date(e.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>
+            <div style={{ minWidth: 0 }}>
+              <div className="summary op-clamp-2" style={{ color: e.isError ? 'var(--op-danger)' : undefined }} title={e.summary}>
+                {e.summary}
+              </div>
+              <div className="op-label op-truncate" title={meta}>
+                {meta}
+              </div>
             </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -289,32 +297,22 @@ export function RightPanel() {
   ];
   return (
     <div className="op-panel right">
-      <div className="op-tabs">
+      <div className="op-tabs" role="tablist">
         {tabs.map((t) => (
-          <button key={t.id} className={`op-tab${tab === t.id ? ' active' : ''}`} onClick={() => setState({ rightTab: t.id })}>
-            {t.label}
-            {t.id === 'agents' && agents > 0 && (
-              <span
-                style={{
-                  marginLeft: 5,
-                  display: 'inline-grid',
-                  placeItems: 'center',
-                  minWidth: 15,
-                  height: 15,
-                  borderRadius: 8,
-                  background: 'var(--op-agent)',
-                  color: '#fff',
-                  fontSize: 9.5,
-                  fontWeight: 700,
-                }}
-              >
-                {agents}
-              </span>
-            )}
+          <button
+            key={t.id}
+            role="tab"
+            aria-selected={tab === t.id}
+            className={`op-tab${tab === t.id ? ' active' : ''}`}
+            title={t.id === 'agents' && agents > 0 ? `${agents} agent${agents === 1 ? '' : 's'} connected` : undefined}
+            onClick={() => setState({ rightTab: t.id })}
+          >
+            <span className="op-tab-label">{t.label}</span>
+            {t.id === 'agents' && agents > 0 && <span className="op-count">{agents}</span>}
           </button>
         ))}
       </div>
-      <div className="op-scroll" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <div key={tab} className="op-scroll op-tab-panel">
         {tab === 'design' && <Inspector />}
         {tab === 'code' && <CodePanel />}
         {tab === 'comments' && <CommentsPanel />}

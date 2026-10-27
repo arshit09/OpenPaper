@@ -67,12 +67,13 @@ export function TokensPanel() {
                     <span style={{ background: resolveTokenValue(t.value, tokens) }} />
                   </span>
                 )}
-                <code style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 11 }} title={tokenCssName(t)}>
+                <code className="op-truncate" style={{ flex: 1, fontSize: 11 }} title={tokenCssName(t)}>
                   {tokenCssName(t)}
                 </code>
                 <input
                   className="op-input"
-                  style={{ width: 104, flex: 'none', fontFamily: 'var(--op-mono)', fontSize: 11 }}
+                  title={t.value}
+                  style={{ width: 88, flex: 'none', fontFamily: 'var(--op-mono)', fontSize: 11 }}
                   defaultValue={t.value}
                   key={`${t.id}:${t.value}`}
                   onBlur={(e) => {
@@ -103,8 +104,8 @@ export function TokensPanel() {
                 }}
               >
                 <input className="op-input" autoFocus placeholder="name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-                <input className="op-input" placeholder="value" style={{ width: 90, flex: 'none' }} value={draft.value} onChange={(e) => setDraft({ ...draft, value: e.target.value })} />
-                <button className="op-btn primary" type="submit">
+                <input className="op-input" placeholder="value" style={{ width: 80, flex: 'none' }} value={draft.value} onChange={(e) => setDraft({ ...draft, value: e.target.value })} />
+                <button className="op-btn primary compact" style={{ height: 26 }} type="submit">
                   Add
                 </button>
               </form>

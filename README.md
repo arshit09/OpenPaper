@@ -38,6 +38,7 @@ It speaks the same MCP tool set as [Paper](https://paper.design) — all 37 tool
 - Agents see the canvas: `get_screenshot` renders through headless Chrome/Edge — pixel-identical to the editor
 - `get_jsx` uses Tailwind CSS v4's own canonicalizer for idiomatic utility classes
 - Live presence: working indicators on the artboards an agent touches, write/edit highlights, an activity feed of every tool call
+- Live build preview: you watch an agent's work being built. New layers outline and fill in, in tree order, text types in, style changes tween, deletions fade, and a cursor follows where the agent is writing. Only the playback is animated: tool calls still apply instantly, and reduced motion is respected
 - Built-in guides (`get_guide`) that teach agents to design incrementally, review their work and use tokens
 - `paper-gen://` image generation with your own OpenAI or Gemini key
 - Agents can create and tune shader layers too (`<x-shader>` in `write_html`, `update_shader`, the `shaders` guide)
@@ -140,19 +141,88 @@ Figma's clipboard holds references to images, not the images themselves. To brin
 
 ## Keyboard shortcuts
 
+OpenPaper uses Paper's shortcuts, plus Figma's where Paper has none. `Ctrl` is `⌘` on macOS and `Alt` is `⌥`. In the editor, `Ctrl+Shift+?` or `Ctrl+/` opens the full, searchable list (it is generated from the same registry as the key handling).
+
+**Tools**
+
 | Action | Keys |
 |---|---|
-| Move / Hand / Frame / Rectangle / Ellipse / Text / Pencil / Comment | `V` `H` `F` `R` `O` `T` `P` `C` (hold `Space` to pan) |
-| Shader picker | `S` |
-| Undo / Redo | `Ctrl/⌘ Z` / `Ctrl/⌘ Shift Z` |
-| Duplicate / Group / Ungroup | `Ctrl/⌘ D` / `Ctrl/⌘ G` / `Ctrl/⌘ Shift G` |
-| Add flex layout | `Shift A` |
-| Hide / Lock | `Ctrl/⌘ Shift H` / `Ctrl/⌘ Shift L` |
-| Bring forward / back (to front/back) | `Ctrl/⌘ ]` / `Ctrl/⌘ [` (+ `Alt`) |
-| Nudge | Arrows (`Shift` = 10px) |
-| Select children / parent | `Enter` / `Shift Enter` or `Esc` |
-| Zoom to fit / selection / 100% | `Shift 1` / `Shift 2` / `Shift 0`; `Ctrl/⌘ +/-`, `Ctrl/⌘`-scroll |
-| Rename | `F2` or double-click a layer |
+| Move / Hand / Frame / Rectangle / Ellipse / Text / Pencil / Comment | `V` / `H` / `F` or `A` / `R` / `O` / `T` / `P` / `C` or `Y` |
+| Shaders / pick a color (fills the selection, or copies it) | `S` / `I` |
+| Place image | `Ctrl+Shift+K` |
+| Pan | hold `Space` and drag, or middle-drag |
+| Zoom tool: click to zoom in, `Alt`+click to zoom out, drag to zoom to an area | hold `Z` (or `Ctrl+Space`) |
+| Back to Move, then select parent (deselects at the top level) | `Esc` |
+
+**View**
+
+| Action | Keys |
+|---|---|
+| Zoom in / out | `+` / `-` (or `Ctrl+=` / `Ctrl+-`); `Ctrl`+scroll or pinch |
+| Zoom to 100% / fit / selection | `Shift+0` or `Ctrl+0` / `Shift+1` / `Shift+2` |
+| Pan with the keyboard (nothing selected, `Shift` = faster) | Arrows |
+| Next / previous artboard; next / previous page | `N` / `Shift+N`; `PageDown` / `PageUp` |
+| Measure distances: select, then hover another layer | hold `Alt` |
+| Show / hide UI; collapse / expand panels | `.` or `Ctrl+\`; `Shift+\` or `Shift+.` |
+| Layers / Tokens panel; show / hide comments | `Alt+1` / `Alt+2`; `Shift+C` |
+| Keyboard shortcuts | `Ctrl+Shift+?` or `Ctrl+/` |
+
+**Selection**
+
+| Action | Keys |
+|---|---|
+| Select all / select others | `Ctrl+A` / `Ctrl+Shift+A` |
+| Next / previous sibling | `Tab` / `Shift+Tab` |
+| Select children (or edit text) / select parent | `Enter` / `Shift+Enter` or `\` |
+| Add to selection / select inside frames / one level deeper | `Shift`+click / `Ctrl`+click / double-click |
+
+**Edit**
+
+| Action | Keys |
+|---|---|
+| Undo / redo | `Ctrl+Z` / `Ctrl+Shift+Z` or `Ctrl+Y` |
+| Cut / copy / paste (as HTML; into a selected frame) | `Ctrl+X` / `Ctrl+C` / `Ctrl+V` |
+| Paste on top of the selection / paste to replace it | `Ctrl+Shift+V` / `Ctrl+Shift+R` |
+| Copy / paste styles | `Ctrl+Alt+C` / `Ctrl+Alt+V` |
+| Duplicate | `Ctrl+D`, or `Alt`+drag |
+| Delete / rename | `Delete` or `Backspace` / `Ctrl+R` or `F2` |
+| Opacity: `1` = 10% … `0` = 100%, two quick digits for an exact value | `0`–`9` |
+| Show / hide; lock / unlock; unlock all | `Ctrl+Shift+H`; `Ctrl+Shift+L`; `Ctrl+Shift+Alt+L` |
+| Copy as PNG / Tailwind / React | `Ctrl+Shift+C` / `Alt+T` / `Alt+R` |
+| Copy a link to the selection; export | `Ctrl+L`; `Ctrl+Shift+E` |
+| Back to all files | `Ctrl+Shift+D` |
+
+**Arrange**
+
+| Action | Keys |
+|---|---|
+| Nudge 1px / 10px (flex children trade places) | Arrows / `Shift`+arrows |
+| Resize 1px / 10px | `Ctrl`+arrows / `Ctrl+Shift`+arrows |
+| Move along one axis / keep proportions / resize from the center | `Shift`+drag / `Shift`+drag a handle / `Alt`+drag a handle |
+| Draw as a square / from the center | `Shift` / `Alt` while drawing |
+| Bring forward / send backward | `Ctrl+]` / `Ctrl+[` (or `Ctrl+Alt+↓` / `Ctrl+Alt+↑`) |
+| Bring to front / send to back | `]` / `[` (or `Ctrl+Shift+]` / `Ctrl+Shift+[`, `Ctrl+Alt+]` / `Ctrl+Alt+[`) |
+| Group / wrap in frame / ungroup | `Ctrl+G` / `Ctrl+Alt+G` or `Shift+F` / `Ctrl+Shift+G` or `Ctrl+Backspace` |
+| Add flex layout (wraps when already flex) / remove it | `Shift+A` / `Alt+Shift+A` |
+| Align left / right / top / bottom | `Alt+A` / `Alt+D` / `Alt+W` / `Alt+S` |
+| Align horizontal / vertical centers | `Alt+H` / `Alt+V` |
+| Distribute horizontally / vertically | `Alt+Shift+H` / `Alt+Shift+V` (macOS `⌃⌥H` / `⌃⌥V`) |
+| Flip horizontal / vertical | `Shift+H` / `Shift+V` |
+| Resize to fit content / fill the parent | `Ctrl+Alt+Shift+R` / `Ctrl+Alt+Shift+F` |
+| Clip content; swap fill and border | `Alt+C`; `Shift+X` |
+
+**Text**
+
+| Action | Keys |
+|---|---|
+| Bold / italic / underline / strikethrough | `Ctrl+B` / `Ctrl+I` / `Ctrl+U` / `Ctrl+Shift+X` |
+| Align text left / center / right / justify | `Ctrl+Alt+L` / `Ctrl+Alt+T` / `Ctrl+Alt+R` / `Ctrl+Alt+J` |
+| Font size − / + | `Ctrl+Shift+,` / `Ctrl+Shift+.` |
+| Font weight − / + | `Ctrl+Alt+,` / `Ctrl+Alt+.` |
+| Line height − / + | `Alt+Shift+,` / `Alt+Shift+.` |
+| Letter spacing − / + | `Alt+,` / `Alt+.` |
+
+Shortcuts never fire while you type in a field or edit text. A browser keeps a few keys for itself (`Ctrl+W`, `Ctrl+T`, `Ctrl+N`, `Ctrl+Tab`).
 
 ## How it works
 

@@ -133,7 +133,7 @@ export function pickTarget(clientX: number, clientY: number, deep: boolean): str
   for (const selectedId of s.selection) {
     const selected = doc.nodes[selectedId];
     if (!selected) continue;
-    const idx = chain.findIndex((n) => n.parentId === selected.parentId);
+    const idx = chain.findIndex((n) => n.parentId === selected.parentId && n.id !== selectedId);
     if (idx >= 0) return chain[idx]!.id;
     // Clicking inside the selected node selects its child on the path.
     const inside = chain.findIndex((n) => n.id === selectedId);

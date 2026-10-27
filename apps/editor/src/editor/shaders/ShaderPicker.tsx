@@ -69,7 +69,7 @@ export async function insertShader(def: ShaderDef): Promise<void> {
 function Tile({ def }: { def: ShaderDef }) {
   const thumb = useShaderThumbnail(def);
   return (
-    <button className="op-shader-tile" title={def.description} onClick={() => void insertShader(def)}>
+    <button className="op-shader-tile" title={`${def.label} — ${def.description}`} onClick={() => void insertShader(def)}>
       <span className="op-shader-thumb" style={thumb ? { backgroundImage: `url("${thumb}")` } : undefined} />
       <span className="op-shader-name">{def.label}</span>
     </button>
@@ -87,11 +87,11 @@ export function ShaderPicker() {
   }, [open]);
   if (!open) return null;
   return (
-    <div className="op-shader-picker" data-op-overlay-ui onPointerDown={(e) => e.stopPropagation()}>
-      <div className="op-row" style={{ padding: '10px 12px 6px' }}>
+    <div className="op-shader-picker" role="dialog" aria-label="Shaders" data-op-overlay-ui onPointerDown={(e) => e.stopPropagation()}>
+      <div className="op-row" style={{ padding: '8px 8px 4px 12px', minHeight: 40 }}>
         <b style={{ flex: 1 }}>Shaders</b>
         <span className="op-label">Click to add</span>
-        <button className="op-icon-btn small" title="Close (Esc)" onClick={() => setState({ showShaders: false })}>
+        <button className="op-icon-btn small" title="Close (Esc)" aria-label="Close" onClick={() => setState({ showShaders: false })}>
           <X size={13} />
         </button>
       </div>

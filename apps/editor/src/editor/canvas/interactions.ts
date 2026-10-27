@@ -1,6 +1,7 @@
 import { FREEFORM_DISPLAY, parentKindOf, type NewNode, type NodeRecord, type StyleInput } from '@openpaper/core';
 import { camera, getState, setCamera, setState } from '../../state/store.ts';
 import { command } from '../../sync/session.ts';
+import { fitCamera, lockAxis } from './canvas-math.ts';
 import {
   chainOf,
   clientToWorld,
@@ -10,6 +11,7 @@ import {
   pickTarget,
   rectsIntersect,
   unionRects,
+  viewportRect,
   worldRectOf,
   type Point,
   type Rect,
@@ -37,15 +39,80 @@ function setGesture(patch: Partial<GestureView>) {
   for (const l of gestureListeners) l();
 }
 
+/** Spring-loaded keys and pointer modes that change what the canvas does. */
+export interface KeyModes {
+  /** Space held: dragging pans. */
+  space: boolean;
+  /** Z (or Ctrl+Space) held: click zooms in, Alt+click out, drag zooms to an area. */
+  zoom: boolean;
+  /** Alt held: measure distances, Alt-drag duplicates, Alt-resize from the center. */
+  alt: boolean;
+  /** A pan drag is in progress. */
+  panning: boolean;
+}
+
+let modes: KeyModes = { space: false, zoom: false, alt: false, panning: false };
+const modeListeners = new Set<() => void>();
+export function getModes() {
+  return modes;
+}
+export function subscribeModes(l: () => void) {
+  modeListeners.add(l);
+  return () => modeListeners.delete(l);
+}
+export function setModes(patch: Partial<KeyModes>) {
+  if ((Object.keys(patch) as Array<keyof KeyModes>).every((k) => modes[k] === patch[k])) return;
+  modes = { ...modes, ...patch };
+  for (const l of modeListeners) l();
+}
+
+/** Tool visuals drawn by ZoomOverlay, DragGhost and MeasureOverlay. */
+export interface ToolView {
+  /** Zoom tool brush in viewport-relative screen px. */
+  zoomRect: Rect | null;
+  /** Alt-drag: copies of `ids` follow the pointer by (dx, dy) world px; a `flow` copy drops into a slot. */
+  clone: { ids: string[]; dx: number; dy: number; flow: boolean } | null;
+}
+
+let toolView: ToolView = { zoomRect: null, clone: null };
+const toolListeners = new Set<() => void>();
+export function getToolView() {
+  return toolView;
+}
+export function subscribeToolView(l: () => void) {
+  toolListeners.add(l);
+  return () => toolListeners.delete(l);
+}
+function setToolView(patch: Partial<ToolView>) {
+  toolView = { ...toolView, ...patch };
+  for (const l of toolListeners) l();
+}
+
 export let spaceHeld = false;
 export function setSpaceHeld(v: boolean) {
   spaceHeld = v;
+  setModes({ space: v });
 }
 
 const DRAG_THRESHOLD = 3;
 
 function px(n: number) {
   return `${Math.round(n)}px`;
+}
+
+/** The parts of a pointer event gestures read (a modifier change replays the last position). */
+export interface PointerLike {
+  clientX: number;
+  clientY: number;
+  shiftKey: boolean;
+  altKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+}
+
+let lastPointer: PointerLike | null = null;
+function remember(e: PointerLike) {
+  lastPointer = { clientX: e.clientX, clientY: e.clientY, shiftKey: e.shiftKey, altKey: e.altKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey };
 }
 
 /** Deepest Frame (or page root) under a client point that can receive new children. */
@@ -73,6 +140,9 @@ function containerOrigin(container: NodeRecord): Point {
 
 // ---------------------------------------------------------------------------
 
+type MoveItem = { id: string; left: number; top: number; mode: 'absolute' | 'flow' };
+type Slot = { id: string; parentId: string; index: number };
+
 type Gesture =
   | { kind: 'pan'; startX: number; startY: number; camX: number; camY: number }
   | {
@@ -87,11 +157,23 @@ type Gesture =
       kind: 'move';
       startX: number;
       startY: number;
-      items: Array<{ id: string; left: number; top: number; mode: 'absolute' | 'flow' }>;
-      reorder: { id: string; parentId: string; index: number } | null;
+      items: MoveItem[];
+      /** Flow child: the slot it moves to (index without itself), or where its copy goes (index among all children). */
+      reorder: Slot | null;
+      /** Alt held: the originals stay and copies follow the pointer. */
+      clone: boolean;
+      dx: number;
+      dy: number;
     }
   | { kind: 'marquee'; start: Point; additive: string[]; scopeParentId: string | null }
-  | { kind: 'draw'; tool: 'frame' | 'rectangle' | 'ellipse' | 'text'; start: Point; startClient: Point; container: { id: string; node: NodeRecord } }
+  | {
+      kind: 'draw';
+      tool: 'frame' | 'rectangle' | 'ellipse' | 'text';
+      start: Point;
+      startClient: Point;
+      container: { id: string; node: NodeRecord };
+      rect: Rect | null;
+    }
   | { kind: 'pencil'; points: Point[]; container: { id: string; node: NodeRecord } }
   | {
       kind: 'resize';
@@ -105,7 +187,8 @@ type Gesture =
       top: number;
       positioned: boolean;
       changed: boolean;
-    };
+    }
+  | { kind: 'zoom'; startX: number; startY: number };
 
 export type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
@@ -119,6 +202,7 @@ export function startResize(e: PointerEvent, id: string, handle: ResizeHandle) {
   const kind = parentKindOf(parent);
   const box = el.getBoundingClientRect();
   const zoom = camera().zoom;
+  remember(e);
   gesture = {
     kind: 'resize',
     id,
@@ -137,63 +221,74 @@ export function startResize(e: PointerEvent, id: string, handle: ResizeHandle) {
 /** Pressing an artboard's label selects it and lets you drag it. */
 export function pressNode(e: PointerEvent, id: string) {
   const s = getState();
+  remember(e);
   gesture = { kind: 'press', startX: e.clientX, startY: e.clientY, targetId: id, shift: e.shiftKey, wasSelected: s.selection.includes(id) };
   if (e.shiftKey) setState({ selection: s.selection.includes(id) ? s.selection : [...s.selection, id] });
   else if (!s.selection.includes(id)) setState({ selection: [id] });
 }
 
-function resizeBox(g: Extract<Gesture, { kind: 'resize' }>, e: PointerEvent) {
+/** Shift keeps the aspect ratio; Alt resizes around the center. */
+function resizeBox(g: Extract<Gesture, { kind: 'resize' }>, e: PointerLike) {
   const zoom = camera().zoom;
   const dx = (e.clientX - g.startX) / zoom;
   const dy = (e.clientY - g.startY) / zoom;
-  let w = g.w;
-  let h = g.h;
-  let left = g.left;
-  let top = g.top;
-  if (g.handle.includes('e')) w = g.w + dx;
-  if (g.handle.includes('w')) {
-    w = g.w - dx;
-    left = g.left + dx;
-  }
-  if (g.handle.includes('s')) h = g.h + dy;
-  if (g.handle.includes('n')) {
-    h = g.h - dy;
-    top = g.top + dy;
-  }
+  const sx = g.handle.includes('e') ? 1 : g.handle.includes('w') ? -1 : 0;
+  const sy = g.handle.includes('s') ? 1 : g.handle.includes('n') ? -1 : 0;
+  const k = e.altKey ? 2 : 1;
+  let w = g.w + sx * dx * k;
+  let h = g.h + sy * dy * k;
   if (e.shiftKey && g.w > 0 && g.h > 0) {
     const ratio = g.w / g.h;
-    if (g.handle.length === 2) {
+    if (sx && sy) {
       if (Math.abs(w - g.w) > Math.abs(h - g.h) * ratio) h = w / ratio;
       else w = h * ratio;
-      if (g.handle.includes('n')) top = g.top + (g.h - h);
-      if (g.handle.includes('w')) left = g.left + (g.w - w);
-    } else if (g.handle === 'e' || g.handle === 'w') h = w / ratio;
+    } else if (sx) h = w / ratio;
     else w = h * ratio;
   }
-  if (w < 1) {
-    if (g.handle.includes('w')) left -= 1 - w;
-    w = 1;
-  }
-  if (h < 1) {
-    if (g.handle.includes('n')) top -= 1 - h;
-    h = 1;
-  }
+  w = Math.max(1, w);
+  h = Math.max(1, h);
+  const left = e.altKey ? g.left + (g.w - w) / 2 : sx < 0 ? g.left + (g.w - w) : g.left;
+  const top = e.altKey ? g.top + (g.h - h) / 2 : sy < 0 ? g.top + (g.h - h) : g.top;
   return { w, h, left, top };
 }
 
+/** Shift draws a square; Alt draws from the center. */
+function drawRect(g: Extract<Gesture, { kind: 'draw' }>, p: Point, e: PointerLike): Rect {
+  let dx = p.x - g.start.x;
+  let dy = p.y - g.start.y;
+  if (e.shiftKey) {
+    const size = Math.max(Math.abs(dx), Math.abs(dy));
+    dx = (dx < 0 ? -1 : 1) * size;
+    dy = (dy < 0 ? -1 : 1) * size;
+  }
+  if (e.altKey) return { x: g.start.x - Math.abs(dx), y: g.start.y - Math.abs(dy), width: Math.abs(dx) * 2, height: Math.abs(dy) * 2 };
+  return normRect(g.start, { x: g.start.x + dx, y: g.start.y + dy });
+}
+
 let gesture: Gesture | null = null;
+
+/** The gesture in progress, if any (overlays hide or adapt while dragging). */
+export function gestureKind(): Gesture['kind'] | null {
+  return gesture?.kind ?? null;
+}
 
 export function onPointerDown(e: PointerEvent) {
   const s = getState();
   if (!s.doc || !s.pageId) return;
   if (s.editingTextId) return;
   const cam = camera();
+  remember(e);
 
-  if (e.button === 1 || s.tool === 'hand' || spaceHeld || (e.button === 2 && false)) {
+  if (e.button === 1 || s.tool === 'hand' || modes.space) {
     gesture = { kind: 'pan', startX: e.clientX, startY: e.clientY, camX: cam.x, camY: cam.y };
+    setModes({ panning: true });
     return;
   }
   if (e.button !== 0) return;
+  if (modes.zoom) {
+    gesture = { kind: 'zoom', startX: e.clientX, startY: e.clientY };
+    return;
+  }
   const world = clientToWorld(e.clientX, e.clientY);
 
   switch (s.tool) {
@@ -203,7 +298,7 @@ export function onPointerDown(e: PointerEvent) {
     case 'text': {
       const container = containerAt(e.clientX, e.clientY);
       if (!container) return;
-      gesture = { kind: 'draw', tool: s.tool, start: world, startClient: { x: e.clientX, y: e.clientY }, container };
+      gesture = { kind: 'draw', tool: s.tool, start: world, startClient: { x: e.clientX, y: e.clientY }, container, rect: null };
       return;
     }
     case 'pencil': {
@@ -245,10 +340,11 @@ export function onPointerDown(e: PointerEvent) {
   }
 }
 
-export function onPointerMove(e: PointerEvent) {
+export function onPointerMove(e: PointerLike) {
   const s = getState();
+  remember(e);
   if (!gesture) {
-    if (s.tool === 'select' && !spaceHeld) {
+    if (s.tool === 'select' && !modes.space && !modes.zoom) {
       const hover = pickTarget(e.clientX, e.clientY, e.metaKey || e.ctrlKey);
       if (hover !== s.hoverId) setState({ hoverId: hover });
     }
@@ -259,6 +355,13 @@ export function onPointerMove(e: PointerEvent) {
     case 'pan':
       setCamera({ ...cam, x: gesture.camX + (e.clientX - gesture.startX), y: gesture.camY + (e.clientY - gesture.startY) });
       return;
+    case 'zoom': {
+      const vr = viewportRect();
+      const a = { x: gesture.startX - vr.left, y: gesture.startY - vr.top };
+      const b = { x: e.clientX - vr.left, y: e.clientY - vr.top };
+      setToolView({ zoomRect: Math.hypot(b.x - a.x, b.y - a.y) < DRAG_THRESHOLD ? null : normRect(a, b) });
+      return;
+    }
     case 'press': {
       if (Math.hypot(e.clientX - gesture.startX, e.clientY - gesture.startY) < DRAG_THRESHOLD) return;
       if (gesture.targetId) startMove(gesture);
@@ -271,18 +374,31 @@ export function onPointerMove(e: PointerEvent) {
       return;
     }
     case 'move': {
-      const dx = (e.clientX - gesture.startX) / cam.zoom;
-      const dy = (e.clientY - gesture.startY) / cam.zoom;
+      const g = gesture;
+      let dx = (e.clientX - g.startX) / cam.zoom;
+      let dy = (e.clientY - g.startY) / cam.zoom;
+      if (e.shiftKey) ({ dx, dy } = lockAxis(dx, dy));
+      // Whole pixels, so what is shown while dragging is exactly where it lands.
+      dx = Math.round(dx);
+      dy = Math.round(dy);
+      g.dx = dx;
+      g.dy = dy;
+      g.clone = e.altKey;
+      const flow = g.items.length === 1 && g.items[0]!.mode === 'flow' ? g.items[0]! : null;
+      if (flow) g.reorder = computeReorder(flow.id, g.startX + dx * cam.zoom, g.startY + dy * cam.zoom, g.clone);
+      if (g.clone) {
+        if (Object.keys(getState().transient).length) setState({ transient: {} });
+        setToolView({ clone: { ids: g.items.map((i) => i.id), dx, dy, flow: !!flow } });
+        return;
+      }
+      if (toolView.clone) setToolView({ clone: null });
       const transient: Record<string, Record<string, string>> = {};
-      for (const item of gesture.items) {
+      for (const item of g.items) {
         if (item.mode === 'absolute') {
           transient[item.id] = { left: px(item.left + dx), top: px(item.top + dy), right: 'auto', bottom: 'auto' };
         } else {
           transient[item.id] = { transform: `translate(${dx}px, ${dy}px)`, opacity: '0.85', pointerEvents: 'none' };
         }
-      }
-      if (gesture.items.length === 1 && gesture.items[0]!.mode === 'flow') {
-        gesture.reorder = computeReorder(gesture.items[0]!.id, e.clientX, e.clientY);
       }
       setState({ transient });
       return;
@@ -302,13 +418,8 @@ export function onPointerMove(e: PointerEvent) {
       return;
     }
     case 'draw': {
-      const p = clientToWorld(e.clientX, e.clientY);
-      let rect = normRect(gesture.start, p);
-      if (e.shiftKey) {
-        const size = Math.max(rect.width, rect.height);
-        rect = { x: p.x < gesture.start.x ? gesture.start.x - size : gesture.start.x, y: p.y < gesture.start.y ? gesture.start.y - size : gesture.start.y, width: size, height: size };
-      }
-      setGesture({ draw: rect });
+      gesture.rect = drawRect(gesture, clientToWorld(e.clientX, e.clientY), e);
+      setGesture({ draw: gesture.rect });
       return;
     }
     case 'pencil': {
@@ -330,26 +441,40 @@ export function onPointerMove(e: PointerEvent) {
   }
 }
 
+/** Shift or Alt went down/up mid-gesture: redraw it as if the pointer moved. */
+export function refreshGesture(mods: { shiftKey: boolean; altKey: boolean }) {
+  if (!gesture || !lastPointer) return;
+  if (gesture.kind !== 'move' && gesture.kind !== 'resize' && gesture.kind !== 'draw') return;
+  if (gesture.kind === 'resize' && !gesture.changed) return;
+  onPointerMove({ ...lastPointer, ...mods });
+}
+
 export function onPointerUp(e: PointerEvent) {
   const g = gesture;
   gesture = null;
   if (!g) return;
   const s = getState();
   switch (g.kind) {
+    case 'pan':
+      setModes({ panning: false });
+      return;
+    case 'zoom':
+      finishZoom(g, e);
+      return;
     case 'press':
       // Plain click on an already-selected node (no drag): narrow selection to it.
       if (g.targetId && g.wasSelected && !g.shift && s.selection.length > 1) setState({ selection: [g.targetId] });
       else if (g.targetId && g.wasSelected && g.shift) setState({ selection: s.selection.filter((id) => id !== g.targetId) });
       return;
     case 'move':
-      void commitMove(g, e);
+      void (g.clone ? commitClone(g) : commitMove(g));
       return;
     case 'marquee':
       setGesture({ marquee: null });
       return;
     case 'draw':
       setGesture({ draw: null });
-      void commitDraw(g, clientToWorld(e.clientX, e.clientY), e.shiftKey);
+      void commitDraw(g, g.rect ?? drawRect(g, clientToWorld(e.clientX, e.clientY), e));
       return;
     case 'pencil':
       setGesture({ pencil: null });
@@ -368,7 +493,7 @@ export function onPointerUp(e: PointerEvent) {
 
 export function onDoubleClick(e: MouseEvent) {
   const s = getState();
-  if (!s.doc || s.tool !== 'select') return;
+  if (!s.doc || s.tool !== 'select' || modes.zoom) return;
   const target = drillTarget(e.clientX, e.clientY);
   if (!target) return;
   const node = s.doc.nodes[target];
@@ -402,11 +527,89 @@ export function zoomAt(zoom: number, sx: number, sy: number) {
   setCamera({ zoom: z, x: sx - wx * z, y: sy - wy * z });
 }
 
+/** Center a world rect in the viewport at the zoom that fits it. */
+export function fitRect(rect: Rect, padding = 80, maxZoom = 4) {
+  setCamera(fitCamera(rect, viewportRect(), padding, maxZoom));
+}
+
+let zoomEndPending = false;
+
+/** Z released: leave the zoom tool, or right after the zoom drag in progress ends. */
+export function endZoomMode() {
+  if (gesture?.kind === 'zoom') zoomEndPending = true;
+  else setModes({ zoom: false });
+}
+
+function finishZoom(g: Extract<Gesture, { kind: 'zoom' }>, e: PointerEvent) {
+  setToolView({ zoomRect: null });
+  const vr = viewportRect();
+  const cam = camera();
+  const out = e.altKey;
+  if (Math.hypot(e.clientX - g.startX, e.clientY - g.startY) < DRAG_THRESHOLD) {
+    zoomAt(out ? cam.zoom / 2 : cam.zoom * 2, e.clientX - vr.left, e.clientY - vr.top);
+  } else if (out) {
+    zoomAt(cam.zoom / 2, (g.startX + e.clientX) / 2 - vr.left, (g.startY + e.clientY) / 2 - vr.top);
+  } else {
+    fitRect(normRect(clientToWorld(g.startX, g.startY), clientToWorld(e.clientX, e.clientY)), 0, 256);
+  }
+  if (zoomEndPending) {
+    zoomEndPending = false;
+    setModes({ zoom: false });
+  }
+}
+
+let keyPanFrame = 0;
+
+/** Pan with the arrow keys for as long as `direction()` returns a heading (Shift = faster). */
+export function startKeyPan(direction: () => { x: number; y: number; fast: boolean } | null) {
+  if (keyPanFrame) return;
+  let last = performance.now();
+  const tick = (now: number) => {
+    const d = direction();
+    if (!d) {
+      keyPanFrame = 0;
+      return;
+    }
+    const len = Math.hypot(d.x, d.y);
+    // Screen px per second, independent of the display's frame rate.
+    const step = ((d.fast ? 2700 : 900) * Math.min(50, Math.max(0, now - last))) / 1000;
+    last = now;
+    if (len && step) {
+      const cam = camera();
+      setCamera({ ...cam, x: cam.x + (d.x / len) * step, y: cam.y + (d.y / len) * step });
+    }
+    keyPanFrame = requestAnimationFrame(tick);
+  };
+  const first = direction();
+  if (first && (first.x || first.y)) {
+    // A tap moves a little right away.
+    const len = Math.hypot(first.x, first.y);
+    const cam = camera();
+    const step = first.fast ? 48 : 16;
+    setCamera({ ...cam, x: cam.x + (first.x / len) * step, y: cam.y + (first.y / len) * step });
+  }
+  keyPanFrame = requestAnimationFrame(tick);
+}
+
 export function cancelGesture() {
   if (!gesture) return;
+  if (gesture.kind === 'pan') setModes({ panning: false });
   gesture = null;
+  zoomEndPending = false;
   setGesture({ marquee: null, draw: null, pencil: null, dropLine: null });
+  setToolView({ zoomRect: null, clone: null });
   setState({ transient: {} });
+}
+
+/** Window lost focus: keys may have been released elsewhere. */
+export function resetModes() {
+  if (gesture?.kind === 'zoom') {
+    gesture = null;
+    setToolView({ zoomRect: null });
+  }
+  zoomEndPending = false;
+  spaceHeld = false;
+  setModes({ space: false, zoom: false, alt: false });
 }
 
 // ---------------------------------------------------------------------------
@@ -429,7 +632,7 @@ function startMove(press: Extract<Gesture, { kind: 'press' }>) {
   const s = getState();
   const doc = s.doc!;
   const ids = s.selection.filter((id) => doc.nodes[id] && !doc.nodes[id]!.isLocked);
-  const items: Extract<Gesture, { kind: 'move' }>['items'] = [];
+  const items: MoveItem[] = [];
   for (const id of ids) {
     const node = doc.nodes[id]!;
     const parent = node.parentId ? doc.nodes[node.parentId] : undefined;
@@ -451,10 +654,17 @@ function startMove(press: Extract<Gesture, { kind: 'press' }>) {
     startY: press.startY,
     items: flow.length && items.length > 1 ? items.filter((i) => i.mode === 'absolute') : items,
     reorder: null,
+    clone: false,
+    dx: 0,
+    dy: 0,
   };
 }
 
-function computeReorder(id: string, clientX: number, clientY: number): { id: string; parentId: string; index: number } | null {
+/**
+ * Where a dragged flow child lands among its siblings. A move counts the siblings without the
+ * node (how moveNode inserts); a copy counts all children (the original stays).
+ */
+function computeReorder(id: string, clientX: number, clientY: number, copy: boolean): Slot | null {
   const s = getState();
   const doc = s.doc!;
   const node = doc.nodes[id];
@@ -462,25 +672,28 @@ function computeReorder(id: string, clientX: number, clientY: number): { id: str
   if (!node || !parent) return null;
   const parentEl = elementFor(parent.id) as HTMLElement | null;
   if (!parentEl) return null;
-  const dir = getComputedStyle(parentEl).flexDirection;
-  const horizontal = getComputedStyle(parentEl).display.includes('flex') && dir.startsWith('row');
-  const siblings = parent.children.filter((c) => c !== id && doc.nodes[c]?.isVisible !== false);
+  const style = getComputedStyle(parentEl);
+  const horizontal = style.display.includes('flex') && style.flexDirection.startsWith('row');
+  const order = copy ? parent.children : parent.children.filter((c) => c !== id);
   const pointer = clientToWorld(clientX, clientY);
-  let index = siblings.length;
-  for (let i = 0; i < siblings.length; i++) {
-    const r = worldRectOf(siblings[i]!);
+  let index = order.length;
+  let before: string | null = null;
+  let last: string | null = null;
+  for (let i = 0; i < order.length; i++) {
+    const r = doc.nodes[order[i]!]?.isVisible === false ? null : worldRectOf(order[i]!);
     if (!r) continue;
     const mid = horizontal ? r.x + r.width / 2 : r.y + r.height / 2;
     if ((horizontal ? pointer.x : pointer.y) < mid) {
       index = i;
+      before = order[i]!;
       break;
     }
+    last = order[i]!;
   }
   // Drop indicator line.
-  const ref = siblings[index] ?? siblings[index - 1];
+  const ref = before ?? last;
   const r = ref ? worldRectOf(ref) : worldRectOf(parent.id);
   if (r) {
-    const before = !!siblings[index];
     if (horizontal) {
       const x = before ? r.x : r.x + r.width;
       setGesture({ dropLine: { x1: x, y1: r.y, x2: x, y2: r.y + r.height } });
@@ -492,30 +705,53 @@ function computeReorder(id: string, clientX: number, clientY: number): { id: str
   return { id, parentId: parent.id, index };
 }
 
-async function commitMove(g: Extract<Gesture, { kind: 'move' }>, e: PointerEvent) {
-  const cam = camera();
-  const dx = (e.clientX - g.startX) / cam.zoom;
-  const dy = (e.clientY - g.startY) / cam.zoom;
+async function commitMove(g: Extract<Gesture, { kind: 'move' }>) {
   setGesture({ dropLine: null });
   const absolute = g.items.filter((i) => i.mode === 'absolute');
   try {
-    if (absolute.length) {
+    if (absolute.length && (g.dx || g.dy)) {
       await command({
         type: 'updateStyles',
         updates: absolute.map((i) => ({
           nodeIds: [i.id],
-          styles: { left: px(i.left + dx), top: px(i.top + dy), right: null, bottom: null } as StyleInput,
+          styles: { left: px(i.left + g.dx), top: px(i.top + g.dy), right: null, bottom: null } as StyleInput,
         })),
       });
     }
     if (g.reorder) {
-      // The index counts siblings without the moved node, matching how moveNode inserts.
       const { id, parentId, index } = g.reorder;
       const current = getState().doc?.nodes[parentId]?.children.indexOf(id);
       if (current !== index) await command({ type: 'move', moves: [{ nodeId: id, parentId, index }] });
     }
   } finally {
     setState({ transient: {} });
+  }
+}
+
+/** Resolves once the given nodes are in the DOM (or after a short timeout). */
+function rendered(ids: string[]): Promise<void> {
+  return new Promise((resolve) => {
+    let frames = 0;
+    const check = () => (ids.every((id) => elementFor(id)) || ++frames > 30 ? resolve() : requestAnimationFrame(check));
+    check();
+  });
+}
+
+/** Alt-drop: one duplicate command places every copy where it was dropped (a single undo step). */
+async function commitClone(g: Extract<Gesture, { kind: 'move' }>) {
+  setGesture({ dropLine: null });
+  const place: Record<string, { index?: number; styles?: StyleInput }> = {};
+  for (const i of g.items) {
+    if (i.mode === 'absolute') place[i.id] = { styles: { left: px(i.left + g.dx), top: px(i.top + g.dy), right: null, bottom: null } };
+    else if (g.reorder?.id === i.id) place[i.id] = { index: g.reorder.index };
+  }
+  try {
+    const result = await command<{ ids: string[] }>({ type: 'duplicate', nodeIds: g.items.map((i) => i.id), place });
+    const ids = result.ids ?? [];
+    await rendered(ids);
+    if (ids.length) setState({ selection: ids });
+  } finally {
+    setToolView({ clone: null });
   }
 }
 
@@ -526,12 +762,8 @@ const DEFAULT_SIZE: Record<string, { w: number; h: number }> = {
   text: { w: 0, h: 0 },
 };
 
-async function commitDraw(g: Extract<Gesture, { kind: 'draw' }>, end: Point, square: boolean) {
-  let rect = normRect(g.start, end);
-  if (square) {
-    const size = Math.max(rect.width, rect.height);
-    rect = { x: rect.x, y: rect.y, width: size, height: size };
-  }
+async function commitDraw(g: Extract<Gesture, { kind: 'draw' }>, drawn: Rect) {
+  let rect = drawn;
   const clicked = rect.width < 3 && rect.height < 3;
   const def = DEFAULT_SIZE[g.tool]!;
   if (clicked) rect = { x: g.start.x, y: g.start.y, width: def.w, height: def.h };

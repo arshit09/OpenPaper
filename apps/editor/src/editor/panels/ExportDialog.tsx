@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Download } from 'lucide-react';
+import { X, Download, Loader2 } from 'lucide-react';
 import { displayName } from '@openpaper/core';
 import { useEditor, setState, toast } from '../../state/store.ts';
 import { client } from '../../sync/session.ts';
@@ -48,10 +48,10 @@ export function ExportDialog() {
 
   return (
     <div className="op-dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div className="op-dialog" style={{ width: 380 }}>
+      <div className="op-dialog" role="dialog" aria-label="Export" style={{ width: 380 }}>
         <header>
           <span>Export</span>
-          <button className="op-icon-btn" onClick={close}>
+          <button className="op-icon-btn" title="Close" aria-label="Close" onClick={close}>
             <X size={16} />
           </button>
         </header>
@@ -60,23 +60,29 @@ export function ExportDialog() {
             {selection.length ? `${selection.length} selected layer(s)` : `All ${targets.length} top-level layer(s) on this page`}
           </div>
           <div className="op-grid-2">
-            <select className="op-input" value={format} onChange={(e) => setFormat(e.target.value as Format)}>
-              <option value="png">PNG</option>
-              <option value="jpg">JPG</option>
-              <option value="webp">WebP</option>
-              <option value="svg">SVG (vector layers)</option>
-              <option value="pdf">PDF</option>
-            </select>
-            <select className="op-input" value={scale} disabled={format === 'pdf' || format === 'svg'} onChange={(e) => setScale(Number(e.target.value))}>
-              {[0.5, 1, 2, 3, 4].map((s) => (
-                <option key={s} value={s}>
-                  {s}x
-                </option>
-              ))}
-            </select>
+            <label className="op-field">
+              <span className="op-label">Format</span>
+              <select className="op-input" value={format} onChange={(e) => setFormat(e.target.value as Format)}>
+                <option value="png">PNG</option>
+                <option value="jpg">JPG</option>
+                <option value="webp">WebP</option>
+                <option value="svg">SVG (vector layers)</option>
+                <option value="pdf">PDF</option>
+              </select>
+            </label>
+            <label className="op-field">
+              <span className="op-label">Scale</span>
+              <select className="op-input" value={scale} disabled={format === 'pdf' || format === 'svg'} onChange={(e) => setScale(Number(e.target.value))}>
+                {[0.5, 1, 2, 3, 4].map((s) => (
+                  <option key={s} value={s}>
+                    {s}x
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
-          <button className="op-btn primary" disabled={busy || !targets.length} onClick={() => void run()}>
-            <Download size={14} /> {busy ? 'Exporting…' : 'Export'}
+          <button className="op-btn primary" style={{ marginTop: 4 }} disabled={busy || !targets.length} onClick={() => void run()}>
+            {busy ? <Loader2 size={14} className="op-spin" /> : <Download size={14} />} {busy ? 'Exporting…' : 'Export'}
           </button>
         </div>
       </div>

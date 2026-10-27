@@ -11,6 +11,7 @@ import { AgentDock } from './AgentDock.tsx';
 import { ShaderPicker } from './shaders/ShaderPicker.tsx';
 import { FigmaTokenDialog } from './figma/FigmaTokenDialog.tsx';
 import { persistShaderFrames } from './shaders/ShaderInspector.tsx';
+import { ShortcutsDialog } from './ShortcutsDialog.tsx';
 
 function AgentOpenedBanner() {
   const opened = useEditor((s) => s.agentOpened);
@@ -18,24 +19,8 @@ function AgentOpenedBanner() {
   if (!opened) return null;
   const name = resources.find((r) => r.id === opened.fileId)?.name ?? 'another file';
   return (
-    <div
-      style={{
-        position: 'absolute',
-        top: 12,
-        left: '50%',
-        transform: 'translateX(-50%)',
-        zIndex: 50,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        padding: '8px 10px 8px 14px',
-        borderRadius: 10,
-        background: 'var(--op-panel)',
-        border: '1px solid var(--op-border)',
-        boxShadow: 'var(--op-shadow)',
-      }}
-    >
-      <span>
+    <div className="op-banner" role="status">
+      <span title={`${opened.agentName} is working in “${name}”`}>
         <b>{opened.agentName}</b> is working in “{name}”
       </span>
       <button
@@ -57,6 +42,7 @@ function AgentOpenedBanner() {
 export function EditorView() {
   const doc = useEditor((s) => s.doc);
   const showExport = useEditor((s) => s.showExport);
+  const viewClass = useEditor((s) => `${s.uiHidden ? ' op-ui-hidden' : ''}${s.panelsCollapsed ? ' op-panels-collapsed' : ''}`);
   useShortcuts();
   useClipboard();
 
@@ -84,7 +70,7 @@ export function EditorView() {
   }
 
   return (
-    <div className="op-app">
+    <div className={`op-app${viewClass}`}>
       <TopBar />
       <div className="op-main">
         <LeftPanel />
@@ -98,6 +84,7 @@ export function EditorView() {
       </div>
       {showExport && <ExportDialog />}
       <FigmaTokenDialog />
+      <ShortcutsDialog />
     </div>
   );
 }
