@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-labelledby="title">
+  <title id="title">OpenPaper</title>
+  <style>@media (prefers-color-scheme: dark) { .front { fill: #FFFFFF; } }</style>
+  <path class="front" fill="#111111" d="M25.01 1.19A30.86 30.86 0 1 0 62.81 38.99Z"/>
+  <path fill="#8C8C8C" d="M25.01 1.19A30.86 30.86 0 0 0 62.81 38.99Z"/>
+</svg>
