@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Check, Copy, X, Plug } from 'lucide-react';
 import { setState, toast } from '../state/store.ts';
 import { client } from '../sync/session.ts';
+import { useEscape } from './useEscape.ts';
 
 interface McpInfo {
   url: string;
@@ -41,6 +42,7 @@ export function ConnectDialog() {
   }, []);
 
   const close = () => setState({ showConnect: false });
+  useEscape(close);
 
   async function install(id: string, label: string) {
     setStatus((s) => ({ ...s, [id]: 'Installing…' }));
@@ -65,12 +67,12 @@ export function ConnectDialog() {
 
   return (
     <div className="op-dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div className="op-dialog" role="dialog" aria-label="Connect an agent">
+      <div className="op-dialog" role="dialog" aria-modal="true" aria-label="Connect an agent">
         <header>
           <span>
             <Plug size={16} /> Connect your agent
           </span>
-          <button className="op-icon-btn" title="Close" onClick={close} aria-label="Close">
+          <button className="op-icon-btn" title="Close" onClick={close} aria-label="Close" autoFocus>
             <X size={16} />
           </button>
         </header>

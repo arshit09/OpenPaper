@@ -332,15 +332,29 @@ textarea.op-input {
   min-width: 0;
 }
 .op-topbar .right {
-  justify-content: flex-end;
+  /* `safe`: if the cluster still doesn't fit, it runs off the right edge instead of over the tools. */
+  justify-content: safe flex-end;
   container-type: inline-size;
 }
 .op-topbar .right > * {
   flex-shrink: 0;
 }
+/* Agent avatars give way first when the bar gets narrow (the padding keeps their rings). */
+.op-topbar .right > .op-avatars {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding-block: 2px;
+}
 /* Too narrow for the full cluster: Connect agent collapses to its icon (it keeps its tooltip). */
 @container (max-width: 379px) {
   .op-connect-label {
+    display: none;
+  }
+}
+/* Narrower still: undo, redo, zoom and the shortcuts list go (each has a key) before anything overlaps. */
+@container (max-width: 217px) {
+  .op-topbar-optional {
     display: none;
   }
 }
@@ -500,8 +514,9 @@ textarea.op-input {
   height: 15px;
   padding: 0 4px;
   border-radius: 8px;
-  background: var(--op-agent);
-  color: #fff;
+  /* Black and white like the rest of the brand: inverted text colours read in both themes. */
+  background: var(--op-text);
+  color: var(--op-panel);
   font-size: 9.5px;
   font-weight: 700;
   line-height: 1;
@@ -1258,7 +1273,8 @@ textarea.op-input {
   box-shadow: var(--op-shadow);
   pointer-events: auto;
   cursor: pointer;
-  z-index: 30;
+  /* Above the agent dock (40): a selection near the bottom of the canvas puts the prompt over it. */
+  z-index: 42;
   animation: op-point-in 0.16s var(--op-ease-out) both;
   transition:
     transform var(--op-fast) var(--op-ease),
@@ -1277,7 +1293,7 @@ textarea.op-input {
 }
 .op-point-prompt {
   position: absolute;
-  z-index: 30;
+  z-index: 42;
   display: flex;
   flex-direction: column;
   border-radius: 14px;
@@ -1489,7 +1505,8 @@ textarea.op-input {
   background: var(--op-text);
   filter: brightness(1.15);
 }
-.op-segmented {
+/* Device width toggle (icon segments); its own name so it doesn't restyle the text .op-segmented. */
+.op-device-toggle {
   display: inline-flex;
   padding: 2px;
   gap: 2px;
@@ -1497,12 +1514,13 @@ textarea.op-input {
   background: var(--op-panel-2);
   border: 1px solid var(--op-border);
 }
-.op-segmented .op-icon-btn {
+.op-device-toggle .op-icon-btn {
   width: 26px;
   height: 22px;
 }
-.op-segmented .op-icon-btn.pressed {
-  background: var(--op-panel);
+/* Raised like the text segmented control: --op-panel would sit darker than the track in dark mode. */
+.op-device-toggle .op-icon-btn.pressed {
+  background: var(--op-raised);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 }
 .op-site-stage {

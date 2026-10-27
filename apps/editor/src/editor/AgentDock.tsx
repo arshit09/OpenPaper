@@ -6,7 +6,9 @@ import { client, sendToAgent } from '../sync/session.ts';
 import { MarkdownView } from '../ui/MarkdownView.tsx';
 import { AgentMark } from '../ui/Logo.tsx';
 import { Select } from '../ui/Select.tsx';
-import { VoiceButton, type VoicePhase } from '../ui/VoiceButton.tsx';
+import { VoiceButton, type VoiceHandle, type VoicePhase } from '../ui/VoiceButton.tsx';
+import { bindingLabel } from './hotkeys.ts';
+import { MAC } from './shortcuts.ts';
 
 const RUNNERS = [
   { value: 'claude-code', label: 'Claude Code sign-in' },
@@ -26,7 +28,8 @@ function claudeCodeLabel(cc: AgentConfigInfo['claudeCode']): string {
   return `Claude Code ${cc.version}${cc.plan ? ` · ${cc.plan} plan` : ''}`;
 }
 
-function AgentSetup({ config, onChange }: { config: AgentConfigInfo; onChange: (info: AgentConfigInfo) => void }) {
+/** Choose what runs the agent. `claudeCodeOnly`: a live site, which edits code with Claude Code's file tools. */
+function AgentSetup({ config, claudeCodeOnly, onChange }: { config: AgentConfigInfo; claudeCodeOnly?: boolean; onChange: (info: AgentConfigInfo) => void }) {
   const [key, setKey] = useState('');
   const [busy, setBusy] = useState(false);
   const run = async (request: Promise<AgentConfigInfo>) => {
@@ -40,10 +43,16 @@ function AgentSetup({ config, onChange }: { config: AgentConfigInfo; onChange: (
   const cc = config.claudeCode;
   return (
     <div style={{ padding: '12px 12px 4px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <div style={{ fontWeight: 600 }}>Design with Claude, right here</div>
+      <div style={{ fontWeight: 600 }}>{claudeCodeOnly ? 'Edit your site with Claude Code' : 'Design with Claude, right here'}</div>
       <div className="op-label" style={{ lineHeight: 1.5 }}>
-        Run the built-in design agent on Claude Code with your own Claude sign-in, or with an Anthropic API key.
-        Prefer to chat from Claude Code, Cursor or another agent? Use <b>Connect agent</b> instead.
+        {claudeCodeOnly ? (
+          <>Live sites run on Claude Code with your own Claude sign-in: it edits the code in your project folder. An Anthropic API key can't do that.</>
+        ) : (
+          <>
+            Run the built-in design agent on Claude Code with your own Claude sign-in, or with an Anthropic API key. Prefer to chat from Claude
+            Code, Cursor or another agent? Use <b>Connect agent</b> instead.
+          </>
+        )}
       </div>
       <div className="op-row" style={{ gap: 8 }}>
         <div className="op-label" style={{ flex: 1, lineHeight: 1.5 }}>
@@ -71,23 +80,27 @@ function AgentSetup({ config, onChange }: { config: AgentConfigInfo; onChange: (
           </button>
         )}
       </div>
-      <div className="op-label" style={{ lineHeight: 1.5 }}>
-        Or add an Anthropic API key. It's stored only on this computer (~/.openpaper/config.json).
-        ANTHROPIC_API_KEY and <code>ant auth login</code> also work.
-      </div>
-      <form
-        className="op-row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!key.trim()) return;
-          void run(client.request<AgentConfigInfo>('agent.config.set', { apiKey: key.trim(), runner: 'api' }));
-        }}
-      >
-        <input className="op-input" type="password" placeholder="sk-ant-…" value={key} onChange={(e) => setKey(e.target.value)} autoComplete="off" />
-        <button className="op-btn primary" disabled={busy || !key.trim()}>
-          Save
-        </button>
-      </form>
+      {!claudeCodeOnly && (
+        <>
+          <div className="op-label" style={{ lineHeight: 1.5 }}>
+            Or add an Anthropic API key. It's stored only on this computer (~/.openpaper/config.json).
+            ANTHROPIC_API_KEY and <code>ant auth login</code> also work.
+          </div>
+          <form
+            className="op-row"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!key.trim()) return;
+              void run(client.request<AgentConfigInfo>('agent.config.set', { apiKey: key.trim(), runner: 'api' }));
+            }}
+          >
+            <input className="op-input" type="password" placeholder="sk-ant-…" value={key} onChange={(e) => setKey(e.target.value)} autoComplete="off" />
+            <button className="op-btn primary" disabled={busy || !key.trim()}>
+              Save
+            </button>
+          </form>
+        </>
+      )}
     </div>
   );
 }
@@ -100,8 +113,9 @@ const ItemView = memo(function ItemView({ item }: { item: AgentChatItem }) {
       return (
         <div style={{ alignSelf: 'flex-end', maxWidth: '85%', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
           {item.target && (
-            <span className="op-chat-target op-truncate" title={`Pointed at ${item.target}`}>
-              <Crosshair size={11} style={{ flexShrink: 0 }} /> {item.target}
+            <span className="op-chat-target" title={`Pointed at ${item.target}`}>
+              <Crosshair size={11} style={{ flexShrink: 0 }} />
+              <span className="op-truncate">{item.target}</span>
             </span>
           )}
           <div
@@ -166,10 +180,13 @@ export function AgentDock({
   placeholder = 'Ask AI to design…',
   emptyHint,
   extra,
+  claudeCodeOnly,
 }: {
   placeholder?: string;
   emptyHint?: ReactNode;
   extra?: () => { page?: string; target?: AgentTarget };
+  /** Only Claude Code can run this chat (a live site); any other runner counts as not set up. */
+  claudeCodeOnly?: boolean;
 }) {
   const chat = useEditor((s) => s.agentChat);
   const [text, setText] = useState('');
@@ -178,6 +195,10 @@ export function AgentDock({
   const [showSettings, setShowSettings] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const voiceRef = useRef<VoiceHandle>(null);
+  /** A send is waiting for its transcript or the server; a second one would race it. */
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
   const open = chat.open;
 
   useEffect(() => {
@@ -201,14 +222,29 @@ export function AgentDock({
   const key = chat.key;
   if (!key) return null;
   const setOpen = (v: boolean) => setState((s) => ({ agentChat: { ...s.agentChat, open: v } }));
-  const needsSetup = config !== null && (config.runner === 'api' ? config.keySource === null : !config.claudeCode?.loggedIn);
+  const needsSetup =
+    config !== null &&
+    (claudeCodeOnly ? config.runner !== 'claude-code' || !config.claudeCode?.loggedIn : config.runner === 'api' ? config.keySource === null : !config.claudeCode?.loggedIn);
 
+  const listening = voice === 'recording' || voice === 'transcribing';
+
+  // Sending while the mic is on stops it and sends what was said along with anything typed.
   const send = async () => {
-    const value = text.trim();
-    if (!value || chat.running) return;
+    const typed = text.trim();
+    if ((!typed && !listening) || chat.running || sendingRef.current) return;
+    sendingRef.current = true;
+    setSending(true);
     setText('');
-    setOpen(true);
-    await sendToAgent(value, extra?.()).catch(() => setText(value));
+    try {
+      const spoken = listening ? await voiceRef.current?.take() : null;
+      const value = [typed, spoken].filter(Boolean).join(' ');
+      if (!value) return;
+      setOpen(true);
+      await sendToAgent(value, extra?.()).catch(() => setText(value));
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
+    }
   };
 
   const usage = chat.usage;
@@ -275,7 +311,7 @@ export function AgentDock({
               )}
             </div>
           )}
-          {needsSetup && config && <AgentSetup config={config} onChange={setConfig} />}
+          {needsSetup && config && <AgentSetup config={config} claudeCodeOnly={claudeCodeOnly} onChange={setConfig} />}
           {(!needsSetup || chat.items.length > 0) && (
             <div ref={listRef} className="op-scroll" style={{ maxHeight: 'min(46vh, 420px)', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
               {!chat.items.length && (
@@ -283,7 +319,7 @@ export function AgentDock({
                   {emptyHint ?? (
                     <>
                       Ask for a design and watch it appear on the canvas. Try: <i>“Design a sign-up screen for a meditation app”</i>, or select a
-                      layer and use the agent button beside it (Ctrl+K) to change just that.
+                      layer and use the agent button beside it ({bindingLabel('Mod+K', MAC)}) to change just that.
                     </>
                   )}
                 </div>
@@ -313,6 +349,8 @@ export function AgentDock({
           onFocus={() => !open && (chat.items.length > 0 || needsSetup) && setOpen(true)}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
+            // Enter that confirms an IME composition isn't a send.
+            if (e.nativeEvent.isComposing || e.keyCode === 229) return;
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
               void send();
@@ -326,6 +364,7 @@ export function AgentDock({
           </button>
         )}
         <VoiceButton
+          ref={voiceRef}
           onPhase={setVoice}
           onText={(t) => {
             setText((prev) => (prev.trim() ? `${prev.trimEnd()} ${t}` : t));
@@ -337,8 +376,8 @@ export function AgentDock({
             <Square size={13} />
           </button>
         ) : (
-          <button className="op-icon-btn active" title="Send (Enter)" disabled={!text.trim()} onClick={() => void send()}>
-            <Send size={14} />
+          <button className="op-icon-btn active" title="Send (Enter)" disabled={(!text.trim() && !listening) || sending} onClick={() => void send()}>
+            {sending ? <Loader2 size={14} className="op-spin" /> : <Send size={14} />}
           </button>
         )}
       </div>

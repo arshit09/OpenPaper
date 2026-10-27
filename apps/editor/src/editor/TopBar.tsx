@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   MousePointer2,
   Hand,
@@ -44,6 +44,7 @@ export function TopBar() {
   const zoom = useEditor((s) => (s.pageId && s.cameras[s.pageId]?.zoom) || 1);
   const connection = useEditor((s) => s.connection);
   const [editingName, setEditingName] = useState(false);
+  const imageInput = useRef<HTMLInputElement>(null);
 
   return (
     <div className="op-topbar">
@@ -93,19 +94,21 @@ export function TopBar() {
         <button className={`op-icon-btn${showShaders ? ' active' : ''}`} title="Shaders (S)" onClick={() => setState({ showShaders: !showShaders })}>
           <Blend size={16} />
         </button>
-        <label className="op-icon-btn" title="Image">
+        {/* A button, not a <label> around the input: labels can't take keyboard focus. */}
+        <button className="op-icon-btn" title={`Image (${bindingLabel('Mod+Shift+K', MAC)})`} onClick={() => imageInput.current?.click()}>
           <ImagePlus size={16} />
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            hidden
-            onChange={(e) => {
-              if (e.currentTarget.files?.length) void insertImageFiles([...e.currentTarget.files]);
-              e.currentTarget.value = '';
-            }}
-          />
-        </label>
+        </button>
+        <input
+          ref={imageInput}
+          type="file"
+          accept="image/*"
+          multiple
+          hidden
+          onChange={(e) => {
+            if (e.currentTarget.files?.length) void insertImageFiles([...e.currentTarget.files]);
+            e.currentTarget.value = '';
+          }}
+        />
       </div>
 
       <div className="right">
@@ -128,19 +131,19 @@ export function TopBar() {
             )}
           </div>
         )}
-        <button className="op-icon-btn" title="Undo (Ctrl+Z)" onClick={() => void undo()}>
+        <button className="op-icon-btn op-topbar-optional" title={`Undo (${bindingLabel('Mod+Z', MAC)})`} onClick={() => void undo()}>
           <Undo2 size={16} />
         </button>
-        <button className="op-icon-btn" title="Redo (Ctrl+Shift+Z)" onClick={() => void redo()}>
+        <button className="op-icon-btn op-topbar-optional" title={`Redo (${bindingLabel('Mod+Shift+Z', MAC)})`} onClick={() => void redo()}>
           <Redo2 size={16} />
         </button>
-        <button className="op-btn" title="Zoom (Shift+1 fit, Shift+0 100%)" onClick={() => zoomToFit()} onContextMenu={(e) => (e.preventDefault(), zoomBy(1))}>
+        <button className="op-btn op-topbar-optional" title={`Zoom (${bindingLabel('Shift+1', MAC)} fit, ${bindingLabel('Shift+0', MAC)} 100%)`} onClick={() => zoomToFit()} onContextMenu={(e) => (e.preventDefault(), zoomBy(1))}>
           <span className="op-zoom">{Math.round(zoom * 100)}%</span>
         </button>
         <button className="op-icon-btn" title="Export" onClick={() => setState({ showExport: true })}>
           <Download size={16} />
         </button>
-        <button className="op-icon-btn" title={`Keyboard shortcuts (${bindingLabel('Mod+/', MAC)})`} onClick={() => setState({ showShortcuts: true })}>
+        <button className="op-icon-btn op-topbar-optional" title={`Keyboard shortcuts (${bindingLabel('Mod+/', MAC)})`} onClick={() => setState({ showShortcuts: true })}>
           <Keyboard size={16} />
         </button>
         <button className="op-btn primary" title="Connect agent" onClick={() => setState({ showConnect: true })}>

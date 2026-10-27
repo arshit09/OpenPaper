@@ -4,6 +4,7 @@ import type { SiteInfo } from '@openpaper/core';
 import { toast } from '../state/store.ts';
 import { client } from '../sync/session.ts';
 import { normalizeSiteUrl } from './inspector.ts';
+import { useEscape } from '../ui/useEscape.ts';
 
 interface FolderInfo {
   path: string;
@@ -34,6 +35,7 @@ export function SiteDialog({ site, onClose, onSaved }: { site?: SiteInfo; onClos
   /** What `sites.inspectFolder` said about the folder as typed (`query`). */
   const [checked, setChecked] = useState<{ query: string; info: FolderInfo } | null>(null);
   const [busy, setBusy] = useState(false);
+  useEscape(onClose);
   const normalized = normalizeSiteUrl(url);
   const debouncedUrl = useDebounced(normalized, 400);
   const debouncedFolder = useDebounced(folder.trim(), 300);
@@ -105,6 +107,7 @@ export function SiteDialog({ site, onClose, onSaved }: { site?: SiteInfo; onClos
       <form
         className="op-dialog"
         role="dialog"
+        aria-modal="true"
         aria-label={site ? 'Edit live site' : 'Open a live site'}
         style={{ width: 'min(520px, 100%)' }}
         onSubmit={(e) => {

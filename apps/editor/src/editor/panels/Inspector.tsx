@@ -28,9 +28,10 @@ import {
   type NodeRecord,
   type StyleInput,
 } from '@openpaper/core';
-import { useEditor } from '../../state/store.ts';
+import { setState, useEditor } from '../../state/store.ts';
 import { ShaderInspector } from '../shaders/ShaderInspector.tsx';
 import { client, command } from '../../sync/session.ts';
+import { ColorSwatch } from '../../ui/ColorSwatch.tsx';
 import { Select } from '../../ui/Select.tsx';
 
 /** The untruncated name for tooltips (text layers are named after their first 20 characters). */
@@ -118,6 +119,20 @@ function toHex(color: string | undefined | null): string {
   return /^#[0-9a-f]{6}$/i.test(v) ? v : '#000000';
 }
 
+/** Show `hex` for `prop` on the canvas without committing it (null drops the preview). */
+function preview(nodes: NodeRecord[], prop: string, hex: string | null) {
+  setState((s) => {
+    const transient = { ...s.transient };
+    for (const n of nodes) {
+      const { [prop]: _, ...rest } = transient[n.id] ?? {};
+      if (hex) transient[n.id] = { ...rest, [prop]: hex };
+      else if (Object.keys(rest).length) transient[n.id] = rest;
+      else delete transient[n.id];
+    }
+    return { transient };
+  });
+}
+
 function ColorField({ nodes, prop, label }: { nodes: NodeRecord[]; prop: string; label: string }) {
   const value = common(nodes, prop);
   const [draft, setDraft] = useState(value ?? '');
@@ -127,16 +142,18 @@ function ColorField({ nodes, prop, label }: { nodes: NodeRecord[]; prop: string;
       <span className="op-label op-prop-label">
         {label}
       </span>
-      <label className="op-swatch" style={{ cursor: 'pointer' }}>
-        <span style={{ background: value ?? 'transparent' }} />
-        <input
-          type="color"
-          value={toHex(value)}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={(e) => apply(nodes, { [prop]: e.currentTarget.value.toUpperCase() })}
-          style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
-        />
-      </label>
+      <ColorSwatch
+        hex={toHex(value)}
+        color={value ?? 'transparent'}
+        title={label}
+        onPreview={(hex) => preview(nodes, prop, hex)}
+        onCancel={() => preview(nodes, prop, null)}
+        onCommit={(hex) =>
+          command({ type: 'updateStyles', updates: [{ nodeIds: nodes.map((n) => n.id), styles: { [prop]: hex.toUpperCase() } }] }).finally(() =>
+            preview(nodes, prop, null)
+          )
+        }
+      />
       <input
         className="op-input"
         value={draft}
@@ -296,15 +313,12 @@ function PageSettings() {
         <span className="op-label op-prop-label">
           Canvas
         </span>
-        <label className="op-swatch" style={{ cursor: 'pointer' }}>
-          <span style={{ background: page.canvasColor ?? 'var(--op-canvas)' }} />
-          <input
-            type="color"
-            value={toHex(page.canvasColor ?? '#eeeeee')}
-            onChange={(e) => void command({ type: 'updatePage', pageId: page.id, canvasColor: e.target.value })}
-            style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
-          />
-        </label>
+        <ColorSwatch
+          hex={toHex(page.canvasColor ?? '#eeeeee')}
+          color={page.canvasColor ?? 'var(--op-canvas)'}
+          title="Canvas colour"
+          onCommit={(hex) => command({ type: 'updatePage', pageId: page.id, canvasColor: hex })}
+        />
         <button className="op-btn" onClick={() => void command({ type: 'updatePage', pageId: page.id, canvasColor: null })}>
           Reset
         </button>

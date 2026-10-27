@@ -143,7 +143,8 @@ export function SiteView({ siteId }: { siteId: string }) {
   // Escape (outside text fields) clears the pick, then leaves Select mode. Focus usually stays out here, not in the frame.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented || isTyping(e)) return;
+      // A dialog on top (editing the site) takes the Escape itself.
+      if (e.key !== 'Escape' || e.defaultPrevented || isTyping(e) || document.querySelector('.op-dialog-backdrop')) return;
       if (elements.length) post({ type: 'clear' });
       else if (inspect) setInspect(false);
     };
@@ -235,7 +236,7 @@ export function SiteView({ siteId }: { siteId: string }) {
           >
             <MousePointerClick size={14} /> Select
           </button>
-          <div className="op-segmented" role="group" aria-label="Device width">
+          <div className="op-device-toggle" role="group" aria-label="Device width">
             {DEVICES.map(({ id, label: name, Icon }) => (
               <button key={id} className={`op-icon-btn${device === id ? ' pressed' : ''}`} title={name} aria-pressed={device === id} onClick={() => setDevice(id)}>
                 <Icon size={14} />
@@ -259,7 +260,9 @@ export function SiteView({ siteId }: { siteId: string }) {
               ref={frame}
               src={proxyUrl}
               title={site?.name ?? 'Site'}
-              allow="clipboard-read; clipboard-write; fullscreen; geolocation; camera; microphone"
+              // Not the mic, camera, location or clipboard reads: the editor's own grants (voice input, paste)
+              // would carry over to whatever the proxied page loads, without a prompt.
+              allow="clipboard-write; fullscreen"
               onLoad={() => {
                 loaded.current = true;
                 post({ type: 'hello' });
@@ -286,6 +289,7 @@ export function SiteView({ siteId }: { siteId: string }) {
           />
         )}
         <AgentDock
+          claudeCodeOnly
           placeholder="Ask AI to change your site…"
           emptyHint={
             <>

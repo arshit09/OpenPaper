@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type CSSProperties, type Ref } from 'react';
 import { createPortal } from 'react-dom';
 import { Loader2, Mic, Square, X } from 'lucide-react';
 import type { SpeechStatus } from '@openpaper/core';
@@ -6,6 +6,14 @@ import { getState, toast, useEditor } from '../state/store.ts';
 import { hasSpeech, installSpeech, preloadSpeech, refreshSpeechStatus, startRecording, transcribe, type Recording } from './voice.ts';
 
 export type VoicePhase = 'idle' | 'starting' | 'recording' | 'transcribing';
+
+export interface VoiceHandle {
+  /**
+   * Stop recording (if it is) and hand back the transcript instead of passing it to `onText`, so a
+   * send can go out without waiting for a second click. Null when there's nothing to take.
+   */
+  take(): Promise<string | null>;
+}
 
 /** Held this long, the mic records until it's released (push-to-talk); a quick click toggles instead. */
 const HOLD_MS = 400;
@@ -88,16 +96,45 @@ function SetupPanel({ status, anchor, onClose }: { status: SpeechStatus | null; 
   );
 }
 
+/** Stop the recording and transcribe it; '' (after telling the user why) when there's no text. */
+async function transcribeRecording(r: Recording): Promise<string> {
+  try {
+    const samples = await r.stop();
+    if (!hasSpeech(samples)) {
+      toast("Didn't hear anything. Check your microphone.");
+      return '';
+    }
+    const text = await transcribe(samples);
+    if (!text) toast("Didn't catch that. Try again a little closer to the mic.");
+    return text;
+  } catch (error) {
+    toast(error instanceof Error ? error.message : String(error), 4500);
+    return '';
+  }
+}
+
 /**
  * Mic button: speech is transcribed locally by the server and handed to `onText`.
  * Click to start and click again to stop, or hold it down while talking. Escape cancels.
  */
-export function VoiceButton({ onText, onPhase, disabled }: { onText: (text: string) => void; onPhase?: (phase: VoicePhase) => void; disabled?: boolean }) {
+export function VoiceButton({
+  onText,
+  onPhase,
+  disabled,
+  ref,
+}: {
+  onText: (text: string) => void;
+  onPhase?: (phase: VoicePhase) => void;
+  disabled?: boolean;
+  ref?: Ref<VoiceHandle>;
+}) {
   const speech = useEditor((s) => s.speech);
   const [phase, setPhaseState] = useState<VoicePhase>('idle');
   const [panel, setPanel] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   const recording = useRef<Recording | null>(null);
+  /** The transcription in flight; `taken` once a caller claimed its text, so `onText` doesn't get it too. */
+  const pending = useRef<{ text: Promise<string>; taken: boolean } | null>(null);
   const pressedAt = useRef(0);
   /** The pointer already handled this press; ignore the click that follows it. */
   const handled = useRef(false);
@@ -111,9 +148,17 @@ export function VoiceButton({ onText, onPhase, disabled }: { onText: (text: stri
     onPhaseRef.current?.(p);
   };
 
+  const mounted = useRef(true);
   useEffect(() => {
+    mounted.current = true;
     if (!getState().speech) void refreshSpeechStatus().catch(() => {});
-    return () => recording.current?.cancel();
+    // Unmounted mid-recording (the prompt closed): drop the audio and tell the owner the mic is off.
+    return () => {
+      mounted.current = false;
+      recording.current?.cancel();
+      recording.current = null;
+      onPhaseRef.current?.('idle');
+    };
   }, []);
 
   // Close the panel a moment after the download finishes.
@@ -152,7 +197,10 @@ export function VoiceButton({ onText, onPhase, disabled }: { onText: (text: stri
     setPhase('starting');
     preloadSpeech();
     try {
-      recording.current = await startRecording(() => void finish());
+      const r = await startRecording(finish);
+      // Gone while the browser asked for the mic: don't leave it recording.
+      if (!mounted.current) return r.cancel();
+      recording.current = r;
       setPhase('recording');
     } catch (error) {
       setPhase('idle');
@@ -168,26 +216,35 @@ export function VoiceButton({ onText, onPhase, disabled }: { onText: (text: stri
     }
   }
 
-  async function finish() {
+  function finish() {
     const r = recording.current;
     if (!r) return;
     recording.current = null;
     setPhase('transcribing');
-    try {
-      const samples = await r.stop();
-      if (!hasSpeech(samples)) return toast("Didn't hear anything. Check your microphone.");
-      const text = await transcribe(samples);
-      if (text) onTextRef.current(text);
-      else toast("Didn't catch that. Try again a little closer to the mic.");
-    } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), 4500);
-    } finally {
-      setPhase('idle');
-    }
+    const job = { text: transcribeRecording(r), taken: false };
+    pending.current = job;
+    void job.text
+      .then((text) => {
+        if (text && !job.taken) onTextRef.current(text);
+      })
+      .finally(() => {
+        pending.current = null;
+        setPhase('idle');
+      });
   }
 
+  useImperativeHandle(ref, () => ({
+    async take() {
+      finish();
+      const job = pending.current;
+      if (!job || job.taken) return null;
+      job.taken = true;
+      return (await job.text) || null;
+    },
+  }));
+
   async function toggle() {
-    if (phase === 'recording') return void finish();
+    if (phase === 'recording') return finish();
     if (phase !== 'idle') return;
     const status = getState().speech ?? (await refreshSpeechStatus().catch(() => null));
     if (status?.state === 'ready' || status?.state === 'loading') void start();
@@ -219,7 +276,7 @@ export function VoiceButton({ onText, onPhase, disabled }: { onText: (text: stri
           handled.current = false;
           if (phase === 'recording') {
             handled.current = true;
-            void finish();
+            finish();
           } else if (phase === 'idle' && ready) {
             // Start on press so holding the button works as push-to-talk.
             e.preventDefault();
@@ -229,7 +286,7 @@ export function VoiceButton({ onText, onPhase, disabled }: { onText: (text: stri
           }
         }}
         onPointerUp={() => {
-          if (pressedAt.current && Date.now() - pressedAt.current >= HOLD_MS && recording.current) void finish();
+          if (pressedAt.current && Date.now() - pressedAt.current >= HOLD_MS && recording.current) finish();
           pressedAt.current = 0;
         }}
         onClick={() => {

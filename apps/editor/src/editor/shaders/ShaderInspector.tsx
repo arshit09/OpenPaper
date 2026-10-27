@@ -12,6 +12,7 @@ import {
 } from '@openpaper/core';
 import { getState, setState, toast, useEditor } from '../../state/store.ts';
 import { command } from '../../sync/session.ts';
+import { ColorSwatch } from '../../ui/ColorSwatch.tsx';
 import { Select } from '../../ui/Select.tsx';
 import { currentShaderFrame } from './ShaderLayer.tsx';
 
@@ -117,19 +118,15 @@ function NumberControl({ p, value, onPreview, onCommit }: { p: Extract<ShaderPar
 function ColorInput({ value, onCommit, onRemove }: { value: string; onCommit: (v: string) => void; onRemove?: () => void }) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
-  const hex = shaderColorToHex(value).slice(0, 7);
+  const full = shaderColorToHex(value);
+  const hex = full.slice(0, 7);
   return (
     <div className="op-row">
-      <label className="op-swatch" style={{ cursor: 'pointer' }}>
-        <span style={{ background: value }} />
-        <input
-          type="color"
-          value={hex}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={(e) => e.currentTarget.value !== hex && onCommit(e.currentTarget.value)}
-          style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
-        />
-      </label>
+      {/* The picker has no alpha: a translucent colour keeps its alpha. */}
+      <ColorSwatch hex={hex} color={value} onCommit={(picked) => {
+          if (picked !== hex) onCommit(`${picked}${full.slice(7)}`);
+        }}
+      />
       <input
         className="op-input"
         value={draft}
@@ -148,6 +145,7 @@ function ColorInput({ value, onCommit, onRemove }: { value: string; onCommit: (v
 
 function ImageControl({ value, label, onCommit }: { value: string | undefined; label: string; onCommit: (v: string | null) => void }) {
   const [busy, setBusy] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
   const name = value ? decodeURIComponent(value.split('/').pop() ?? value).slice(0, 40) : 'Sample image';
   return (
     <div className="op-row">
@@ -155,29 +153,31 @@ function ImageControl({ value, label, onCommit }: { value: string | undefined; l
       <span className="op-label op-truncate" style={{ flex: 1 }} title={value}>
         {name}
       </span>
-      <label className="op-btn outline compact" style={{ cursor: 'pointer', height: 26 }}>
+      {/* A button, not a <label> around the input: labels can't take keyboard focus. */}
+      <button className="op-btn outline compact" style={{ height: 26 }} disabled={busy} onClick={() => input.current?.click()}>
         {busy ? 'Uploading…' : 'Choose…'}
-        <input
-          type="file"
-          accept="image/*"
-          hidden
-          onChange={async (e) => {
-            const file = e.currentTarget.files?.[0];
-            e.currentTarget.value = '';
-            if (!file) return;
-            setBusy(true);
-            try {
-              const res = await fetch('/api/upload', { method: 'POST', body: file, headers: { 'content-type': file.type || 'application/octet-stream' } });
-              if (!res.ok) throw new Error(`Upload failed (${res.status})`);
-              onCommit(((await res.json()) as { url: string }).url);
-            } catch (error) {
-              toast(error instanceof Error ? error.message : 'Upload failed');
-            } finally {
-              setBusy(false);
-            }
-          }}
-        />
-      </label>
+      </button>
+      <input
+        ref={input}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={async (e) => {
+          const file = e.currentTarget.files?.[0];
+          e.currentTarget.value = '';
+          if (!file) return;
+          setBusy(true);
+          try {
+            const res = await fetch('/api/upload', { method: 'POST', body: file, headers: { 'content-type': file.type || 'application/octet-stream' } });
+            if (!res.ok) throw new Error(`Upload failed (${res.status})`);
+            onCommit(((await res.json()) as { url: string }).url);
+          } catch (error) {
+            toast(error instanceof Error ? error.message : 'Upload failed');
+          } finally {
+            setBusy(false);
+          }
+        }}
+      />
       {value && (
         <button className="op-icon-btn small" title="Remove image" onClick={() => onCommit(null)}>
           <X size={12} />

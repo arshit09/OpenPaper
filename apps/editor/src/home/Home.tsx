@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FilePlus2, Folder, FileText, Bot, Trash2, Pencil, Sparkles, AppWindow } from 'lucide-react';
+import { FilePlus2, Folder, FileText, Bot, Trash2, Pencil, AppWindow } from 'lucide-react';
 import type { ResourceInfo, SiteInfo } from '@openpaper/core';
 import { useEditor, setState, toast } from '../state/store.ts';
 import { client, refreshResources } from '../sync/session.ts';
-import { Logo } from '../ui/Logo.tsx';
+import { AgentMark, Logo } from '../ui/Logo.tsx';
 import { SiteDialog } from '../site/SiteDialog.tsx';
 
 function timeAgo(iso: string): string {
@@ -38,33 +38,48 @@ export function Home() {
   );
   const folder = folderId ? resources.find((r) => r.id === folderId) : null;
 
+  /** Server errors (it went away, a name clash) show up as a toast instead of only in the console. */
+  const report = (error: unknown) => toast(error instanceof Error ? error.message : String(error));
+
   async function createFile() {
-    const { fileId } = await client.request<{ fileId: string }>('file.create', { parentId: folderId });
-    location.hash = `#/file/${fileId}`;
+    try {
+      const { fileId } = await client.request<{ fileId: string }>('file.create', { parentId: folderId });
+      location.hash = `#/file/${fileId}`;
+    } catch (error) {
+      report(error);
+    }
   }
 
   async function createFolder() {
     const name = prompt('Folder name', 'New folder');
     if (!name) return;
-    await client.request('folder.create', { name, parentId: folderId });
+    await client.request('folder.create', { name, parentId: folderId }).catch(report);
   }
 
   async function rename(r: ResourceInfo) {
     const name = prompt(`Rename ${r.type}`, r.name);
     if (!name || name === r.name) return;
-    await client.request('resource.rename', { resourceId: r.id, name });
+    await client.request('resource.rename', { resourceId: r.id, name }).catch(report);
   }
 
   async function removeSite(site: SiteInfo) {
     if (!confirm(`Remove "${site.name}" from OpenPaper? Your project folder and its files stay as they are.`)) return;
-    await client.request('sites.delete', { id: site.id });
-    setSites((list) => list.filter((s) => s.id !== site.id));
+    try {
+      await client.request('sites.delete', { id: site.id });
+      setSites((list) => list.filter((s) => s.id !== site.id));
+    } catch (error) {
+      report(error);
+    }
   }
 
   async function remove(r: ResourceInfo) {
     if (!confirm(`Delete "${r.name}"? This cannot be undone.`)) return;
-    await client.request('resource.delete', { resourceId: r.id });
-    toast(`Deleted ${r.name}`);
+    try {
+      await client.request('resource.delete', { resourceId: r.id });
+      toast(`Deleted ${r.name}`);
+    } catch (error) {
+      report(error);
+    }
   }
 
   return (
@@ -175,7 +190,7 @@ export function Home() {
                 background: 'var(--op-panel)',
               }}
             >
-              <Sparkles size={26} style={{ color: 'var(--op-agent)' }} />
+              <AgentMark size={26} />
               <h2 style={{ fontSize: 16, margin: '10px 0 6px' }}>Design with your AI agent</h2>
               <p style={{ color: 'var(--op-text-2)', maxWidth: 460, margin: '0 auto 16px', lineHeight: 1.55 }}>
                 Create a file, connect Claude Code, Cursor, Codex or any MCP client, and watch it draw on the canvas in

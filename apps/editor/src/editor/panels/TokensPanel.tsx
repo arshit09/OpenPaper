@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, X } from 'lucide-react';
 import { orderedTokens, resolveTokenValue, tokenCssName, TOKEN_TYPES, type TokenRecord, type TokenType } from '@openpaper/core';
 import { toast, useEditor } from '../../state/store.ts';
 import { command } from '../../sync/session.ts';
+import { Select } from '../../ui/Select.tsx';
 
 const LABELS: Record<TokenType, string> = {
   color: 'Colors',
@@ -43,6 +44,12 @@ export function TokensPanel() {
   const [draft, setDraft] = useState({ name: '', value: '' });
   const ordered = orderedTokens(tokens);
   const save = (next: TokenRecord[]) => void command({ type: 'setTokens', tokens: next });
+  const startAdding = (type: TokenType) => {
+    setAdding(type);
+    setDraft({ name: PREFIX[type], value: '' });
+  };
+  /** Types with no tokens yet have no section (and no + button) of their own. */
+  const missing = TOKEN_TYPES.filter((type) => adding !== type && !tokens.some((t) => t.type === type));
 
   return (
     <div className="op-scroll" style={{ flex: 1, padding: '8px 10px 24px' }}>
@@ -56,7 +63,7 @@ export function TokensPanel() {
           <div key={type} style={{ marginBottom: 14 }}>
             <div className="op-section-title" style={{ marginBottom: 4 }}>
               {LABELS[type]}
-              <button className="op-icon-btn small" title={`Add ${LABELS[type].toLowerCase()}`} onClick={() => (setAdding(type), setDraft({ name: PREFIX[type], value: '' }))}>
+              <button className="op-icon-btn small" title={`Add ${LABELS[type].toLowerCase()}`} onClick={() => startAdding(type)}>
                 <Plus size={13} />
               </button>
             </div>
@@ -91,6 +98,11 @@ export function TokensPanel() {
               <form
                 className="op-row"
                 style={{ marginTop: 4 }}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Escape') return;
+                  e.preventDefault();
+                  setAdding(null);
+                }}
                 onSubmit={(e) => {
                   e.preventDefault();
                   const name = draft.name.replace(/^--/, '').trim();
@@ -108,6 +120,9 @@ export function TokensPanel() {
                 <button className="op-btn primary compact" style={{ height: 26 }} type="submit">
                   Add
                 </button>
+                <button className="op-icon-btn small" type="button" title="Cancel (Esc)" aria-label="Cancel" onClick={() => setAdding(null)}>
+                  <X size={12} />
+                </button>
               </form>
             )}
           </div>
@@ -118,12 +133,21 @@ export function TokensPanel() {
           No tokens yet.
           <div className="op-row" style={{ justifyContent: 'center', marginTop: 10, flexWrap: 'wrap' }}>
             {(['color', 'spacing', 'radius', 'fontSize'] as TokenType[]).map((t) => (
-              <button key={t} className="op-btn outline" onClick={() => (setAdding(t), setDraft({ name: PREFIX[t], value: '' }))}>
+              <button key={t} className="op-btn outline" onClick={() => startAdding(t)}>
                 <Plus size={13} /> {LABELS[t]}
               </button>
             ))}
           </div>
         </div>
+      )}
+      {tokens.length > 0 && missing.length > 0 && (
+        <Select
+          value={'' as TokenType}
+          options={missing.map((type) => ({ value: type, label: LABELS[type] }))}
+          placeholder="Add another kind of token…"
+          aria-label="Add another kind of token"
+          onChange={startAdding}
+        />
       )}
     </div>
   );

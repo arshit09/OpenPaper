@@ -3,7 +3,7 @@ import { ArrowUp, Loader2, MessageSquare, Square, X } from 'lucide-react';
 import { setState, useEditor } from '../state/store.ts';
 import { client } from '../sync/session.ts';
 import { AgentMark } from './Logo.tsx';
-import { VoiceButton, type VoicePhase } from './VoiceButton.tsx';
+import { VoiceButton, type VoiceHandle, type VoicePhase } from './VoiceButton.tsx';
 
 export interface PromptRect {
   x: number;
@@ -80,6 +80,7 @@ export function PointPrompt({
   const [height, setHeight] = useState(BUTTON);
   const root = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  const voiceRef = useRef<VoiceHandle>(null);
 
   useEffect(() => {
     if (open) input.current?.focus();
@@ -105,16 +106,32 @@ export function PointPrompt({
   const failure = [...mine].reverse().find((i) => i.kind === 'notice' && i.level === 'error');
   const working = chat.running && sentAt !== null;
 
+  const listening = voice === 'recording' || voice === 'transcribing';
+  /** A send is waiting for its transcript or the server; a second one would race it. */
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
+
+  // Sending while the mic is on stops it and sends what was said along with anything typed.
   const send = async () => {
-    const value = text.trim();
-    if (!value || chat.running) return;
+    const typed = text.trim();
+    if ((!typed && !listening) || chat.running || sendingRef.current) return;
+    sendingRef.current = true;
+    setSending(true);
     setText('');
-    setSentAt(chat.items.length);
     try {
-      await onSend(value);
-    } catch {
-      setText(value);
-      setSentAt(null);
+      const spoken = listening ? await voiceRef.current?.take() : null;
+      const value = [typed, spoken].filter(Boolean).join(' ');
+      if (!value) return;
+      setSentAt(chat.items.length);
+      try {
+        await onSend(value);
+      } catch {
+        setText(value);
+        setSentAt(null);
+      }
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
     }
   };
 
@@ -162,6 +179,8 @@ export function PointPrompt({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
+            // Enter that confirms an IME composition isn't a send.
+            if (e.nativeEvent.isComposing || e.keyCode === 229) return;
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
               void send();
@@ -172,6 +191,7 @@ export function PointPrompt({
           }}
         />
         <VoiceButton
+          ref={voiceRef}
           onPhase={setVoice}
           onText={(t) => {
             setText((prev) => (prev.trim() ? `${prev.trimEnd()} ${t}` : t));
@@ -183,8 +203,8 @@ export function PointPrompt({
             <Square size={12} />
           </button>
         ) : (
-          <button className="op-icon-btn active" title="Send (Enter)" disabled={!text.trim() || chat.running} onClick={() => void send()}>
-            <ArrowUp size={15} />
+          <button className="op-icon-btn active" title="Send (Enter)" disabled={(!text.trim() && !listening) || chat.running || sending} onClick={() => void send()}>
+            {sending ? <Loader2 size={14} className="op-spin" /> : <ArrowUp size={15} />}
           </button>
         )}
       </div>

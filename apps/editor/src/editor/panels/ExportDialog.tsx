@@ -4,6 +4,7 @@ import { displayName } from '@openpaper/core';
 import { useEditor, setState, toast } from '../../state/store.ts';
 import { client } from '../../sync/session.ts';
 import { Select } from '../../ui/Select.tsx';
+import { useEscape } from '../../ui/useEscape.ts';
 
 type Format = 'png' | 'jpg' | 'webp' | 'svg' | 'pdf';
 
@@ -36,6 +37,7 @@ export function ExportDialog() {
   const page = pageId ? doc.pages[pageId] : undefined;
   const targets = selection.length ? selection : (page ? doc.nodes[page.rootId]?.children ?? [] : []);
   const close = () => setState({ showExport: false });
+  useEscape(close);
 
   const run = async () => {
     setBusy(true);
@@ -58,7 +60,7 @@ export function ExportDialog() {
 
   return (
     <div className="op-dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div className="op-dialog" role="dialog" aria-label="Export" style={{ width: 380 }}>
+      <div className="op-dialog" role="dialog" aria-modal="true" aria-label="Export" style={{ width: 380 }}>
         <header>
           <span>Export</span>
           <button className="op-icon-btn" title="Close" aria-label="Close" onClick={close}>
@@ -79,7 +81,7 @@ export function ExportDialog() {
               <Select value={String(scale)} options={SCALES} disabled={format === 'pdf' || format === 'svg'} onChange={(v) => setScale(Number(v))} />
             </label>
           </div>
-          <button className="op-btn primary" style={{ marginTop: 4 }} disabled={busy || !targets.length} onClick={() => void run()}>
+          <button className="op-btn primary" style={{ marginTop: 4 }} disabled={busy || !targets.length} autoFocus onClick={() => void run()}>
             {busy ? <Loader2 size={14} className="op-spin" /> : <Download size={14} />} {busy ? 'Exporting…' : 'Export'}
           </button>
         </div>
