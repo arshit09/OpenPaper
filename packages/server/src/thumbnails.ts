@@ -21,6 +21,10 @@ const NAME_RE = /^([0-9A-HJKMNP-TV-Z]{26})\.webp$/;
 interface Entry {
   /** The document's `updatedAt` when the thumbnail was taken. */
   updatedAt: string;
+  /** The page the user was last on when it was taken (null: none yet). */
+  lastPage?: string | null;
+  /** When it was taken (epoch ms): the image URL's version. */
+  takenAt?: number;
   /** Canvas colour of the page shown (null: the editor's own). */
   background: string | null;
   /** False when the file had nothing to show, so no image was kept. */
@@ -30,6 +34,8 @@ interface Entry {
 interface Manifest {
   version: 1;
   files: Record<string, Entry>;
+  /** The page each file was last shown on in an editor. */
+  lastPages: Record<string, string>;
 }
 
 export interface ThumbnailOptions {
@@ -42,29 +48,33 @@ export interface ThumbnailOptions {
   changed: () => void;
 }
 
-/** The page a thumbnail shows: the first one with anything on it. */
-function pageToShow(doc: PaperDocument): PageRecord | null {
+/** The page a thumbnail shows: the one the user was last on, else the first one with anything on it. */
+function pageToShow(doc: PaperDocument, lastPage: string | null): PageRecord | null {
+  const hasContent = (page: PageRecord | undefined): page is PageRecord => !!page && !!doc.nodes[page.rootId]?.children.length;
+  const last = lastPage ? doc.pages[lastPage] : undefined;
+  if (hasContent(last)) return last;
   for (const item of doc.pageList) {
     const page = item.type === 'page' ? doc.pages[item.id] : undefined;
-    if (page && doc.nodes[page.rootId]?.children.length) return page;
+    if (hasContent(page)) return page;
   }
   return null;
 }
 
 /**
- * Previews of each file's canvas for the home screen, rendered in the server's headless browser
- * so the editor does no work for them. A file gets a new one once it has been left alone for a
- * while, and as soon as the user leaves it; files without one are filled in when the file list is
- * asked for. One render runs at a time, and a file is only rendered again after it has changed.
+ * Previews of each file's canvas for the home screen, showing the page the user was last on,
+ * rendered in the server's headless browser so the editor does no work for them. A file gets a new
+ * one once it has been left alone for a while, and as soon as the user leaves it; files without one
+ * are filled in when the file list is asked for. One render runs at a time, and a file is only
+ * rendered again after it has changed (or was left on another page).
  */
 export class ThumbnailService {
-  private manifest: Manifest = { version: 1, files: {} };
+  private manifest: Manifest = { version: 1, files: {}, lastPages: {} };
   private manifestWrite: Promise<void> = Promise.resolve();
   private readonly idle = new Map<string, NodeJS.Timeout>();
   /** Files waiting for a render, most urgent first. */
   private queue: string[] = [];
   private running = false;
-  /** `<id>@<updatedAt>` of renders that failed, so the same version isn't retried on every visit. */
+  /** `<id>@<updatedAt>@<lastPage>` of renders that failed, so the same version isn't retried on every visit. */
   private readonly failed = new Set<string>();
   private closed = false;
 
@@ -78,11 +88,13 @@ export class ThumbnailService {
     await mkdir(this.opts.dir, { recursive: true });
     try {
       const raw = JSON.parse(await readFile(this.manifestPath, 'utf8')) as Manifest;
-      if (raw?.version === 1 && raw.files) this.manifest = raw;
+      if (raw?.version === 1 && raw.files) this.manifest = { ...raw, lastPages: raw.lastPages ?? {} };
     } catch {
       // Missing or corrupt: thumbnails are taken again.
     }
-    for (const id of Object.keys(this.manifest.files)) if (!this.opts.store.has(id)) void this.removed(id);
+    for (const id of new Set([...Object.keys(this.manifest.files), ...Object.keys(this.manifest.lastPages)])) {
+      if (!this.opts.store.has(id)) void this.removed(id);
+    }
     this.opts.hub.on('commit', (e) => this.edited(e.fileId));
   }
 
@@ -90,7 +102,15 @@ export class ThumbnailService {
   thumbnailFor(fileId: string): ResourceInfo['thumbnail'] {
     const entry = this.manifest.files[fileId];
     if (!entry?.image) return undefined;
-    return { url: `${THUMBNAIL_ROUTE}${fileId}.webp?v=${Date.parse(entry.updatedAt).toString(36)}`, background: entry.background };
+    const version = entry.takenAt ?? Date.parse(entry.updatedAt);
+    return { url: `${THUMBNAIL_ROUTE}${fileId}.webp?v=${version.toString(36)}`, background: entry.background };
+  }
+
+  /** An editor is showing this page of a file: its card shows the page the user was last on. */
+  viewing(fileId: string, pageId: string): void {
+    if (this.manifest.lastPages[fileId] === pageId || !this.opts.store.has(fileId) || pageId.length > 200) return;
+    this.manifest.lastPages[fileId] = pageId;
+    void this.saveManifest();
   }
 
   /** The image behind a `THUMBNAIL_ROUTE` name, or null. */
@@ -116,8 +136,9 @@ export class ThumbnailService {
   async removed(fileId: string): Promise<void> {
     this.cancelIdle(fileId);
     this.queue = this.queue.filter((id) => id !== fileId);
-    if (!this.manifest.files[fileId]) return;
+    if (!this.manifest.files[fileId] && !this.manifest.lastPages[fileId]) return;
     delete this.manifest.files[fileId];
+    delete this.manifest.lastPages[fileId];
     await rm(join(this.opts.dir, `${fileId}.webp`), { force: true }).catch(() => {});
     await this.saveManifest();
   }
@@ -151,8 +172,11 @@ export class ThumbnailService {
 
   private stale(fileId: string): boolean {
     const updatedAt = this.currentVersion(fileId);
-    if (!updatedAt || this.failed.has(`${fileId}@${updatedAt}`)) return false;
-    return this.manifest.files[fileId]?.updatedAt !== updatedAt;
+    const lastPage = this.manifest.lastPages[fileId] ?? null;
+    if (!updatedAt || this.failed.has(`${fileId}@${updatedAt}@${lastPage}`)) return false;
+    const entry = this.manifest.files[fileId];
+    // Moving to another page and leaving counts as a change, even without an edit.
+    return entry?.updatedAt !== updatedAt || (entry.lastPage ?? null) !== lastPage;
   }
 
   private enqueue(fileId: string, urgent = false): void {
@@ -175,24 +199,31 @@ export class ThumbnailService {
 
   private async take(fileId: string): Promise<void> {
     if (!this.stale(fileId)) return;
+    const lastPage = this.manifest.lastPages[fileId] ?? null;
     let doc: PaperDocument | undefined;
     try {
       // A file that isn't open is read from disk without opening it in the hub.
       doc = this.opts.hub.peek(fileId)?.doc ?? (this.opts.store.has(fileId) ? await this.opts.store.load(fileId) : undefined);
       if (!doc) return;
-      const page = pageToShow(doc);
+      const page = pageToShow(doc, lastPage);
       const image = page ? await this.opts.render.thumbnail(doc, page.id, WIDTH, HEIGHT) : null;
       // Deleted while it rendered.
       if (this.closed || !this.opts.store.has(fileId)) return;
       const path = join(this.opts.dir, `${fileId}.webp`);
       if (image) await writeFileAtomic(path, image);
       else await rm(path, { force: true });
-      this.manifest.files[fileId] = { updatedAt: doc.updatedAt, background: page?.canvasColor ?? null, image: !!image };
+      this.manifest.files[fileId] = {
+        updatedAt: doc.updatedAt,
+        lastPage,
+        takenAt: Date.now(),
+        background: page?.canvasColor ?? null,
+        image: !!image,
+      };
       await this.saveManifest();
       this.opts.changed();
     } catch (error) {
       if (this.closed) return;
-      this.failed.add(`${fileId}@${doc?.updatedAt ?? this.currentVersion(fileId)}`);
+      this.failed.add(`${fileId}@${doc?.updatedAt ?? this.currentVersion(fileId)}@${lastPage}`);
       console.warn(`[openpaper] thumbnail for ${fileId} failed:`, error instanceof Error ? error.message : error);
     }
   }

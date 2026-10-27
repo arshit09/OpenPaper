@@ -155,6 +155,7 @@ export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings
         const view = params as ViewState;
         const before = conn.view;
         conn.view = { ...view, selection: Array.isArray(view.selection) ? view.selection.slice(0, 1000) : [] };
+        if (typeof view.fileId === 'string' && typeof view.pageId === 'string') thumbnails?.viewing(view.fileId, view.pageId);
         // Leaving a file (for home, a site or another file) or switching away from the window
         // catches its preview up in the background.
         if (before.fileId && (before.fileId !== view.fileId || (before.focused && !view.focused))) thumbnails?.left(before.fileId);

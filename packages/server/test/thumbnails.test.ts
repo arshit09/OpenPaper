@@ -133,6 +133,25 @@ describe('file thumbnails', () => {
     url = (await updated)!.thumbnail!.url;
   });
 
+  it('shows the page the user was last on', async () => {
+    if (!server.env.render.canRender) return;
+    // Each page has its own canvas colour, so `background` tells which one the preview shows.
+    const { pageId } = await call('create_page', { fileId, name: 'Second' });
+    await call('create_artboard', { fileId, pageId, name: 'Mobile', styles: { width: '390px', height: '844px', backgroundColor: '#ffffff' } });
+    await request('file.command', { fileId, command: { type: 'updatePage', pageId, canvasColor: '#654321' } });
+    const second = nextResources(fileId, (r) => r?.thumbnail?.background === '#654321');
+    await request('view.update', { fileId, pageId, selection: [], focused: true });
+    await request('view.update', { fileId: null, pageId: null, selection: [], focused: true });
+    url = (await second)!.thumbnail!.url;
+    // Back on the first page and out again, without an edit: the card follows, under a new URL.
+    const first = nextResources(fileId, (r) => r?.thumbnail?.background === '#123456');
+    await request('view.update', { fileId, pageId: 'p-1-0', selection: [], focused: true });
+    await request('view.update', { fileId: null, pageId: null, selection: [], focused: true });
+    const r = await first;
+    expect(r!.thumbnail!.url).not.toBe(url);
+    url = r!.thumbnail!.url;
+  });
+
   it('leaves empty files on the icon, and fills in files that never had one', async () => {
     if (!server.env.render.canRender) return;
     const empty = (await request<{ fileId: string }>('file.create', {})).fileId;
