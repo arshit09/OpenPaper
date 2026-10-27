@@ -175,6 +175,8 @@ export async function* runClaudeCode(host: ClaudeCodeHost, run: ClaudeCodeRun): 
       ...turn,
     ];
   }
+  // Stop pressed while the config files were written: don't start a turn nobody can stop any more.
+  if (run.signal.aborted) return;
   const child = spawnClaude(exe, args, run.project ?? host.dir);
   const exited = new Promise<{ code: number | null; error: Error | null }>((resolve) => {
     child.once('error', (error) => resolve({ code: null, error }));

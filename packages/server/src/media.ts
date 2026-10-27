@@ -62,6 +62,8 @@ export class MediaStore {
     const ext = extname(filePath).toLowerCase();
     const mime = IMAGE_MIME[ext];
     if (!mime) throw new Error(`Only image files can be used (${filePath})`);
+    // UNC paths (\\host\share) would send the user's Windows credentials to that host.
+    if (/^[\\/]{2}/.test(filePath)) throw new Error(`Network paths can't be used (${filePath})`);
     const info = await stat(filePath);
     if (!info.isFile()) throw new Error(`Not a file: ${filePath}`);
     return this.put(await readFile(filePath), mime);

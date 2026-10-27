@@ -294,6 +294,17 @@ export class AgentChat {
   /** Send a message. `target` is what the user pointed at; `page` is the live-site page they are on. */
   async send(text: string, opts: { target?: AgentTarget; page?: string } = {}): Promise<void> {
     if (this.running) throw new Error('The agent is already working. Stop it first or wait.');
+    // Claimed before the first await: a second send can't slip in, and Stop works from here on.
+    const controller = new AbortController();
+    this.controller = controller;
+    try {
+      await this.turn(text, opts, controller);
+    } finally {
+      if (this.controller === controller) this.controller = null;
+    }
+  }
+
+  private async turn(text: string, opts: { target?: AgentTarget; page?: string }, controller: AbortController): Promise<void> {
     const config = await this.host.settings.resolved();
     const site = this.siteId ? this.host.getSite?.(this.siteId) : undefined;
     const client =
@@ -324,8 +335,6 @@ export class AgentChat {
     const pointed = target ? describeTarget(target, site ? undefined : this.host.getDoc(this.fileId)) : '';
     const prompt = [this.context(opts.page), pointed, text].filter(Boolean).join('\n\n');
 
-    const controller = new AbortController();
-    this.controller = controller;
     this.host.emit(this.fileId, { type: 'status', running: true, usage: this.usage });
     try {
       if (client) {
@@ -465,7 +474,15 @@ export class AgentChat {
         this.host.emit(this.fileId, { type: 'tool', id: toolItem.id, status: toolItem.status, summary: toolItem.summary });
         results.push({ type: 'tool_result', tool_use_id: use.id, content: toToolResultContent(result), ...(result.isError ? { is_error: true } : {}) });
       }
-      if (signal.aborted) return;
+      if (signal.aborted) {
+        // Tools that ran did change the design: report them as done, or "continue" would redo them.
+        const ran = new Set(results.map((r) => r.tool_use_id));
+        for (const use of toolUses) {
+          if (!ran.has(use.id)) results.push({ type: 'tool_result', tool_use_id: use.id, is_error: true, content: 'Stopped by the user before this ran.' });
+        }
+        this.messages.push({ role: 'user', content: results });
+        return;
+      }
       this.messages.push({ role: 'user', content: results });
     }
     this.notice('info', 'Paused after many steps — say "continue" to keep going.');

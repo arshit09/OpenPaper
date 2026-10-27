@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { cloneDocument, createDocument, normalizeDocument, ulid, type PaperDocument } from '@openpaper/core';
+import { cleanSvgMarkup, cloneDocument, createDocument, normalizeDocument, ulid, type PaperDocument } from '@openpaper/core';
 import { writeFileAtomic } from './fs-utils.ts';
 import type { OpenPaperPaths } from './paths.ts';
 
@@ -99,7 +99,11 @@ export class FileStore {
 
   async load(id: string): Promise<PaperDocument> {
     const text = await readFile(this.filePath(id), 'utf8');
-    return normalizeDocument(JSON.parse(text));
+    const doc = normalizeDocument(JSON.parse(text));
+    // Files can be edited by hand or come from anywhere: stored SVG is cleaned like imported SVG
+    // before the editor or a render puts it in a page.
+    for (const node of Object.values(doc.nodes)) if (node.svg) node.svg = cleanSvgMarkup(node.svg);
+    return doc;
   }
 
   async save(doc: PaperDocument): Promise<void> {

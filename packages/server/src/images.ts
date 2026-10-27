@@ -178,7 +178,7 @@ export class ImageGenService {
         });
       }, { undoable: false });
       started++;
-      void this.run(live.id, g.nodeId, g.url, parsed.ok);
+      void this.run(live.id, g.nodeId, g.url, parsed.ok).catch((error) => console.error('[openpaper] image generation:', error));
     }
     if (started) notes.unshift(`${started} image(s) are generating. Poll get_node_info to know when they complete.`);
     return notes.length ? notes.join('\n') : undefined;
@@ -213,6 +213,8 @@ export class ImageGenService {
         });
       }, { undoable: false });
     } catch (error) {
+      // The file was deleted while the image generated: nothing left to update.
+      if (live.closed) return;
       const message = error instanceof Error ? error.message : String(error);
       live.transact(SYSTEM, 'Image generation failed', (tx) => {
         tx.updateNode(nodeId, (n) => {

@@ -581,8 +581,13 @@ export class SiteProxy {
     headers.connection = 'Upgrade';
     headers.upgrade = req.headers.upgrade ?? 'websocket';
     const upstream = this.upstream(req.method ?? 'GET', path, headers, false);
+    // The browser can go (a reload mid-handshake) before the dev server answers: don't leave that upgrade behind.
+    const abandon = () => upstream.destroy();
+    client.once('close', abandon);
 
     upstream.on('upgrade', (upRes, upSocket, upHead) => {
+      client.off('close', abandon);
+      if (client.destroyed) return void upSocket.destroy();
       this.track(upSocket);
       client.setTimeout(0);
       client.setNoDelay(true);
@@ -639,9 +644,11 @@ export class SiteProxies {
     return this.serial(site.id, async () => {
       let proxy = this.proxies.get(site.id);
       if (proxy && proxy.target.origin !== new URL(site.url).origin) {
+        // Read before closing: a closed server reports port 0.
+        const port = proxy.port;
         await proxy.close();
         this.proxies.delete(site.id);
-        site = { ...site, proxyPort: proxy.port };
+        site = { ...site, proxyPort: port };
         proxy = undefined;
       }
       if (!proxy) {

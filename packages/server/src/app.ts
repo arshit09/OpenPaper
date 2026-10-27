@@ -2,7 +2,7 @@ import { createReadStream, existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { extname, join, normalize, sep } from 'node:path';
-import type { Duplex } from 'node:stream';
+import { pipeline, type Duplex } from 'node:stream';
 import { assetUrlToPath, IMAGE_MIME, MEDIA_ROUTE, type MediaStore } from './media.ts';
 import { SHADER_RUNTIME_PATH } from '@openpaper/core';
 import { MCP_PATH } from './paths.ts';
@@ -50,11 +50,27 @@ function sendText(res: ServerResponse, status: number, text: string) {
   res.end(text);
 }
 
-async function sendFile(res: ServerResponse, path: string, mime: string, cache = 'no-store') {
+/**
+ * Images are served from the editor's own origin, so an SVG opened as a page (in a new tab) must not
+ * run script there: as a document it gets no scripts and an opaque origin. `<img>` and CSS uses are unaffected.
+ */
+const MEDIA_HEADERS = {
+  'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox",
+  'x-content-type-options': 'nosniff',
+};
+
+/** Render documents carry user designs: only the shader runtime may run, and nothing can be framed or embedded. */
+const RENDER_CSP = "script-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'";
+
+/** The editor itself may not be framed by another site (clickjacking). */
+const EDITOR_HEADERS = { 'content-security-policy': "frame-ancestors 'none'", 'x-frame-options': 'DENY' };
+
+async function sendFile(res: ServerResponse, path: string, mime: string, cache = 'no-store', headers: Record<string, string> = {}) {
   const info = await stat(path).catch(() => null);
   if (!info?.isFile()) return sendText(res, 404, 'Not found');
-  res.writeHead(200, { 'content-type': mime, 'content-length': info.size, 'cache-control': cache });
-  createReadStream(path).pipe(res);
+  res.writeHead(200, { 'content-type': mime, 'content-length': info.size, 'cache-control': cache, ...headers });
+  // A file that can't be opened after all (locked, deleted, offline) ends this response, not the server.
+  pipeline(createReadStream(path), res, () => {});
 }
 
 async function readBody(req: IncomingMessage, limit: number): Promise<Buffer> {
@@ -116,7 +132,7 @@ export function createApp(h: AppHandlers): Server {
       if (!h.policy.notCrossSite(req)) return sendText(res, 403, 'Forbidden');
       const file = h.media.pathFor(path);
       if (!file) return sendText(res, 404, 'Not found');
-      return sendFile(res, file, IMAGE_MIME[extname(file)] ?? 'application/octet-stream', 'public, max-age=31536000, immutable');
+      return sendFile(res, file, IMAGE_MIME[extname(file)] ?? 'application/octet-stream', 'public, max-age=31536000, immutable', MEDIA_HEADERS);
     }
     if (path === '/local-asset') {
       // Equivalent of paper-asset://: only images, never to other sites.
@@ -124,14 +140,14 @@ export function createApp(h: AppHandlers): Server {
       const target = assetUrlToPath(`paper-asset://${url.searchParams.get('path') ?? ''}`);
       const mime = target ? IMAGE_MIME[extname(target).toLowerCase()] : undefined;
       if (!target || !mime) return sendText(res, 404, 'Not found');
-      return sendFile(res, target, mime);
+      return sendFile(res, target, mime, 'no-store', MEDIA_HEADERS);
     }
 
     // --- Internal render documents (headless renderer) -------------------
     if (path.startsWith('/__render/')) {
       const html = h.renderDocument(path.slice('/__render/'.length));
       if (html === null) return sendText(res, 404, 'Not found');
-      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': RENDER_CSP });
       return void res.end(html);
     }
 
@@ -156,10 +172,10 @@ export function createApp(h: AppHandlers): Server {
     const ext = extname(filePath);
     if (rel && existsSync(filePath) && STATIC_MIME[ext]) {
       const immutable = rel.startsWith('assets' + sep) || rel.startsWith('assets/');
-      return sendFile(res, filePath, STATIC_MIME[ext]!, immutable ? 'public, max-age=31536000, immutable' : 'no-cache');
+      return sendFile(res, filePath, STATIC_MIME[ext]!, immutable ? 'public, max-age=31536000, immutable' : 'no-cache', ext === '.html' ? EDITOR_HEADERS : {});
     }
     // SPA fallback
-    return sendFile(res, join(h.editorDir, 'index.html'), STATIC_MIME['.html']!, 'no-cache');
+    return sendFile(res, join(h.editorDir, 'index.html'), STATIC_MIME['.html']!, 'no-cache', EDITOR_HEADERS);
   }
 
   server.on('upgrade', (req, socket, head) => {

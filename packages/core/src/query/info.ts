@@ -33,12 +33,10 @@ export function childrenOf(reader: DocReader, node: NodeRecord): NodeRecord[] {
 
 /** Breadth-first list of all descendants. */
 export function descendantsBfs(reader: DocReader, node: NodeRecord): NodeRecord[] {
-  const out: NodeRecord[] = [];
-  const queue = [...childrenOf(reader, node)];
-  while (queue.length) {
-    const n = queue.shift()!;
-    out.push(n);
-    queue.push(...childrenOf(reader, n));
+  // The output doubles as the queue: `shift()` and spreading wide child lists don't scale.
+  const out = childrenOf(reader, node);
+  for (let i = 0; i < out.length; i++) {
+    for (const child of childrenOf(reader, out[i]!)) out.push(child);
   }
   return out;
 }

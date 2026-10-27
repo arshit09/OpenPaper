@@ -1,6 +1,7 @@
 import {
   applyTextRuns,
   canHaveChildren,
+  cleanSvgMarkup,
   collectImageUrls,
   cssUrls,
   deleteSubtree,
@@ -20,7 +21,6 @@ import {
   pxValue,
   readerOf,
   runsText,
-  sanitizeSvg,
   stripInertStyles,
   topLevelBoxes,
   unsupportedRunProps,
@@ -141,7 +141,9 @@ export async function writeHtml(call: Call): Promise<HandlerResult> {
     transact(call, 'write_html', (tx) => {
       tx.updateNode(targetNodeId, (n) => {
         const markup = n.svg ?? '<svg xmlns="http://www.w3.org/2000/svg"></svg>';
-        n.svg = sanitizeSvg(markup.replace(/<\/svg>\s*$/i, `${html}</svg>`));
+        // The full clean (not just sanitizeSvg): it also inlines <style> rules, which would otherwise
+        // apply to the whole editor page, and drops <foreignObject>.
+        n.svg = cleanSvgMarkup(markup.replace(/<\/svg>\s*$/i, `${html}</svg>`));
       });
     });
     record(call, [targetNodeId], 'edit');

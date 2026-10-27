@@ -109,8 +109,11 @@ function rootExtrasFor(reader: DocReader, root: NodeRecord): StyleMap {
   return extras;
 }
 
+const JS_STRING_ESCAPES: Record<string, string> = { '\\': '\\\\', "'": "\\'", '\n': '\\n', '\r': '\\r', '\u2028': '\\u2028', '\u2029': '\\u2029' };
+
+/** Single-quoted JS string literal; line breaks (e.g. in a multi-line gradient) are escaped. */
 function jsString(v: string): string {
-  return `'${v.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+  return `'${v.replace(/[\\'\n\r\u2028\u2029]/g, (c) => JS_STRING_ESCAPES[c]!)}'`;
 }
 
 function styleObject(s: StyleMap, sort: boolean): string {
@@ -186,14 +189,18 @@ async function classesAndStyle(s: StyleMap, opts: JsxOptions): Promise<{ classNa
   return { className: classes.map(postMapClass).filter(Boolean).join(' '), style };
 }
 
+/** `&` too: JSX text decodes entities, so a literal `&copy;` would turn into ©. */
 function escapeJsxText(text: string): string {
-  return text.replace(/[{}<>]/g, (c) => `{'${c}'}`);
+  return text.replace(/[{}<>&]/g, (c) => `{'${c}'}`);
 }
 
 function textLines(text: string): string[] {
   const lines = text.split('\n');
   return lines.map((line, i) => {
-    let out = escapeJsxText(line).replace(/ {2,}/g, (m) => `{'${m}'}`);
+    // JSX drops whitespace next to a line break, so runs of spaces and a line's edge spaces are kept as strings.
+    let out = escapeJsxText(line)
+      .replace(/ {2,}/g, (m) => `{'${m}'}`)
+      .replace(/^ | $/g, "{' '}");
     if (i < lines.length - 1) out += '<br />';
     return out;
   });

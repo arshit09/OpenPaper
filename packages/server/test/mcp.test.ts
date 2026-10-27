@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -253,6 +253,15 @@ describe('OpenPaper MCP server', () => {
     const info = body(await call('get_node_info', { fileId, nodeId: '3-0' }));
     expect(info.width).toBeGreaterThan(100);
     expect(info.worldX).toBe(64);
+  });
+
+  it('exports rasters sized from the measured node', async () => {
+    if (!server.env.render.canRender) return;
+    const r = body(await call('export', { fileId, nodes: { [artboardId]: [{ format: 'png', scale: '200w' }] } }));
+    expect(r.errors).toBeUndefined();
+    const png = await readFile(r.exports[0].filePath);
+    // PNG IHDR: width at byte 16.
+    expect(png.readUInt32BE(16)).toBe(200);
   });
 
   it('finishes working', async () => {

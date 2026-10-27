@@ -149,12 +149,13 @@ export function scopeSvgIds(markup: string, prefix: string): string {
   if (!ids.size) return markup;
   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   let out = markup;
+  // Function replacers: a `$&` or `` $` `` inside an id must stay literal, not expand.
   for (const id of ids) {
     const e = esc(id);
     out = out
-      .replace(new RegExp(`(\\bid\\s*=\\s*["'])${e}(["'])`, 'g'), `$1${prefix}${id}$2`)
-      .replace(new RegExp(`url\\(\\s*(["']?)#${e}\\1\\s*\\)`, 'g'), `url(#${prefix}${id})`)
-      .replace(new RegExp(`((?:xlink:)?href\\s*=\\s*["'])#${e}(["'])`, 'g'), `$1#${prefix}${id}$2`);
+      .replace(new RegExp(`(\\bid\\s*=\\s*["'])${e}(["'])`, 'g'), (_, a: string, b: string) => `${a}${prefix}${id}${b}`)
+      .replace(new RegExp(`url\\(\\s*(["']?)#${e}\\1\\s*\\)`, 'g'), () => `url(#${prefix}${id})`)
+      .replace(new RegExp(`((?:xlink:)?href\\s*=\\s*["'])#${e}(["'])`, 'g'), (_, a: string, b: string) => `${a}#${prefix}${id}${b}`);
   }
   return out;
 }

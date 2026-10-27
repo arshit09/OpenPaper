@@ -46,7 +46,7 @@ export class HeadlessRenderer {
     }
     if (!this.browser) {
       const { default: puppeteer } = await import('puppeteer-core');
-      this.browser = puppeteer
+      const launching: Promise<Browser> = puppeteer
         .launch({
           executablePath: this.executablePath,
           headless: true,
@@ -62,15 +62,17 @@ export class HeadlessRenderer {
           ],
         })
         .then((b) => {
+          // Only forget this browser: an idle close can be followed by a new launch before it disconnects.
           b.on('disconnected', () => {
-            this.browser = null;
+            if (this.browser === launching) this.browser = null;
           });
           return b;
         })
         .catch((error) => {
-          this.browser = null;
+          if (this.browser === launching) this.browser = null;
           throw error;
         });
+      this.browser = launching;
     }
     return this.browser;
   }
@@ -92,8 +94,10 @@ export class HeadlessRenderer {
     const token = randomUUID();
     this.documents.set(token, html);
     this.active++;
-    const page = await browser.newPage();
+    let page: Page | undefined;
     try {
+      // Inside the try: if the browser died, the count must still come back down or it never idles out.
+      page = await browser.newPage();
       await page.setViewport({
         width: Math.max(1, Math.ceil(viewport.width)),
         height: Math.max(1, Math.ceil(viewport.height)),
@@ -110,7 +114,7 @@ export class HeadlessRenderer {
     } finally {
       this.documents.delete(token);
       this.active--;
-      await page.close().catch(() => {});
+      await page?.close().catch(() => {});
       this.touch();
     }
   }

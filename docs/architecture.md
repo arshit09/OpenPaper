@@ -30,7 +30,7 @@ OpenPaper is a single local process (the **server**) plus a browser-based **edit
 
 ### `packages/server` (the `openpaper` CLI)
 - `server.ts` — wires everything; `app.ts` — HTTP routes (`/mcp`, `/ws`, `/media`, `/local-asset`, `/api/*`, static editor).
-- `hub.ts` — `DocumentHub` / `LiveDocument`: the authoritative copy of each open file, per-actor undo/redo (skipping records others changed since), debounced atomic saves.
+- `hub.ts` — `DocumentHub` / `LiveDocument`: the authoritative copy of each open file, one undo timeline per file (a person's undo reaches their own and every agent's changes, an agent's only its own; records others changed since are skipped, a layer and its parent together; progress such as a finished image is folded into the change it completes; each entry keeps only the records it touched, with a budget per author), debounced atomic saves.
 - `mcp/http.ts` — Streamable HTTP endpoint. Each request gets a fresh stateless SDK transport while OpenPaper keeps its own session table, so clients holding a session id from before a restart keep working.
 - `mcp/stdio-relay.ts` — `openpaper mcp`: stdio ⇄ HTTP relay that starts the server when needed and restarts it if it dies.
 - `tools/` — the 37 Paper-compatible MCP tools plus OpenPaper's `update_shader` (definitions, handlers, guides, dispatcher).

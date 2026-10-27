@@ -15,6 +15,11 @@ function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 }
 
+/** CSS text bound for a `<style>` element: `<` as a CSS escape, so a value can't close the element. */
+function escapeStyleText(s: string): string {
+  return s.replace(/</g, '\\3c ');
+}
+
 /** Inject a style attribute and data-op-id into the root <svg> tag of a markup string. */
 function decorateSvgRoot(markup: string, id: string, style: StyleMap): string {
   const css = styleMapToCss(style);
@@ -85,7 +90,7 @@ export function renderDocumentHtml(reader: DocReader, ctx: RenderContext, opts: 
   const links = opts.fontCss.map((href) => `<link rel="stylesheet" href="${escapeAttr(href)}">`).join('');
   const scripts = body.includes('data-op-shader=') ? `<script src="${SHADER_RUNTIME_PATH}" defer></script>` : '';
   return `<!doctype html><html><head><meta charset="utf-8">${links}${scripts}<style>${BASE_CSS}
-html,body{background:${opts.background};overflow:hidden}
-[data-op-world]{position:absolute;left:0;top:0;transform:translate(${-opts.offsetX}px,${-opts.offsetY}px);${varsCss}}
+html,body{background:${escapeStyleText(opts.background)};overflow:hidden}
+[data-op-world]{position:absolute;left:0;top:0;transform:translate(${-opts.offsetX}px,${-opts.offsetY}px);${escapeStyleText(varsCss)}}
 ${opts.extraCss ?? ''}</style></head><body><div data-op-world>${body}</div></body></html>`;
 }

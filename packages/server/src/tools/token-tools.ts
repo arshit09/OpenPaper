@@ -1,5 +1,6 @@
 import { parse as parseColor } from 'culori';
 import {
+  cleanSvgMarkup,
   filterTokens,
   resolveTokenValue,
   tokenCssName,
@@ -52,6 +53,8 @@ function parseValue(type: TokenType, raw: string | number, all: readonly TokenRe
     }
   }
   const s = String(raw).trim();
+  // Never part of a CSS value; a value that holds them could break out of the style it is written into.
+  if (/[<>{};]/.test(s)) return invalid;
   switch (type) {
     case 'color':
       return parseColor(s) ? { value: s } : invalid;
@@ -97,7 +100,8 @@ function rewriteRefs(tx: Transaction, from: string, to: (match: string) => strin
     if (changed || svg !== node.svg) {
       tx.updateNode(node.id, (n) => {
         n.styles = styles;
-        if (svg !== undefined) n.svg = svg;
+        // A value inlined into markup is cleaned like any other SVG (a quote in it could open an attribute).
+        if (svg !== undefined) n.svg = svg === node.svg ? svg : cleanSvgMarkup(svg);
       });
     }
   }

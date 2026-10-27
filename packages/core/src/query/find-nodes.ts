@@ -1,6 +1,6 @@
 import { converter, parse } from 'culori';
 import type { NodeRecord, TokenRecord } from '../model/types.ts';
-import { globToRegExp, resolveTokenValue, tokenCssName } from '../tokens/tokens.ts';
+import { globMatcher, resolveTokenValue, tokenCssName } from '../tokens/tokens.ts';
 
 /**
  * Style/text matching used by `find_nodes`.
@@ -145,7 +145,7 @@ function matchValue(key: string, raw: string, query: string, tokens: readonly To
       return null;
     }
   }
-  const re = globToRegExp(query);
+  const re = globMatcher(query);
   if (query.startsWith('var(--')) {
     if (re.test(value)) return value;
     for (const m of value.matchAll(VAR_RE)) if (re.test(normVar(m[0]))) return normVar(m[0]);
@@ -172,7 +172,7 @@ export function matchNode(
 ): MatchEntry[] | null {
   if (textValue !== undefined) {
     if (node.component !== 'Text') return null;
-    if (!globToRegExp(textValue).test(node.textValue ?? '')) return null;
+    if (!globMatcher(textValue).test(node.textValue ?? '')) return null;
   }
   const matched: MatchEntry[] = [];
   const seen = new Set<string>();
@@ -180,7 +180,7 @@ export function matchNode(
     const rawName = filter.styleName?.trim() || '*';
     const qName = rawName === '*' ? '*' : normName(rawName);
     const qValue = normValue(filter.styleValue);
-    const nameRe = globToRegExp(qName);
+    const nameRe = globMatcher(qName);
     const fills = fillSet(node);
     let passed = false;
     for (const [entryKey, entryValue] of Object.entries(styles)) {

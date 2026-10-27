@@ -44,10 +44,36 @@ export function orderedTokens(tokens: readonly TokenRecord[]): TokenRecord[] {
     .map((x) => x.t);
 }
 
-/** Case-insensitive, anchored glob where only `*` is special. */
-export function globToRegExp(pattern: string): RegExp {
-  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
-  return new RegExp(`^${escaped}$`, 'i');
+export interface GlobMatcher {
+  test(value: string): boolean;
+}
+
+/**
+ * Case-insensitive, anchored glob where only `*` is special (it also spans newlines).
+ * Matched segment by segment instead of as a RegExp, whose backtracking on `*a*a*a*…b` is polynomial.
+ */
+export function globMatcher(pattern: string): GlobMatcher {
+  const parts = pattern.toLowerCase().split('*');
+  const first = parts[0]!;
+  const last = parts[parts.length - 1]!;
+  return {
+    test(value) {
+      const s = value.toLowerCase();
+      if (parts.length === 1) return s === first;
+      if (s.length < first.length + last.length || !s.startsWith(first) || !s.endsWith(last)) return false;
+      // Taking each middle segment at its earliest position leaves the most room for the rest.
+      const end = s.length - last.length;
+      let pos = first.length;
+      for (let i = 1; i < parts.length - 1; i++) {
+        const part = parts[i]!;
+        if (!part) continue;
+        const at = s.indexOf(part, pos);
+        if (at < 0 || at + part.length > end) return false;
+        pos = at + part.length;
+      }
+      return true;
+    },
+  };
 }
 
 export interface TokenFilter {
@@ -57,7 +83,7 @@ export interface TokenFilter {
 
 export function filterTokens(tokens: readonly TokenRecord[], filter: TokenFilter = {}): TokenRecord[] {
   const types = filter.types?.length ? new Set(filter.types) : null;
-  const re = filter.namePattern ? globToRegExp(filter.namePattern) : null;
+  const re = filter.namePattern ? globMatcher(filter.namePattern) : null;
   return orderedTokens(tokens).filter((t) => (!types || types.has(t.type)) && (!re || re.test(tokenCssName(t))));
 }
 

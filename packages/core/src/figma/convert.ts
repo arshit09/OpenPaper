@@ -119,16 +119,22 @@ interface Ctx {
   fileKey: string;
   images: Set<string>;
   warnings: Set<string>;
+  /** Layers emitted so far; nested instances multiply, so the paste stops at MAX_LAYERS. */
+  emitted: number;
 }
+
+const MAX_LAYERS = 20_000;
 
 /** Instance expansion: overrides and derived layout keyed by guid path from the outermost instance. */
 interface Scope {
   prefix: FigmaGuid[];
   overrides: Map<string, FigmaNode>;
   derived: Map<string, FigmaNode>;
+  /** Components being expanded around this point, so a component that contains itself stops. */
+  symbols: ReadonlySet<string>;
 }
 
-const ROOT_SCOPE: Scope = { prefix: [], overrides: new Map(), derived: new Map() };
+const ROOT_SCOPE: Scope = { prefix: [], overrides: new Map(), derived: new Map(), symbols: new Set() };
 
 function effective(n: FigmaNode, scope: Scope): FigmaNode {
   if (!scope.prefix.length || !n.guid) return n;
@@ -153,6 +159,11 @@ function childrenOf(n: FigmaNode, ctx: Ctx, scope: Scope): { kids: FigmaNode[]; 
       ctx.warnings.add('Some component instances could not be expanded (their main component was not copied).');
       return { kids: [], scope };
     }
+    const symbolKey = key(symbol.guid);
+    if (scope.symbols.has(symbolKey)) {
+      ctx.warnings.add('A component that contains an instance of itself was pasted only once.');
+      return { kids: [], scope };
+    }
     const prefix = n.guid ? [...scope.prefix, n.guid] : scope.prefix;
     const overrides = new Map(scope.overrides);
     const derived = new Map(scope.derived);
@@ -165,7 +176,7 @@ function childrenOf(n: FigmaNode, ctx: Ctx, scope: Scope): { kids: FigmaNode[]; 
       const k = pathKey([...prefix, ...(d.guidPath?.guids ?? [])]);
       if (!derived.has(k)) derived.set(k, d);
     }
-    return { kids: ctx.children.get(key(symbol.guid)) ?? [], scope: { prefix, overrides, derived } };
+    return { kids: ctx.children.get(symbolKey) ?? [], scope: { prefix, overrides, derived, symbols: new Set([...scope.symbols, symbolKey]) } };
   }
   return { kids: ctx.children.get(key(n.guid)) ?? [], scope };
 }
@@ -480,6 +491,10 @@ function emit(raw: FigmaNode, ctx: Ctx, scope: Scope, parent: ParentLayout, dept
     ctx.warnings.add('Masks are not supported; masked layers are pasted unmasked.');
     return '';
   }
+  if (++ctx.emitted > MAX_LAYERS) {
+    ctx.warnings.add(`The selection expands to more than ${MAX_LAYERS.toLocaleString('en-US')} layers; the rest were skipped.`);
+    return '';
+  }
   const w = n.size?.x ?? 0;
   const h = n.size?.y ?? 0;
   const s: Record<string, string> = {};
@@ -630,6 +645,7 @@ export function figmaToHtml(message: FigmaMessage, opts: FigmaConvertOptions = {
     fileKey: opts.fileKey ?? message.pasteFileKey ?? 'unknown',
     images: new Set(),
     warnings: new Set(),
+    emitted: 0,
   };
   const all = message.nodeChanges ?? [];
   for (const n of all) if (n.guid) ctx.nodes.set(key(n.guid), n);

@@ -211,17 +211,15 @@ export class RenderService {
       dsf = MODEL_IMAGE_MAX_SIDE / Math.max(box.width, box.height);
       resized = true;
     }
+    const fits = (data: string) => data.length <= MODEL_IMAGE_MAX_BASE64;
     for (let round = 0; round < 8; round++) {
-      for (const quality of round === 0 ? [92, 75, 60, 45] : [75, 60, 45]) {
-        const shot = await this.capture(html, nodeId, box, dsf, 'jpeg', quality, false);
-        if (shot.data.length <= MODEL_IMAGE_MAX_BASE64) {
-          return { ...shot, resized: resized || quality !== 92 || round > 0 };
-        }
-      }
+      // Every quality step at this scale comes from one page load.
+      const shot = await this.capture(html, nodeId, box, dsf, 'jpeg', round === 0 ? [92, 75, 60, 45] : [75, 60, 45], false, fits);
+      if (fits(shot.data)) return { ...shot, resized: resized || shot.quality !== 92 || round > 0 };
       dsf /= 2;
       resized = true;
     }
-    const last = await this.capture(html, nodeId, box, dsf, 'jpeg', 50, false);
+    const last = await this.capture(html, nodeId, box, dsf, 'jpeg', [50], false);
     return { ...last, resized: true };
   }
 
@@ -231,25 +229,35 @@ export class RenderService {
     box: { x: number; y: number; width: number; height: number },
     dsf: number,
     type: 'jpeg' | 'png' | 'webp',
-    quality: number | undefined,
-    transparent: boolean
-  ): Promise<{ data: string; mimeType: string; width: number; height: number }> {
+    /** Tried in order on the loaded page until one `fits` (or the last one). PNG ignores quality. */
+    qualities: Array<number | undefined>,
+    transparent: boolean,
+    fits: (data: string) => boolean = () => true
+  ): Promise<{ data: string; mimeType: string; width: number; height: number; quality: number | undefined }> {
     const viewport = { width: Math.ceil(box.x + box.width) + 1, height: Math.ceil(box.y + box.height) + 1, deviceScaleFactor: dsf };
     return this.headless.withDocument(html, viewport, async (page: Page) => {
       const el = await page.$(`[data-op-id="${nodeId.replace(/"/g, '\\"')}"]`);
       if (!el) throw new Error(`No rendered element found for node ${nodeId}`);
       const rect = await el.boundingBox();
       if (!rect) throw new Error(`No rendered element found for node ${nodeId}`);
-      const buf = (await page.screenshot({
-        type,
-        ...(type === 'png' ? {} : { quality }),
-        clip: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-        captureBeyondViewport: true,
-        omitBackground: transparent,
-        encoding: 'binary',
-      })) as Uint8Array;
+      let data = '';
+      let used: number | undefined;
+      for (const quality of qualities) {
+        const buf = (await page.screenshot({
+          type,
+          ...(type === 'png' ? {} : { quality }),
+          clip: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+          captureBeyondViewport: true,
+          omitBackground: transparent,
+          encoding: 'binary',
+        })) as Uint8Array;
+        data = Buffer.from(buf).toString('base64');
+        used = quality;
+        if (fits(data)) break;
+      }
       return {
-        data: Buffer.from(buf).toString('base64'),
+        data,
+        quality: used,
         mimeType: type === 'jpeg' ? 'image/jpeg' : `image/${type}`,
         width: Math.round(rect.width * dsf),
         height: Math.round(rect.height * dsf),
@@ -257,8 +265,16 @@ export class RenderService {
     });
   }
 
-  /** Raster export (png/jpg/webp) at a device scale factor. */
-  async exportRaster(doc: PaperDocument, nodeId: string, format: 'png' | 'jpg' | 'webp', pixelRatio: number): Promise<Buffer> {
+  /**
+   * Raster export (png/jpg/webp) at a device scale factor, given outright or worked out from the
+   * measured size (e.g. "512w"), so the page isn't loaded an extra time just to measure.
+   */
+  async exportRaster(
+    doc: PaperDocument,
+    nodeId: string,
+    format: 'png' | 'jpg' | 'webp',
+    pixelRatio: number | ((size: { width: number; height: number }) => number)
+  ): Promise<Buffer> {
     if (!this.headless.available) throw new Error('Exports need Chrome, Edge, Brave or Chromium installed (or set OPENPAPER_BROWSER).');
     const node = doc.nodes[nodeId]!;
     const target = this.nodeTarget(doc, node, format !== 'jpg');
@@ -273,11 +289,11 @@ export class RenderService {
       }, nodeId)
     );
     if (!box || box.width < 1 || box.height < 1) throw new Error(`No rendered element found for node ${nodeId}`);
-    let dsf = pixelRatio;
+    let dsf = typeof pixelRatio === 'function' ? pixelRatio(box) : pixelRatio;
     const maxSide = Math.max(box.width, box.height) * dsf;
     if (maxSide > MAX_CANVAS_SIDE) dsf = MAX_CANVAS_SIDE / Math.max(box.width, box.height);
     if (box.width * box.height * dsf * dsf > MAX_CANVAS_SIDE * MAX_CANVAS_SIDE) dsf = MAX_CANVAS_SIDE / Math.sqrt(box.width * box.height);
-    const shot = await this.capture(html, nodeId, box, dsf, format === 'jpg' ? 'jpeg' : format, format === 'png' ? undefined : 90, format !== 'jpg');
+    const shot = await this.capture(html, nodeId, box, dsf, format === 'jpg' ? 'jpeg' : format, [format === 'png' ? undefined : 90], format !== 'jpg');
     return Buffer.from(shot.data, 'base64');
   }
 

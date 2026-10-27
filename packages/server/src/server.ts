@@ -169,6 +169,8 @@ export async function startServer(opts: StartOptions): Promise<RunningServer> {
       await hub.flushAll();
       await headless.close();
       await new Promise<void>((r) => server.close(() => r()));
+      // Requests still running at the first flush may have committed since; their debounced save would never fire.
+      await hub.flushAll();
       await removeServerInfo(paths);
     })();
     return closing;

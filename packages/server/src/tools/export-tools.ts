@@ -72,10 +72,7 @@ async function exportOne(call: Call, node: NodeRecord, entry: ExportEntry): Prom
     case 'png':
     case 'jpg':
     case 'webp': {
-      const size = await call.env.render.nodeSize(d, node.id);
-      if (!size) throw new Error(`No rendered element found for node ${node.id}`);
-      const ratio = pixelRatio(entry.scale, size.width, size.height);
-      const data = await call.env.render.exportRaster(d, node.id, entry.format, ratio);
+      const data = await call.env.render.exportRaster(d, node.id, entry.format, (size) => pixelRatio(entry.scale, size.width, size.height));
       const path = await uniquePath(dir, base, entry.format);
       await writeFile(path, data);
       return path;

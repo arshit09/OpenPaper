@@ -10,10 +10,17 @@ import { Element, type ChildNode } from 'domhandler';
 
 const DROP_TAGS = new Set(['script', 'iframe', 'object', 'embed', 'link', 'meta', 'base', 'frame', 'frameset', 'noscript']);
 const URL_ATTRS = new Set(['href', 'xlink:href', 'src', 'action', 'formaction', 'data']);
+/** SVG animation elements; they can rewrite a link's href after sanitizing (`<set attributeName="href" to="javascript:…">`). */
+const ANIMATION_TAGS = new Set(['set', 'animate', 'animatemotion', 'animatetransform']);
 
 function safeUrl(value: string): boolean {
   const v = value.replace(/[\u0000- ]+/g, '').toLowerCase();
-  return !(v.startsWith('javascript:') || v.startsWith('vbscript:') || (v.startsWith('data:') && v.startsWith('data:text/html')));
+  return !(v.startsWith('javascript:') || v.startsWith('vbscript:') || v.startsWith('data:text/html'));
+}
+
+function animatesUrl(el: Element): boolean {
+  const target = Object.entries(el.attribs).find(([k]) => k.toLowerCase() === 'attributename')?.[1];
+  return !!target && URL_ATTRS.has(target.trim().toLowerCase());
 }
 
 function cleanNodes(nodes: ChildNode[]): void {
@@ -22,7 +29,7 @@ function cleanNodes(nodes: ChildNode[]): void {
     if (node.type === 'script' || node.type === 'style' || node.type === 'tag') {
       const el = node as Element;
       const name = el.name.toLowerCase();
-      if (DROP_TAGS.has(name) || node.type === 'script') {
+      if (DROP_TAGS.has(name) || node.type === 'script' || (ANIMATION_TAGS.has(name) && animatesUrl(el))) {
         nodes.splice(i, 1);
         continue;
       }
@@ -33,7 +40,8 @@ function cleanNodes(nodes: ChildNode[]): void {
         else if (lower === 'style' && /expression\s*\(|javascript:/i.test(el.attribs[attr]!)) delete el.attribs[attr];
       }
       cleanNodes(el.children);
-    } else if (node.type === 'directive' || node.type === 'cdata') {
+    } else if (node.type === 'directive' || node.type === 'cdata' || node.type === 'comment') {
+      // Comments go too: `<!-->` ends a comment early in HTML, so markup hidden inside one would come alive.
       nodes.splice(i, 1);
     }
   }
