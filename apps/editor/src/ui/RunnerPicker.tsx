@@ -4,6 +4,7 @@ import { Check, ChevronDown, Info } from 'lucide-react';
 import type { AgentConfigInfo, AgentRunner } from '@openpaper/core';
 import { useEditor } from '../state/store.ts';
 import { allowAgy, loadAgentConfig, setAgentConfig } from '../sync/session.ts';
+import { RunnerMark } from './RunnerMark.tsx';
 
 const EDGE = 8;
 const GAP = 4;
@@ -132,6 +133,7 @@ export function RunnerPicker({ className }: { className?: string }) {
           setOpen(!open);
         }}
       >
+        <RunnerMark runner={config.runner} size={11} />
         <span>{current.short}</span>
         <ChevronDown size={10} />
       </button>
@@ -163,6 +165,7 @@ export function RunnerPicker({ className }: { className?: string }) {
                     onClick={() => pick(runner)}
                   >
                     <span className="op-select-check">{selected && <Check size={12} />}</span>
+                    <RunnerMark runner={runner} />
                     <span className="op-truncate">{RUNNER_NAMES[runner].name}</span>
                     {note.text && <span className="op-runner-note">{note.text}</span>}
                   </button>

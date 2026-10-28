@@ -6,17 +6,20 @@ import { allowAgy, client, loadAgentConfig, sendToAgent, setAgentConfig } from '
 import { MarkdownView } from '../ui/MarkdownView.tsx';
 import { AgentMark } from '../ui/Logo.tsx';
 import { AGY_NOTE, runnerReady } from '../ui/RunnerPicker.tsx';
+import { RunnerMark } from '../ui/RunnerMark.tsx';
 import { Select } from '../ui/Select.tsx';
 import { VoiceButton, type VoiceHandle, type VoicePhase } from '../ui/VoiceButton.tsx';
 import { bindingLabel } from './hotkeys.ts';
 import { MAC } from './shortcuts.ts';
 
-const RUNNERS = [
-  { value: 'claude-code', label: 'Claude Code sign-in' },
-  { value: 'codex', label: 'Codex sign-in' },
-  { value: 'agy', label: 'Antigravity (agy)' },
-  { value: 'api', label: 'Anthropic API key' },
-] as const;
+const RUNNERS = (
+  [
+    { value: 'claude-code', label: 'Claude Code sign-in' },
+    { value: 'codex', label: 'Codex sign-in' },
+    { value: 'agy', label: 'Antigravity (agy)' },
+    { value: 'api', label: 'Anthropic API key' },
+  ] as const
+).map((r) => ({ ...r, icon: <RunnerMark runner={r.value} size={13} /> }));
 const EFFORTS = (['low', 'medium', 'high', 'xhigh', 'max'] as const).map((e) => ({ value: e, label: `Effort: ${e}` }));
 
 const KEY_SOURCES: Record<NonNullable<AgentConfigInfo['keySource']>, string> = {

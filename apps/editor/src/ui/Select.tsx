@@ -1,8 +1,9 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
 
-export type SelectOption<T extends string> = { value: T; label: string };
+/** `icon` sits before the label, in the list and on the trigger. */
+export type SelectOption<T extends string> = { value: T; label: string; icon?: ReactNode };
 
 const EDGE = 8;
 const GAP = 4;
@@ -166,6 +167,7 @@ export function Select<T extends string>({
         onKeyDown={onKeyDown}
         onBlur={() => setOpen(false)}
       >
+        {options[selectedIndex]?.icon}
         <span className="op-truncate">{options[selectedIndex]?.label ?? placeholder}</span>
         <ChevronDown size={12} className="op-select-chevron" />
       </button>
@@ -193,6 +195,7 @@ export function Select<T extends string>({
                 onClick={() => choose(i)}
               >
                 <span className="op-select-check">{i === selectedIndex && <Check size={12} />}</span>
+                {o.icon}
                 <span className="op-truncate">{o.label}</span>
               </div>
             ))}

@@ -1315,7 +1315,7 @@ textarea.op-input {
   align-items: center;
   gap: 2px;
   height: 20px;
-  padding: 0 5px 0 7px;
+  padding: 0 5px 0 6px;
   border-radius: 999px;
   border: 1px solid var(--op-border-strong);
   background: var(--op-panel);
@@ -1345,6 +1345,12 @@ textarea.op-input {
 }
 .op-point-row > .op-runner-chip {
   margin-bottom: 5px;
+}
+.op-runner-mark {
+  flex-shrink: 0;
+}
+.op-runner-chip > .op-runner-mark {
+  margin-right: 1px;
 }
 .op-runner-menu {
   width: 248px;
