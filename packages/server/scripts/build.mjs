@@ -42,6 +42,18 @@ await build({
   logLevel: 'info',
 });
 
+// Browser runtime that draws Lottie layers in headless render documents.
+await build({
+  entryPoints: [join(root, 'src/render/lottie-runtime.ts')],
+  outfile: join(dist, 'lottie-runtime.js'),
+  bundle: true,
+  format: 'iife',
+  platform: 'browser',
+  target: 'chrome110',
+  minify: true,
+  logLevel: 'info',
+});
+
 const editorDist = join(root, '../../apps/editor/dist');
 try {
   await stat(join(editorDist, 'index.html'));

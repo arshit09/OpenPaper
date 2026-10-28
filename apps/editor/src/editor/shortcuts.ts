@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { getState, setState, type EditorState, type Tool } from '../state/store.ts';
+import { getState, replayAnimations, setAnimationsPaused, setState, type EditorState, type Tool } from '../state/store.ts';
 import { redo, undo } from '../sync/session.ts';
 import { isTyping, zoomStep, zoomTo, zoomToFit } from './canvas/Canvas.tsx';
 import { cancelGesture, endZoomMode, gestureKind, refreshGesture, resetModes, setModes, setSpaceHeld, startKeyPan } from './canvas/interactions.ts';
@@ -181,6 +181,8 @@ export const SHORTCUTS: Shortcut[] = [
     keys: ['Shift+\\', 'Shift+.', 'Mod+Shift+\\'],
     run: (_e, s) => setState(s.uiHidden ? { uiHidden: false, panelsCollapsed: false } : { panelsCollapsed: !s.panelsCollapsed }),
   },
+  { id: 'animations', group: 'View', label: 'Pause / play animations', keys: ['Alt+P'], run: (_e, s) => setAnimationsPaused(!s.animationsPaused) },
+  { id: 'animations-replay', group: 'View', label: 'Replay animations', keys: ['Alt+Shift+P'], run: replayAnimations },
   { id: 'panel-layers', group: 'View', label: 'Layers panel', keys: ['Alt+1'], run: () => setState({ uiHidden: false, panelsCollapsed: false, leftTab: 'layers' }) },
   { id: 'panel-tokens', group: 'View', label: 'Tokens panel', keys: ['Alt+2'], run: () => setState({ uiHidden: false, panelsCollapsed: false, leftTab: 'tokens' }) },
   {

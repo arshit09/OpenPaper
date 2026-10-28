@@ -17,8 +17,9 @@ OpenPaper is a single local process (the **server**) plus a browser-based **edit
 ## Packages
 
 ### `packages/core` (isomorphic)
-- `model/` — `PaperDocument` (pages, page list with dividers, flat node map, tokens, comments), `Transaction` (copy-on-write mutations → forward + inverse `Patch`), tree helpers, ids (`1-0`, `p-1-0`, `root_node_<page>`, ULID file ids), labels.
-- `html/` — HTML → layers importer (`importHtml`), SVG cleaning/sanitizing, id scoping.
+- `model/` — `PaperDocument` (pages, page list with dividers, flat node map, tokens, `@keyframes`, comments), `Transaction` (copy-on-write mutations → forward + inverse `Patch`), tree helpers, ids (`1-0`, `p-1-0`, `root_node_<page>`, ULID file ids), labels.
+- `html/` — HTML → layers importer (`importHtml`; `<video>`, Lottie tags, `<x-embed>` / `<iframe>` become media layers), `<style>` sheets resolved into inline styles with css-select (`stylesheet.ts`: specificity, `!important`, `var()`, `@media` at 1440px), SVG cleaning/sanitizing, id scoping.
+- `animation/` — `@keyframes` parsing (validated and re-serialized, so a rule can't escape its block), `animation` name references (rename on paste conflicts), Lottie JSON / dotLottie unpacking.
 - `editing/` — inserting imported layers (insert-children / replace), artboard placement.
 - `render/` — the render rules shared by the canvas and headless renders (`renderSpec`), static HTML documents.
 - `export/` — JSX (Tailwind or inline styles) and clean HTML export.
@@ -33,13 +34,14 @@ OpenPaper is a single local process (the **server**) plus a browser-based **edit
 - `hub.ts` — `DocumentHub` / `LiveDocument`: the authoritative copy of each open file, one undo timeline per file (a person's undo reaches their own and every agent's changes, an agent's only its own; records others changed since are skipped, a layer and its parent together; progress such as a finished image is folded into the change it completes; each entry keeps only the records it touched, with a budget per author), debounced atomic saves.
 - `mcp/http.ts` — Streamable HTTP endpoint. Each request gets a fresh stateless SDK transport while OpenPaper keeps its own session table, so clients holding a session id from before a restart keep working.
 - `mcp/stdio-relay.ts` — `openpaper mcp`: stdio ⇄ HTTP relay that starts the server when needed and restarts it if it dies.
-- `tools/` — the 37 Paper-compatible MCP tools plus OpenPaper's `update_shader` (definitions, handlers, guides, dispatcher).
+- `tools/` — the 37 Paper-compatible MCP tools plus OpenPaper's `update_shader`, `get_keyframes` and `set_keyframes` (definitions, handlers, guides, dispatcher).
 - `sync.ts`, `views.ts` — editor connections, what each editor is viewing (MCP tools default to the user's file/page/selection), server → editor RPC.
 - `presence.ts` — agent activity per node (40 s expiry), working indicators, activity log.
-- `render/` — headless Chrome/Edge via puppeteer-core: measurement, screenshots (Paper's 2000 px / JPEG 0.92 / 4.5 MB limits), PNG/JPG/WebP/PDF export, local font discovery.
+- `render/` — headless Chrome/Edge via puppeteer-core: measurement, screenshots (Paper's 2000 px / JPEG 0.92 / 4.5 MB limits), PNG/JPG/WebP/PDF export, local font discovery. Pages settle their animations before anything is read (finite ones at their end, loops removed), or freeze at `get_screenshot`'s `animationTime`; `lottie-runtime.ts` draws Lottie layers like the shader runtime does shaders (`/__op/lottie.js`).
+- `embed.ts` — Embed layers' HTML served at `/__op/embed/<file>/<node>` with a CSP sandbox (opaque origin, framed only by OpenPaper) and a small runtime that pauses requestAnimationFrame loops, animations and media on request.
 - `thumbnails.ts` — home-screen previews of the page each file was last shown on in an editor (else its first page with content), zoomed to fit and rendered in the headless browser (transparent WebP in `<home>/cache/thumbnails`, painted over the canvas colour by the card). A file is rendered again only after it changes or was left on another page: 15 s after the last edit while open (2 s when nobody has it open), right away when the user leaves it or switches away from the window, and for missing ones when the file list is requested. One render at a time; a browser launched only for thumbnails closes 30 s later.
 - `tailwind.ts` — Tailwind CSS v4 canonicalizer in a worker thread.
-- `assets.ts`, `media.ts` — content-addressed image store; data URIs, local files and remote images are imported on write.
+- `assets.ts`, `media.ts` — content-addressed media store (images, MP4/WebM video, Lottie JSON; `.lottie` archives unpacked); data URIs, local files and remote files are imported on write; byte ranges for video.
 - `images.ts` — `paper-gen://` generation via OpenAI / Gemini.
 - `harness.ts` — writes MCP config for agent apps.
 - `render/shader-runtime.ts` — browser script (served at `/__op/shaders.js`, prebuilt to `dist/shader-runtime.js`) that mounts shader layers in headless render documents at their stored frame; the renderer waits for it before capturing.
@@ -48,7 +50,7 @@ OpenPaper is a single local process (the **server**) plus a browser-based **edit
 
 ### `apps/editor` (React)
 - `sync/` — WebSocket client and session (open file, commands, undo, view reporting, RPC handlers).
-- `editor/canvas/` — canvas (pan/zoom world), `NodeView` (one React component per layer, using core's render rules), overlay (selection, handles, agent indicators, comment pins), interactions (tools/gestures), inline text editor.
+- `editor/canvas/` — canvas (pan/zoom world, the file's `@keyframes` sheet), `NodeView` (one React component per layer, using core's render rules; `MotionLayers.tsx` for Lottie and Embed layers), `motion.ts` (replay, measuring and capturing with animations at rest), overlay (selection, handles, agent indicators, comment pins), interactions (tools/gestures), inline text editor. The top bar's play/pause (`animationsPaused` in the store) holds CSS, SVG, video, Lottie, embed and shader motion still.
 - `editor/panels/` — layers & pages, tokens, inspector, code, comments, agents, export.
 - `editor/AgentDock.tsx` — the built-in agent's chat, docked at the bottom of the canvas.
 - `editor/shaders/` — shader layers on the canvas (library loaded lazily), the picker with generated previews, inspector controls (presets, sliders with live preview, colours, groups, images, play/pause).

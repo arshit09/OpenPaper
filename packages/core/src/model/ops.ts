@@ -29,6 +29,8 @@ export interface NewNode {
   textValue?: string;
   src?: string;
   svg?: string;
+  /** Embed layers: the HTML document to run. */
+  html?: string;
   attrs?: Record<string, string>;
   props?: ShaderProps;
   isVisible?: boolean;
@@ -48,6 +50,10 @@ export function defaultLabel(n: Pick<NewNode, 'component' | 'textValue'>): strin
       return 'SVG';
     case 'Video':
       return 'Video';
+    case 'Lottie':
+      return 'Lottie';
+    case 'Embed':
+      return 'Embed';
     default:
       return shaderDef(n.component)?.label ?? 'Frame';
   }
@@ -87,6 +93,7 @@ function buildRecords(tx: Transaction, input: NewNode, parentId: string): NodeRe
   if (input.textValue !== undefined) record.textValue = input.textValue;
   if (input.src !== undefined) record.src = input.src;
   if (input.svg !== undefined) record.svg = input.svg;
+  if (input.html !== undefined) record.html = input.html;
   if (input.attrs && Object.keys(input.attrs).length) record.attrs = { ...input.attrs };
   const shader = shaderDef(input.component);
   if (shader) {

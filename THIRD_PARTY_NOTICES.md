@@ -19,6 +19,11 @@ https://shaders.paper.design
 
 OpenPaper is not affiliated with or endorsed by Paper (Lost Coast Labs, Inc.).
 
+## Animation
+
+- `lottie-web` 5.13.0 — MIT, Copyright (c) 2015 Bodymovin — https://github.com/airbnb/lottie-web (plays Lottie layers in the editor and in headless renders)
+- `css-select` 7.0.0 and `css-what` 8.0.0 — BSD-2-Clause, Copyright (c) Felix Böhm — https://github.com/fb55/css-select (matches `<style>` rules when HTML is imported)
+
 ## Figma clipboard decoding
 
 - `kiwi-schema` 0.5.0 — MIT, by Evan Wallace — https://github.com/evanw/kiwi

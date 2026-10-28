@@ -112,7 +112,24 @@ async function uploadImage(file: Blob): Promise<{ url: string; width?: number; h
   return (await res.json()) as { url: string; width?: number; height?: number };
 }
 
-/** Upload images and place them as image-filled rectangles. */
+/** File picker filter for everything insertImageFiles places. */
+export const PLACEABLE_FILES = 'image/*,video/mp4,video/webm,.json,.lottie';
+
+/** What a file becomes on the canvas: an image fill, a Video layer or a Lottie layer. */
+function placeableKind(file: Blob): 'image' | 'video' | 'lottie' | null {
+  const name = (file as File).name?.toLowerCase() ?? '';
+  if (file.type.startsWith('image/')) return 'image';
+  if (file.type === 'video/mp4' || file.type === 'video/webm' || /\.(mp4|webm)$/.test(name)) return 'video';
+  if (file.type === 'application/json' || /\.(json|lottie)$/.test(name)) return 'lottie';
+  return null;
+}
+
+/** Files the canvas can place (images, MP4/WebM video, Lottie JSON or .lottie). */
+export function placeableFiles(files: Iterable<File>): File[] {
+  return [...files].filter((f) => placeableKind(f) !== null);
+}
+
+/** Upload images, videos and Lottie files and place them: images as image-filled rectangles, the others as layers that play. */
 export async function insertImageFiles(files: Blob[], clientPoint?: { x: number; y: number }) {
   const target = pasteTarget();
   const s = getState();
@@ -128,36 +145,33 @@ export async function insertImageFiles(files: Blob[], clientPoint?: { x: number;
   }
   const ids: string[] = [];
   for (const file of files) {
-    if (!file.type.startsWith('image/')) continue;
+    const kind = placeableKind(file);
+    if (!kind) continue;
     try {
       const up = await uploadImage(file);
-      let w = up.width ?? 400;
-      let h = up.height ?? 300;
+      let w = up.width ?? (kind === 'video' ? 640 : kind === 'lottie' ? 300 : 400);
+      let h = up.height ?? (kind === 'video' ? 360 : 300);
       const max = 800;
       if (w > max || h > max) {
         const k = max / Math.max(w, h);
         w = Math.round(w * k);
         h = Math.round(h * k);
       }
-      const styles: Record<string, string> = {
-        width: `${w}px`,
-        height: `${h}px`,
-        backgroundImage: `url("${up.url}")`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
-      };
+      const styles: Record<string, string> =
+        kind === 'image'
+          ? { width: `${w}px`, height: `${h}px`, backgroundImage: `url("${up.url}")`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }
+          : { width: `${w}px`, height: `${h}px` };
       if (freeform) Object.assign(styles, { left: `${Math.round(world.x - w / 2)}px`, top: `${Math.round(world.y - h / 2)}px` });
-      const name = (file as File).name?.replace(/\.[^.]+$/, '') || 'Image';
+      const name = (file as File).name?.replace(/\.[^.]+$/, '') || (kind === 'video' ? 'Video' : kind === 'lottie' ? 'Lottie' : 'Image');
       const result = await command<{ ids: string[] }>({
         type: 'createNodes',
         parentId: target,
-        nodes: [{ component: 'Rectangle', label: name, styles }],
+        nodes: [kind === 'image' ? { component: 'Rectangle', label: name, styles } : { component: kind === 'video' ? 'Video' : 'Lottie', label: name, styles, src: up.url }],
       });
       ids.push(...result.ids);
       world = { x: world.x + 24, y: world.y + 24 };
     } catch (error) {
-      toast(error instanceof Error ? error.message : 'Image upload failed');
+      toast(error instanceof Error ? error.message : 'Upload failed');
     }
   }
   if (ids.length) setState({ selection: ids, tool: 'select' });
@@ -230,7 +244,7 @@ export function useClipboard() {
       if (!data) return;
       const onTop = pasteOnTopArmed && Date.now() - pasteOnTopArmed < 1000 ? onTopPlacement() : null;
       pasteOnTopArmed = 0;
-      const files = [...data.files].filter((f) => f.type.startsWith('image/'));
+      const files = placeableFiles(data.files);
       if (files.length) {
         e.preventDefault();
         void insertImageFiles(files);
@@ -264,7 +278,7 @@ export function useClipboard() {
       if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
     };
     const onDrop = (e: DragEvent) => {
-      const files = [...(e.dataTransfer?.files ?? [])].filter((f) => f.type.startsWith('image/'));
+      const files = placeableFiles(e.dataTransfer?.files ?? []);
       if (!files.length) return;
       e.preventDefault();
       void insertImageFiles(files, { x: e.clientX, y: e.clientY });

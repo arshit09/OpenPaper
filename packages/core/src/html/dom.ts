@@ -1,5 +1,5 @@
 import { parseDocument } from 'htmlparser2';
-import { Element, Text, type ChildNode, type ParentNode } from 'domhandler';
+import { Element, Text, type ChildNode, type Document, type ParentNode } from 'domhandler';
 import { parseInlineStyle, type StyleMap } from '../styles/css.ts';
 
 /** Elements whose content is never imported. */
@@ -13,7 +13,6 @@ export const SKIPPED_TAGS = new Set([
   'template',
   'noscript',
   'base',
-  'iframe',
   'object',
   'embed',
 ]);
@@ -116,7 +115,10 @@ export const INLINE_TAGS = new Set([
 ]);
 
 /** Inline tags that never count as plain text runs. */
-export const NON_TEXT_INLINE = new Set(['button', 'canvas', 'iframe', 'img', 'input', 'object', 'select', 'svg', 'textarea', 'video']);
+export const NON_TEXT_INLINE = new Set(['button', 'canvas', 'iframe', 'img', 'input', 'object', 'select', 'svg', 'textarea', 'video', 'x-embed', 'x-lottie', 'lottie-player', 'dotlottie-player', 'dotlottie-wc']);
+
+/** Tags that become Lottie layers (OpenPaper's own and the common web players). */
+export const LOTTIE_TAGS = new Set(['x-lottie', 'lottie-player', 'dotlottie-player', 'dotlottie-wc']);
 
 /** Tags that get `display: inline-block` when no display is given (Paper's import default). */
 export const DEFAULT_INLINE_BLOCK = new Set(['span', 'a', 'strong', 'em', 'b', 'i', 'u', 'label', 'button', 'input', 'select', 'textarea', 'svg']);
@@ -125,25 +127,31 @@ export function stripComments(html: string): string {
   return html.replace(/<!--[\s\S]*?-->/g, '');
 }
 
-/** Parse an HTML fragment; returns the nodes that should be imported (body content). */
-export function parseFragment(html: string): ChildNode[] {
-  const doc = parseDocument(stripComments(html), {
+/** Parse HTML for import (comments removed). */
+export function parseHtml(html: string): Document {
+  return parseDocument(stripComments(html), {
     recognizeSelfClosing: true,
     lowerCaseTags: true,
     lowerCaseAttributeNames: false,
     decodeEntities: true,
   });
-  const body = findFirst(doc.children, (el) => el.name === 'body');
+}
+
+/** The nodes of a parsed document that should be imported (body content). */
+export function bodyContent(doc: Document): ChildNode[] {
+  const body = findElement(doc.children, (el) => el.name === 'body');
   if (body) return body.children;
   const htmlEl = doc.children.find((n): n is Element => n instanceof Element && n.name === 'html');
   return htmlEl ? htmlEl.children : doc.children;
 }
 
-function findFirst(nodes: ChildNode[], pred: (el: Element) => boolean): Element | null {
+/** First element (depth first) that matches, outside embedded documents (`<x-embed>`, `<template>`). */
+export function findElement(nodes: ChildNode[], pred: (el: Element) => boolean): Element | null {
   for (const n of nodes) {
     if (!(n instanceof Element)) continue;
     if (pred(n)) return n;
-    const inner = findFirst(n.children, pred);
+    if (n.name === 'x-embed' || n.name === 'template') continue;
+    const inner = findElement(n.children, pred);
     if (inner) return inner;
   }
   return null;

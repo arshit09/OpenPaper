@@ -82,7 +82,7 @@ const TEXT_ONLY_PROPS = new Set<string>([
   'hyphens',
 ]);
 
-/** Interaction/animation-only properties that never affect a static design. */
+/** Interaction-only properties that never affect a design. (Animations and transitions are kept: see animation/keyframes.ts.) */
 const DROPPED_PROPS = new Set<string>([
   'boxSizing',
   'textSizeAdjust',
@@ -96,20 +96,6 @@ const DROPPED_PROPS = new Set<string>([
   'touchAction',
   'willChange',
   'caretColor',
-  'transition',
-  'transitionProperty',
-  'transitionDuration',
-  'transitionTimingFunction',
-  'transitionDelay',
-  'animation',
-  'animationName',
-  'animationDuration',
-  'animationTimingFunction',
-  'animationDelay',
-  'animationIterationCount',
-  'animationDirection',
-  'animationFillMode',
-  'animationPlayState',
   'scrollBehavior',
   'scrollbarWidth',
   'scrollbarColor',
@@ -197,6 +183,9 @@ const INITIAL_VALUES: Record<string, string[]> = {
   clear: ['none'],
   backgroundImage: ['none'],
   backgroundColor: ['transparent', 'rgba(0, 0, 0, 0)'],
+  animation: ['none'],
+  animationName: ['none'],
+  transition: ['none'],
   outline: ['none'],
   border: ['none', '0', '0px'],
   borderStyle: ['none'],
@@ -226,7 +215,7 @@ export function normalizeNodeStyles(input: StyleMap, ctx: NormalizeContext): Sty
   for (const [k, raw] of Object.entries(input)) {
     if (k.startsWith('--')) continue; // custom properties are not stored on nodes
     const v = raw.trim();
-    if (!v || DROPPED_PROPS.has(k) || k.startsWith('transition') || k.startsWith('animation')) continue;
+    if (!v || DROPPED_PROPS.has(k)) continue;
     s[k] = v;
   }
   if (s.wordWrap && !s.overflowWrap) s.overflowWrap = s.wordWrap;

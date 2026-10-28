@@ -2,6 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { cssUrls, cssVarRefs, normalizeStyleValue, parseInlineStyle, styleMapToCss, toCamelCase, toKebabCase } from './css.ts';
 
 describe('css helpers', () => {
+  it('expands the font shorthand', () => {
+    expect(parseInlineStyle('font: 700 44px/52px Inter, sans-serif')).toEqual({ fontStyle: 'normal', fontWeight: '700', fontSize: '44px', lineHeight: '52px', fontFamily: 'Inter, sans-serif' });
+    // What the shorthand leaves out is reset, even after a longhand.
+    expect(parseInlineStyle('font-weight: 700; line-height: 2; font: 16px Inter')).toEqual({ fontWeight: '400', lineHeight: 'normal', fontStyle: 'normal', fontSize: '16px', fontFamily: 'Inter' });
+    expect(parseInlineStyle('font: italic bold 12px / 1.5 "Helvetica Neue", Arial; font-size: 14px')).toEqual({
+      fontStyle: 'italic',
+      fontWeight: '700',
+      fontSize: '14px',
+      lineHeight: '1.5',
+      fontFamily: '"Helvetica Neue", Arial',
+    });
+    expect(parseInlineStyle('font: caption')).toEqual({ font: 'caption' });
+  });
+
   it('converts property names both ways', () => {
     expect(toCamelCase('background-color')).toBe('backgroundColor');
     expect(toCamelCase('-webkit-line-clamp')).toBe('WebkitLineClamp');

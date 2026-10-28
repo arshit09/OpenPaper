@@ -1,6 +1,7 @@
 import {
   applyShaderPropsPatch,
   collectImageUrls,
+  collectMediaUrls,
   createSubtree,
   deleteSubtree,
   duplicateSubtree,
@@ -58,11 +59,15 @@ export async function executeCommand(
 ): Promise<CommandResult> {
   // Async preparation (image downloads) happens before the synchronous transaction.
   if (cmd.type === 'insertHtml') {
-    const resolved = await services.assets.resolveAll(collectImageUrls(cmd.html));
+    const [resolved, media] = await Promise.all([
+      services.assets.resolveAll(collectImageUrls(cmd.html)),
+      services.assets.resolveAll(collectMediaUrls(cmd.html), 'motion'),
+    ]);
     return live.transact(actor, 'Paste', (tx) => {
       const importRoots = () => {
         const imported = importHtml(cmd.html, {
           resolveImage: (u) => (resolved.has(u) ? resolved.get(u) : undefined),
+          resolveMedia: (u) => (media.has(u) ? media.get(u) : undefined),
           nodeExists: (id) => !!tx.getNode(id),
         });
         if (!imported.roots.length) throw new OpError('Nothing to paste');
@@ -77,12 +82,14 @@ export async function executeCommand(
           const spot = { x: pxValue(target.styles.left) ?? 0, y: pxValue(target.styles.top) ?? 0 };
           const parent = tx.getNode(target.parentId)!;
           const onRoot = parent.component === 'PageRoot';
-          const roots = importRoots().roots;
+          const imported = importRoots();
+          const roots = imported.roots;
           // An absolutely positioned layer in a flow frame: its replacement keeps that spot.
           if (!onRoot && !isFreeform(parent) && target.styles.position === 'absolute') {
             for (const r of roots) Object.assign(r.styles, { position: 'absolute', left: `${spot.x}px`, top: `${spot.y}px` });
           }
-          ids.push(...insertImported(tx, roots, targetId, 'replace', onRoot ? { placeTopLevel: () => spot } : {}).topLevelIds);
+          const keyframes = { list: imported.keyframes, mode: 'rename' as const };
+          ids.push(...insertImported(tx, roots, targetId, 'replace', onRoot ? { placeTopLevel: () => spot, keyframes } : { keyframes }).topLevelIds);
         }
         return { ids };
       }
@@ -125,6 +132,8 @@ export async function executeCommand(
                 return spot;
               }
             : undefined,
+        // Pasted animations never change the ones already in this file.
+        keyframes: { list: imported.keyframes, mode: 'rename' },
       });
       if (cmd.index !== undefined) result.topLevelIds.forEach((id, i) => moveNode(tx, id, cmd.parentId, cmd.index! + i));
       return { ids: result.topLevelIds };
@@ -237,6 +246,27 @@ export async function executeCommand(
       }
       case 'setFlags': {
         for (const id of cmd.nodeIds) setNodeFlags(tx, id, { isVisible: cmd.isVisible, isLocked: cmd.isLocked });
+        return {};
+      }
+      case 'setPlayback': {
+        for (const id of cmd.nodeIds) {
+          const node = tx.getNode(id);
+          if (node?.component !== 'Video' && node?.component !== 'Lottie') continue;
+          tx.updateNode(id, (n) => {
+            const attrs = { ...n.attrs };
+            if (cmd.loop !== undefined) {
+              if (cmd.loop) delete attrs.loop;
+              else attrs.loop = 'false';
+            }
+            if (cmd.speed !== undefined) {
+              const speed = Math.min(16, Math.max(0.1, cmd.speed));
+              if (!Number.isFinite(speed) || speed === 1) delete attrs.speed;
+              else attrs.speed = String(Math.round(speed * 100) / 100);
+            }
+            if (Object.keys(attrs).length) n.attrs = attrs;
+            else delete n.attrs;
+          });
+        }
         return {};
       }
       case 'group': {
@@ -448,6 +478,8 @@ function labelFor(cmd: EditorCommand): string {
       return 'Duplicate';
     case 'setFlags':
       return 'Change visibility';
+    case 'setPlayback':
+      return 'Change playback';
     case 'group':
       return 'Group';
     case 'ungroup':

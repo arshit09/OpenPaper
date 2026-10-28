@@ -61,7 +61,7 @@ function useScreenRects(ids: string[]): Record<string, Rect | null> {
         quiet = 0;
         // Render before this frame paints, so outlines move with the content.
         flushSync(force);
-      } else if (++quiet >= QUIET_FRAMES && !layoutAnimating()) return;
+      } else if (++quiet >= QUIET_FRAMES && !layoutAnimating(ids)) return;
       frame = requestAnimationFrame(tick);
     };
     const wake = () => {

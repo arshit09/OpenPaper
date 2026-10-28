@@ -114,12 +114,20 @@ export function watchLayout(viewport: HTMLElement, world: HTMLElement): () => vo
   };
 }
 
-/** Is a finite animation or transition playing on the canvas (layers may still be moving)? */
-export function layoutAnimating(): boolean {
+/**
+ * Is anything moving layers on the canvas: a finite animation (live build, edits, an entrance), or a
+ * looping one of the design that moves one of `ids` (on the layer or an ancestor)? Loops elsewhere
+ * don't count, so overlays with nothing to follow still go idle.
+ */
+export function layoutAnimating(ids: readonly string[] = []): boolean {
   if (!worldEl?.getAnimations) return false;
-  return worldEl
-    .getAnimations({ subtree: true })
-    .some((a) => a.playState === 'running' && Number.isFinite(Number(a.effect?.getComputedTiming().endTime ?? Infinity)));
+  const tracked = ids.map(elementFor).filter((el): el is Element => !!el);
+  return worldEl.getAnimations({ subtree: true }).some((a) => {
+    if (a.playState !== 'running') return false;
+    if (Number.isFinite(Number(a.effect?.getComputedTiming().endTime ?? Infinity))) return true;
+    const target = (a.effect as KeyframeEffect | null)?.target;
+    return !!target && tracked.some((el) => target === el || target.contains(el));
+  });
 }
 
 /** A node's border box in world coordinates (from the live DOM), or null when not rendered. */

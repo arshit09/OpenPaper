@@ -82,6 +82,23 @@ export interface EditorState {
   panelsCollapsed: boolean;
   /** Comment pins hidden on the canvas (Shift+C). */
   commentsHidden: boolean;
+  /** The design's own motion (CSS animations, video, Lottie, embeds, shaders) is held still (Alt+P). */
+  animationsPaused: boolean;
+  /** Bumped to play every animation again from its start. */
+  animationEpoch: number;
+}
+
+const MOTION_KEY = 'openpaper.animations';
+
+/** Saved choice, else still when the system asks for reduced motion. */
+function initialPaused(): boolean {
+  try {
+    const saved = localStorage.getItem(MOTION_KEY);
+    if (saved === 'paused' || saved === 'playing') return saved === 'paused';
+  } catch {
+    // storage unavailable
+  }
+  return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
 export const useEditor = create<EditorState>(() => ({
@@ -117,6 +134,8 @@ export const useEditor = create<EditorState>(() => ({
   uiHidden: false,
   panelsCollapsed: false,
   commentsHidden: false,
+  animationsPaused: initialPaused(),
+  animationEpoch: 0,
 }));
 
 export const getState = useEditor.getState;
@@ -171,6 +190,22 @@ export function applyServerPatch(fileId: string, version: number, patch: Paramet
       hoverId: s.hoverId && doc.nodes[s.hoverId] ? s.hoverId : null,
     };
   });
+}
+
+/** Pause or play the design's motion; playing starts every animation over. Remembered per browser. */
+export function setAnimationsPaused(paused: boolean) {
+  setState((s) => ({ animationsPaused: paused, animationEpoch: paused ? s.animationEpoch : s.animationEpoch + 1 }));
+  try {
+    localStorage.setItem(MOTION_KEY, paused ? 'paused' : 'playing');
+  } catch {
+    // storage unavailable
+  }
+}
+
+/** Play every animation again from its start (and resume them when paused). */
+export function replayAnimations() {
+  if (getState().animationsPaused) setAnimationsPaused(false);
+  else setState((s) => ({ animationEpoch: s.animationEpoch + 1 }));
 }
 
 let toastId = 1;

@@ -9,6 +9,8 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "css-select": "7.0.0",
+    "css-what": "8.0.0",
     "culori": "4.0.2",
     "dom-serializer": "3.1.1",
     "domhandler": "6.0.1",

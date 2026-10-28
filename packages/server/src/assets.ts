@@ -8,6 +8,9 @@ import { figmaImageFills, parseFigmaImageUrl } from './figma.ts';
 
 const REMOTE_TIMEOUT_MS = 15_000;
 const REMOTE_MAX_BYTES = 25 * 1024 * 1024;
+/** Videos are bigger and slower to fetch than images. */
+const MOTION_TIMEOUT_MS = 90_000;
+const MOTION_MAX_BYTES = 100 * 1024 * 1024;
 const CACHE_MAX = 500;
 const CONCURRENCY = 6;
 const MAX_REDIRECTS = 5;
@@ -32,6 +35,13 @@ async function isLocalHost(hostname: string): Promise<boolean> {
   if (isIP(host)) return isLocalAddress(host);
   const addresses = await lookup(host, { all: true }).catch(() => []);
   return addresses.some((a) => isLocalAddress(a.address));
+}
+
+/** What a reference is expected to be: an image, or a file that plays (video, Lottie). */
+export type AssetKind = 'image' | 'motion';
+
+function isKind(mime: string, kind: AssetKind): boolean {
+  return kind === 'image' ? mime.startsWith('image/') : mime.startsWith('video/') || mime === 'application/json';
 }
 
 /** Not worth remembering: the same URL may well work on the next try. */
@@ -74,7 +84,7 @@ export class AssetResolver {
     private readonly figmaToken: () => Promise<string | null> = async () => null
   ) {}
 
-  async resolveAll(urls: string[]): Promise<Map<string, ResolvedImage | null>> {
+  async resolveAll(urls: string[], kind: AssetKind = 'image'): Promise<Map<string, ResolvedImage | null>> {
     const out = new Map<string, ResolvedImage | null>();
     // Figma image fills: one REST call per source file maps hashes to download URLs.
     const figma = urls.map((u) => [u, parseFigmaImageUrl(u)] as const).filter(([, p]) => p);
@@ -97,7 +107,7 @@ export class AssetResolver {
       while (queue.length) {
         const url = queue.shift()!;
         const remote = download.get(url);
-        out.set(url, await this.resolveOne(remote ?? url));
+        out.set(url, await this.resolveOne(remote ?? url, kind));
       }
     };
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker));
@@ -110,9 +120,11 @@ export class AssetResolver {
     return value;
   }
 
-  async resolveOne(raw: string): Promise<ResolvedImage | null> {
+  async resolveOne(raw: string, kind: AssetKind = 'image'): Promise<ResolvedImage | null> {
     const url = raw.trim();
-    if (this.cache.has(url)) return this.cache.get(url)!;
+    const key = kind === 'image' ? url : `${kind}:${url}`;
+    if (this.cache.has(key)) return this.cache.get(key)!;
+    const remember = (value: ResolvedImage | null) => this.remember(key, value);
     try {
       if (url.startsWith('/media/')) {
         const path = this.media.pathFor(url);
@@ -122,34 +134,36 @@ export class AssetResolver {
       }
       if (url.startsWith('data:')) {
         const stored = await this.media.putDataUri(url);
-        return this.remember(url, { url: stored.url, width: stored.width, height: stored.height });
+        return remember(isKind(stored.mimeType, kind) ? { url: stored.url, width: stored.width, height: stored.height } : null);
       }
       if (url.startsWith('paper-asset://') || url.startsWith('file://')) {
         // `file://host/share/…` is a UNC path on Windows: opening it would send the user's credentials to that host.
         const path = url.startsWith('file://') ? (new URL(url).host && new URL(url).host !== 'localhost' ? null : fileURLToPath(url)) : assetUrlToPath(url);
         if (!path) return null;
         // Not cached: the file can change on disk.
-        const stored = await this.media.putLocalFile(path);
-        return { url: stored.url, width: stored.width, height: stored.height };
+        const stored = await this.media.putLocalFile(path, kind === 'motion');
+        return isKind(stored.mimeType, kind) ? { url: stored.url, width: stored.width, height: stored.height } : null;
       }
       if (/^https?:\/\//i.test(url)) {
-        const res = await this.fetchRemote(url);
-        if (!res) return this.remember(url, null);
+        const res = await this.fetchRemote(url, kind === 'motion' ? MOTION_TIMEOUT_MS : REMOTE_TIMEOUT_MS);
+        if (!res) return remember(null);
         if (!res.ok) {
           // Rate limits, timeouts and server errors pass; a missing image stays missing.
           if (res.status === 408 || res.status === 429 || res.status >= 500) throw new TransientError(String(res.status));
-          return this.remember(url, null);
+          return remember(null);
         }
-        const data = await readCapped(res, REMOTE_MAX_BYTES);
-        if (!data) return this.remember(url, null);
+        const data = await readCapped(res, kind === 'motion' ? MOTION_MAX_BYTES : REMOTE_MAX_BYTES);
+        if (!data) return remember(null);
         const mime = sniffMime(data) ?? res.headers.get('content-type')?.split(';')[0] ?? '';
         const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//i.test(url);
-        if (mime === 'image/svg+xml' && isLocalhost) {
-          return this.remember(url, { url, svgMarkup: data.toString('utf8') });
+        if (kind === 'image' && mime === 'image/svg+xml' && isLocalhost) {
+          return remember({ url, svgMarkup: data.toString('utf8') });
         }
-        if (!mime.startsWith('image/')) return this.remember(url, null);
+        if (kind === 'image' && !mime.startsWith('image/')) return remember(null);
+        // Video and Lottie: the store checks the bytes (and unpacks a .lottie archive).
         const stored = await this.media.put(data, mime);
-        return this.remember(url, { url: stored.url, width: stored.width, height: stored.height });
+        if (!isKind(stored.mimeType, kind)) return remember(null);
+        return remember({ url: stored.url, width: stored.width, height: stored.height });
       }
     } catch {
       // Network errors, timeouts and unreadable files: try again next time.
@@ -164,8 +178,8 @@ export class AssetResolver {
    * machine or network (it would be fetched and stored blind). Local addresses are fine when asked for directly.
    * Null when a redirect is refused or loops.
    */
-  private async fetchRemote(url: string): Promise<Response | null> {
-    const signal = AbortSignal.timeout(REMOTE_TIMEOUT_MS);
+  private async fetchRemote(url: string, timeoutMs = REMOTE_TIMEOUT_MS): Promise<Response | null> {
+    const signal = AbortSignal.timeout(timeoutMs);
     const local = await isLocalHost(new URL(url).hostname);
     let current = url;
     for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {

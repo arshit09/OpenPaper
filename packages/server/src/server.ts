@@ -17,7 +17,7 @@ import { MediaStore } from './media.ts';
 import { DEFAULT_PORT, MCP_PATH, type OpenPaperPaths } from './paths.ts';
 import { PresenceService } from './presence.ts';
 import { HeadlessRenderer } from './render/headless.ts';
-import { createShaderRuntimeLoader } from './render/shader-runtime-loader.ts';
+import { createRuntimeLoader, createShaderRuntimeLoader } from './render/shader-runtime-loader.ts';
 import { FigmaSettings } from './figma.ts';
 import { RenderService, type EncodedImage } from './render/service.ts';
 import { OriginPolicy } from './security.ts';
@@ -206,6 +206,12 @@ export async function startServer(opts: StartOptions): Promise<RunningServer> {
     renderDocument: (token) => headless.documentFor(token),
     thumbnail: (name) => thumbnails.pathFor(name),
     shaderRuntime: createShaderRuntimeLoader(),
+    lottieRuntime: createRuntimeLoader('lottie-runtime'),
+    embedHtml: async (fileId, nodeId) => {
+      const live = hub.peek(fileId) ?? (await hub.get(fileId).catch(() => null));
+      const node = live?.doc.nodes[nodeId];
+      return node?.component === 'Embed' && node.html !== undefined ? node.html : null;
+    },
     shutdown: () => {
       void close().then(() => process.exit(0));
     },

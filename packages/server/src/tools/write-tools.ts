@@ -3,6 +3,7 @@ import {
   canHaveChildren,
   cleanSvgMarkup,
   collectImageUrls,
+  collectMediaUrls,
   cssUrls,
   deleteSubtree,
   displayName,
@@ -12,6 +13,7 @@ import {
   importHtml,
   insertImported,
   isAncestorOf,
+  mergeKeyframes,
   isFreeform,
   normalizeNodeStyles,
   normalizeStyleValue,
@@ -25,6 +27,7 @@ import {
   topLevelBoxes,
   unsupportedRunProps,
   type Box,
+  type KeyframesRecord,
   type NodeRecord,
   type StyleMap,
   type TextRun,
@@ -139,12 +142,15 @@ export async function writeHtml(call: Call): Promise<HandlerResult> {
   // Writing into an SVG appends markup to the drawing.
   if (mode === 'insert-children' && target.component === 'SVG') {
     transact(call, 'write_html', (tx) => {
+      const keyframes: KeyframesRecord[] = [];
       tx.updateNode(targetNodeId, (n) => {
         const markup = n.svg ?? '<svg xmlns="http://www.w3.org/2000/svg"></svg>';
         // The full clean (not just sanitizeSvg): it also inlines <style> rules, which would otherwise
-        // apply to the whole editor page, and drops <foreignObject>.
-        n.svg = cleanSvgMarkup(markup.replace(/<\/svg>\s*$/i, `${html}</svg>`));
+        // apply to the whole editor page, and drops <foreignObject>. Its @keyframes join the file's.
+        n.svg = cleanSvgMarkup(markup.replace(/<\/svg>\s*$/i, `${html}</svg>`), keyframes);
       });
+      const merged = mergeKeyframes(tx.getKeyframes(), keyframes, 'replace');
+      if (merged.changed) tx.setKeyframes(merged.keyframes);
     });
     record(call, [targetNodeId], 'edit');
     return { data: { createdNodes: [] } };
@@ -154,8 +160,9 @@ export async function writeHtml(call: Call): Promise<HandlerResult> {
   }
 
   let resolved: Map<string, import('@openpaper/core').ResolvedImage | null>;
+  let media: Map<string, import('@openpaper/core').ResolvedImage | null>;
   try {
-    resolved = await call.env.assets.resolveAll(collectImageUrls(html));
+    [resolved, media] = await Promise.all([call.env.assets.resolveAll(collectImageUrls(html)), call.env.assets.resolveAll(collectMediaUrls(html), 'motion')]);
   } catch (error) {
     throw new ToolError(`HTML parsing failed: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -165,17 +172,28 @@ export async function writeHtml(call: Call): Promise<HandlerResult> {
   const pageId = pageIdOfNodeIn(d, target);
   const viewport = pageId ? call.env.views.viewportFor(d.id, pageId) : null;
 
+  let warnings: string[] = [];
+  let defined: string[] = [];
   const result = transact(call, 'write_html', (tx) => {
     let imported;
     try {
       imported = importHtml(html, {
         resolveImage: (url) => (resolved.has(url) ? resolved.get(url) : undefined),
+        resolveMedia: (url) => (media.has(url) ? media.get(url) : undefined),
         nodeExists: (id) => !!tx.getNode(id),
       });
     } catch (error) {
       throw new ToolError(`HTML parsing failed: ${error instanceof Error ? error.message : String(error)}`);
     }
-    if (!imported.roots.length) throw new ToolError('HTML produced no design nodes');
+    warnings = imported.warnings;
+    defined = imported.keyframes.map((k) => k.name);
+    if (!imported.roots.length) {
+      // A <style> with only @keyframes defines (or redefines) animations for existing layers.
+      if (!imported.keyframes.length) throw new ToolError(`HTML produced no design nodes${warnings.length ? ` (${warnings.join('; ')})` : ''}`);
+      const merged = mergeKeyframes(tx.getKeyframes(), imported.keyframes, 'replace');
+      if (merged.changed) tx.setKeyframes(merged.keyframes);
+      return { createdIds: [], topLevelIds: [], generations: [] };
+    }
     const placed: Box[] = [];
     const placeTopLevel = parentIsRoot
       ? (styles: StyleMap) => {
@@ -188,7 +206,7 @@ export async function writeHtml(call: Call): Promise<HandlerResult> {
           return spot;
         }
       : undefined;
-    return insertImported(tx, imported.roots, targetNodeId, mode, { placeTopLevel });
+    return insertImported(tx, imported.roots, targetNodeId, mode, { placeTopLevel, keyframes: { list: imported.keyframes, mode: 'replace' } });
   });
 
   const note = await call.env.images.startAll(call, result.generations);
@@ -198,7 +216,14 @@ export async function writeHtml(call: Call): Promise<HandlerResult> {
     .map((id) => after.nodes[id])
     .filter((n): n is NodeRecord => !!n)
     .map((n) => ({ id: n.id, name: displayName(n), component: n.component, ...positionFields(call, n) }));
-  return { data: { ...(note ? { note } : {}), createdNodes } };
+  return {
+    data: {
+      ...(note ? { note } : {}),
+      createdNodes,
+      ...(defined.length ? { keyframesDefined: defined } : {}),
+      ...(warnings.length ? { warnings } : {}),
+    },
+  };
 }
 
 export async function createArtboard(call: Call): Promise<HandlerResult> {

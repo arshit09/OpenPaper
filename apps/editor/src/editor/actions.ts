@@ -5,7 +5,7 @@ import { client, command } from '../sync/session.ts';
 import { chainOf, elementFor, rectsIntersect, unionRects, viewportRect, worldRectOf, type Rect } from './canvas/geometry.ts';
 import { fitRect } from './canvas/interactions.ts';
 import { fitCamera, inferFlex, opacityFromDigits, readingOrder } from './canvas/canvas-math.ts';
-import { insertImageFiles } from './clipboard.ts';
+import { insertImageFiles, PLACEABLE_FILES } from './clipboard.ts';
 
 // ---- helpers -------------------------------------------------------------------
 
@@ -773,7 +773,7 @@ export async function eyedropper() {
 export function placeImage() {
   const input = document.createElement('input');
   input.type = 'file';
-  input.accept = 'image/*';
+  input.accept = PLACEABLE_FILES;
   input.multiple = true;
   input.onchange = () => {
     if (input.files?.length) void insertImageFiles([...input.files]);

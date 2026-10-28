@@ -135,20 +135,66 @@ function declarationColon(decl: string): number {
   return -1;
 }
 
-/** Parse a `style="..."` attribute into a camelCase StyleMap. Later declarations win. */
-export function parseInlineStyle(text: string | null | undefined): StyleMap {
-  const out: StyleMap = {};
+export interface Declaration {
+  /** camelCase property (custom properties verbatim). */
+  prop: string;
+  value: string;
+  important: boolean;
+}
+
+/** Parse a declaration list (`a: 1; b: 2 !important`) in order, keeping `!important`. */
+export function parseDeclarations(text: string | null | undefined): Declaration[] {
+  const out: Declaration[] = [];
   if (!text) return out;
   for (const decl of splitDeclarations(text)) {
     const colon = declarationColon(decl);
     if (colon <= 0) continue;
     const name = decl.slice(0, colon).trim();
-    let value = decl.slice(colon + 1).trim();
-    if (!name || !value) continue;
-    value = value.replace(/\s*!important\s*$/i, '').trim();
+    const raw = decl.slice(colon + 1).trim();
+    if (!name || !raw) continue;
+    const value = raw.replace(/\s*!important\s*$/i, '').trim();
     if (!value) continue;
-    out[toCamelCase(name)] = value;
+    out.push({ prop: toCamelCase(name), value, important: value !== raw });
   }
+  return out;
+}
+
+/** Parse a `style="..."` attribute into a camelCase StyleMap. Later declarations win; `font` becomes its longhands. */
+export function parseInlineStyle(text: string | null | undefined): StyleMap {
+  const out: StyleMap = {};
+  for (const d of parseDeclarations(text)) {
+    const longhands = d.prop === 'font' ? expandFont(d.value) : null;
+    if (longhands) Object.assign(out, longhands);
+    else out[d.prop] = d.value;
+  }
+  return out;
+}
+
+const FONT_SIZE = /^(\d*\.?\d+(px|em|rem|%|pt|vw|vh|vmin|vmax|ch|ex|cqw|cqh)|0|xx-small|x-small|small|medium|large|x-large|xx-large|xxx-large|smaller|larger|(calc|clamp|min|max|var)\(.*\))$/i;
+const FONT_WEIGHT = /^(normal|bold|bolder|lighter|[1-9]00)$/i;
+
+/**
+ * The `font` shorthand as longhands (`700 44px/52px Inter, sans-serif` → weight, size, line height,
+ * family), or null for what isn't one (system fonts such as `caption`, a bare `inherit`).
+ */
+export function expandFont(value: string): StyleMap | null {
+  const text = value.replace(/\s*\/\s*/g, '/');
+  const matches = [...text.matchAll(/"[^"]*"|'[^']*'|[^\s"']+\([^)]*\)|[^\s"']+/g)];
+  const tokens = matches.map((m) => m[0]);
+  const i = tokens.findIndex((t) => FONT_SIZE.test(t.split('/')[0]!));
+  if (i < 0 || i === tokens.length - 1) return null;
+  // The shorthand resets what it leaves out.
+  const out: StyleMap = { fontStyle: 'normal', fontWeight: '400' };
+  for (const t of tokens.slice(0, i)) {
+    if (/^(italic|oblique)$/i.test(t)) out.fontStyle = t;
+    else if (FONT_WEIGHT.test(t)) out.fontWeight = t.toLowerCase() === 'bold' ? '700' : t;
+    else if (/^small-caps$/i.test(t)) out.fontVariant = t;
+    else if (!/^normal$/i.test(t) && !/condensed|expanded/i.test(t)) return null;
+  }
+  const [size, lineHeight] = tokens[i]!.split('/');
+  out.fontSize = size!;
+  out.lineHeight = lineHeight || 'normal';
+  out.fontFamily = text.slice(matches[i]!.index! + tokens[i]!.length).trim();
   return out;
 }
 

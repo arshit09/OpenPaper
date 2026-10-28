@@ -5,9 +5,9 @@ import { SHADER_COMPONENTS, type ShaderComponent, type ShaderProps } from '../sh
  * Node "component" types. These names are visible to agents through the MCP
  * tools (get_node_info, get_tree_summary, ...), so they follow Paper's naming.
  */
-export type ComponentType = 'PageRoot' | 'Frame' | 'Text' | 'Rectangle' | 'SVG' | 'Image' | 'Video' | ShaderComponent;
+export type ComponentType = 'PageRoot' | 'Frame' | 'Text' | 'Rectangle' | 'SVG' | 'Image' | 'Video' | 'Lottie' | 'Embed' | ShaderComponent;
 
-export const COMPONENT_TYPES: readonly ComponentType[] = ['PageRoot', 'Frame', 'Text', 'Rectangle', 'SVG', 'Image', 'Video', ...SHADER_COMPONENTS];
+export const COMPONENT_TYPES: readonly ComponentType[] = ['PageRoot', 'Frame', 'Text', 'Rectangle', 'SVG', 'Image', 'Video', 'Lottie', 'Embed', ...SHADER_COMPONENTS];
 
 /** Status of an AI image generation attached to a node (paper-gen:// URLs). */
 export interface ImageGenerationState {
@@ -41,11 +41,13 @@ export interface NodeRecord {
   textValue?: string;
   /** Mixed styles inside one Text node (OpenPaper extension). Run texts join to exactly `textValue`. Absent = one style. */
   textRuns?: TextRun[];
-  /** Image / Video source URL (https:, data:, asset:, paper-asset:, paper-gen:). */
+  /** Image / Video / Lottie source URL (https:, data:, asset:, paper-asset:, paper-gen:); a web page for Embed layers. */
   src?: string;
   /** Raw SVG markup (the full <svg> element) for SVG nodes. */
   svg?: string;
-  /** Extra HTML attributes kept for round-tripping (alt, href, ...). */
+  /** Embed layers: an HTML document (scripts allowed) that runs in a sandboxed frame. */
+  html?: string;
+  /** Extra HTML attributes kept for round-tripping (alt, href, ...); media playback (`loop`, `speed`). */
   attrs?: Record<string, string>;
   isVisible: boolean;
   isLocked: boolean;
@@ -106,6 +108,13 @@ export interface TokenRecord {
   description?: string;
 }
 
+/** A CSS `@keyframes` rule shared by the whole file (layers use it through their `animation` styles). */
+export interface KeyframesRecord {
+  name: string;
+  /** The rule's body, normalized: `from{opacity: 0;}to{opacity: 1;}`. */
+  css: string;
+}
+
 export interface CommentUser {
   userId: string;
   displayName: string | null;
@@ -151,6 +160,8 @@ export interface PaperDocument {
   pages: Record<string, PageRecord>;
   nodes: Record<string, NodeRecord>;
   tokens: TokenRecord[];
+  /** `@keyframes` rules (absent in files written before animations were kept). */
+  keyframes?: KeyframesRecord[];
   comments: Record<string, CommentThread>;
   /** People who wrote comments in this file (display names for comment tools). */
   users?: Record<string, CommentUser>;

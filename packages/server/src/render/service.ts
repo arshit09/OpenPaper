@@ -141,7 +141,7 @@ export class RenderService {
 
   private ctx(): RenderContext {
     const origin = this.baseUrl();
-    return { resolveUrl: (src) => defaultResolveUrl(src, origin) };
+    return { resolveUrl: (src) => defaultResolveUrl(src, origin), origin };
   }
 
   canvasColor(doc: PaperDocument, pageId: string | null): string {
@@ -221,8 +221,11 @@ export class RenderService {
     };
   }
 
-  /** Render and capture a node at a scale, applying model-friendly size limits. */
-  async screenshot(doc: PaperDocument, nodeId: string, scale: number): Promise<EncodedImage> {
+  /**
+   * Render and capture a node at a scale, applying model-friendly size limits. `animationTime`
+   * shows animations that many milliseconds in (default: the settled design).
+   */
+  async screenshot(doc: PaperDocument, nodeId: string, scale: number, animationTime: number | null = null): Promise<EncodedImage> {
     const node = doc.nodes[nodeId]!;
     if (!this.headless.available) {
       const viaEditor = await this.editorFallback?.screenshot(doc.id, nodeId, scale).catch(() => null);
@@ -234,13 +237,17 @@ export class RenderService {
     const target = this.nodeTarget(doc, node, false);
     const html = this.html(target);
     // Measure first to pick a scale that respects the size caps.
-    const box = await this.headless.withDocument(html, { width: 1600, height: 1000 }, (page) =>
-      page.evaluate((id: string) => {
-        const el = document.querySelector(`[data-op-id="${CSS.escape(id)}"]`);
-        if (!el) return null;
-        const r = el.getBoundingClientRect();
-        return { x: r.left, y: r.top, width: r.width, height: r.height };
-      }, nodeId)
+    const box = await this.headless.withDocument(
+      html,
+      { width: 1600, height: 1000 },
+      (page) =>
+        page.evaluate((id: string) => {
+          const el = document.querySelector(`[data-op-id="${CSS.escape(id)}"]`);
+          if (!el) return null;
+          const r = el.getBoundingClientRect();
+          return { x: r.left, y: r.top, width: r.width, height: r.height };
+        }, nodeId),
+      { animationTime }
     );
     if (!box || box.width < 1 || box.height < 1) throw new Error('The node has no visible size.');
     let dsf = scale;
@@ -253,12 +260,12 @@ export class RenderService {
     const fits = (data: string) => data.length <= MODEL_IMAGE_MAX_BASE64;
     for (let round = 0; round < 8; round++) {
       // Every quality step at this scale comes from one page load.
-      const shot = await this.capture(html, nodeId, box, dsf, 'jpeg', round === 0 ? [92, 75, 60, 45] : [75, 60, 45], false, fits);
+      const shot = await this.capture(html, nodeId, box, dsf, 'jpeg', round === 0 ? [92, 75, 60, 45] : [75, 60, 45], false, fits, animationTime);
       if (fits(shot.data)) return { ...shot, resized: resized || shot.quality !== 92 || round > 0 };
       dsf /= 2;
       resized = true;
     }
-    const last = await this.capture(html, nodeId, box, dsf, 'jpeg', [50], false);
+    const last = await this.capture(html, nodeId, box, dsf, 'jpeg', [50], false, undefined, animationTime);
     return { ...last, resized: true };
   }
 
@@ -271,7 +278,8 @@ export class RenderService {
     /** Tried in order on the loaded page until one `fits` (or the last one). PNG ignores quality. */
     qualities: Array<number | undefined>,
     transparent: boolean,
-    fits: (data: string) => boolean = () => true
+    fits: (data: string) => boolean = () => true,
+    animationTime: number | null = null
   ): Promise<{ data: string; mimeType: string; width: number; height: number; quality: number | undefined }> {
     const viewport = { width: Math.ceil(box.x + box.width) + 1, height: Math.ceil(box.y + box.height) + 1, deviceScaleFactor: dsf };
     return this.headless.withDocument(html, viewport, async (page: Page) => {
@@ -301,7 +309,7 @@ export class RenderService {
         width: Math.round(rect.width * dsf),
         height: Math.round(rect.height * dsf),
       };
-    });
+    }, { animationTime });
   }
 
   /**
@@ -359,7 +367,7 @@ export class RenderService {
         })) as Uint8Array;
         return Buffer.from(shot);
       },
-      THUMBNAIL_LINGER_MS
+      { lingerMs: THUMBNAIL_LINGER_MS }
     );
   }
 

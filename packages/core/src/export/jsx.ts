@@ -11,6 +11,7 @@ import { isFreeform } from '../render/render-spec.ts';
 import { shaderDef, shaderHasColorBack, type ShaderDef } from '../shaders/registry.ts';
 import { shaderColorToHex } from '../shaders/props.ts';
 import { SHADER_LIBRARY_VERSION } from '../shaders/presets.generated.ts';
+import { formatKeyframes, keyframesUsedBy } from '../animation/keyframes.ts';
 
 export interface JsxOptions {
   format: 'tailwind' | 'inline-styles';
@@ -44,6 +45,8 @@ interface Ctx {
   opts: JsxOptions;
   /** Shader components used in the subtree (named imports from @paper-design/shaders-react). */
   imports: Set<string>;
+  /** A Lottie layer is in the subtree (DotLottieReact from @lottiefiles/dotlottie-react). */
+  lottie?: boolean;
 }
 
 function elementStyles(reader: DocReader, node: NodeRecord, isRoot: boolean, opts: JsxOptions, rootExtras: StyleMap): StyleMap {
@@ -323,7 +326,21 @@ async function emitNode(node: NodeRecord, ctx: Ctx, depth: number, isRoot: boole
     const idAttr = ctx.opts.includeNodeIds ? attrs.splice(0, 1) : [];
     return [`${ind}<${shader.name} ${[...idAttr, ...shaderJsxProps(shader, node, ctx.reader), ...attrs].join(' ')} />`];
   }
-  const open = `${ind}<div${attrs.length ? ' ' + attrs.join(' ') : ''}`;
+  const rest = attrs.length ? ' ' + attrs.join(' ') : '';
+  const jsxAttr = (v: string) => `"${v.replace(/"/g, '&quot;')}"`;
+  if (node.component === 'Video') {
+    return [`${ind}<video src=${jsxAttr(node.src ?? '')} autoPlay muted playsInline${node.attrs?.loop === 'false' ? '' : ' loop'}${rest} />`];
+  }
+  if (node.component === 'Lottie') {
+    ctx.lottie = true;
+    const speed = node.attrs?.speed ? ` speed={${Number(node.attrs.speed) || 1}}` : '';
+    return [`${ind}<DotLottieReact src=${jsxAttr(node.src ?? '')} autoplay${node.attrs?.loop === 'false' ? '' : ' loop'}${speed}${rest} />`];
+  }
+  if (node.component === 'Embed') {
+    if (node.html === undefined) return [`${ind}<iframe src=${jsxAttr(node.src ?? '')}${rest} />`];
+    return [`${ind}<iframe sandbox="allow-scripts" srcDoc={${JSON.stringify(node.html)}}${rest} />`];
+  }
+  const open = `${ind}<div${rest}`;
 
   if (node.component === 'Text') {
     const text = node.textValue ?? '';
@@ -348,7 +365,13 @@ export async function generateJsx(reader: DocReader, rootId: string, opts: JsxOp
   const lines = await emitNode(root, ctx, 0, true, rootExtrasFor(reader, root));
   if (!lines.length) return '';
   const body = lines.length === 1 ? lines[0]! : `(\n${lines.map((l) => `    ${l}`).join('\n')}\n  )`;
-  if (!ctx.imports.size) return body;
-  const names = [...ctx.imports].sort().join(', ');
-  return `/** @paper-design/shaders-react@${SHADER_LIBRARY_VERSION} */\nimport { ${names} } from '@paper-design/shaders-react';\n\n${body}`;
+  const head: string[] = [];
+  if (ctx.imports.size) {
+    const names = [...ctx.imports].sort().join(', ');
+    head.push(`/** @paper-design/shaders-react@${SHADER_LIBRARY_VERSION} */\nimport { ${names} } from '@paper-design/shaders-react';`);
+  }
+  if (ctx.lottie) head.push(`import { DotLottieReact } from '@lottiefiles/dotlottie-react';`);
+  const keyframes = keyframesUsedBy(reader, [rootId]);
+  if (keyframes.length) head.push(`/* Add to your CSS:\n${keyframes.map(formatKeyframes).join('\n')}\n*/`);
+  return head.length ? `${head.join('\n\n')}\n\n${body}` : body;
 }

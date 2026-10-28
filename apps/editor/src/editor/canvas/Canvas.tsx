@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore, type CSSProperties } from 'react';
-import { BASE_CSS, tokenVars } from '@openpaper/core';
+import { BASE_CSS, keyframesCss, tokenVars } from '@openpaper/core';
 import { camera, getState, setCamera, setState, useEditor } from '../../state/store.ts';
 import { pushView } from '../../sync/session.ts';
 import { NodeView } from './NodeView.tsx';
@@ -25,6 +25,10 @@ import {
 } from './interactions.ts';
 import { nextZoomLevel } from './canvas-math.ts';
 import { useDocumentFonts } from './fonts.ts';
+import { restartAnimations } from './motion.ts';
+
+/** Paused (Alt+P): the design's CSS animations are taken off; playing again starts them over. */
+const STILL_CSS = '[data-op-world][data-op-still] [data-op-id],[data-op-world][data-op-still] [data-op-id] *{animation:none!important}';
 
 const CURSORS: Record<string, string> = {
   select: 'default',
@@ -83,7 +87,16 @@ export function Canvas() {
   const canvasColor = useEditor((s) => (s.doc && s.pageId ? s.doc.pages[s.pageId]?.canvasColor : undefined));
   const tokens = useEditor((s) => s.doc?.tokens);
   const vars = useMemo(() => tokenVars(tokens ?? []), [tokens]);
+  const keyframes = useEditor((s) => s.doc?.keyframes);
+  const sheet = useMemo(() => `${BASE_CSS}\n${STILL_CSS}\n${keyframesCss(keyframes ?? [])}`, [keyframes]);
+  const paused = useEditor((s) => s.animationsPaused);
+  const epoch = useEditor((s) => s.animationEpoch);
   useDocumentFonts();
+
+  // Replay: every CSS and SVG animation on the page starts over.
+  useEffect(() => {
+    if (epoch && world.current) restartAnimations(world.current);
+  }, [epoch]);
 
   useEffect(() => {
     const el = ref.current;
@@ -188,8 +201,8 @@ export function Canvas() {
       }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <style>{BASE_CSS}</style>
-      <div ref={world} data-op-world style={worldStyle}>
+      <style>{sheet}</style>
+      <div ref={world} data-op-world data-op-still={paused ? '' : undefined} style={worldStyle}>
         {rootChildren?.map((id) => <NodeView key={id} id={id} />)}
         <DragGhost />
         <TextEditor />

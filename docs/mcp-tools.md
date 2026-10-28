@@ -1,6 +1,6 @@
 # OpenPaper MCP tools
 
-OpenPaper exposes 38 tools, compatible with Paper's MCP server (same names, parameters and response shapes).
+OpenPaper exposes 40 tools, compatible with Paper's MCP server (same names, parameters and response shapes).
 Generated from `packages/server/src/tools/definitions.ts` — do not edit by hand.
 
 - **Streamable HTTP:** `http://127.0.0.1:29880/mcp` (while OpenPaper is running)
@@ -168,6 +168,7 @@ Capture a node as an image (base64 JPEG), automatically capped to fit model size
 |---|---|---|---|
 | `nodeId` | string | yes | Id of the node to capture. |
 | `scale` | number |  | 1 (default) for layout checks; 2 to read small text or fine detail. |
+| `animationTime` | number |  | OpenPaper extension: show animations this many milliseconds after they start. Omit for the settled design. |
 | `fileId` | string | yes | The file to operate on. |
 
 ## `get_jsx`
@@ -307,11 +308,11 @@ Check whether font families are available (installed on this computer or on Goog
 
 _App-level · readOnly_
 
-Read a detailed guide. Call with topic "paper-mcp-instructions" before using the other tools for best results. Other topics: "mobile-status-bar", "figma-import", "image-generation", "shaders".
+Read a detailed guide. Call with topic "paper-mcp-instructions" before using the other tools for best results. Other topics: "mobile-status-bar", "figma-import", "image-generation", "shaders", "animation".
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `topic` | string | yes | Guide to read. Available topics: "paper-mcp-instructions" — How to get the most out of the OpenPaper MCP tools (read this first) "mobile-status-bar" — Ready-to-paste status bar markup for mobile artboards "figma-import" — Workflow for bringing Figma designs into OpenPaper "image-generation" — Generating AI images inside write_html, update_styles and create_artboard with paper-gen:// URLs "shaders" — Shader layers (GPU effects: mesh gradients, grain, dithering, image filters…): the x-shader tag and every effect's parameters (OpenPaper extension) |
+| `topic` | string | yes | Guide to read. Available topics: "paper-mcp-instructions" — How to get the most out of the OpenPaper MCP tools (read this first) "mobile-status-bar" — Ready-to-paste status bar markup for mobile artboards "figma-import" — Workflow for bringing Figma designs into OpenPaper "image-generation" — Generating AI images inside write_html, update_styles and create_artboard with paper-gen:// URLs "shaders" — Shader layers (GPU effects: mesh gradients, grain, dithering, image filters…): the x-shader tag and every effect's parameters (OpenPaper extension) "animation" — Motion: CSS @keyframes animations, video, Lottie and scripted (JavaScript) embed layers, and checking them with screenshots (OpenPaper extension) |
 
 ## `export`
 
@@ -363,10 +364,11 @@ Markup rules:
 - Local image files need absolute paper-asset:// URLs, e.g. <img src="paper-asset:///C:/Users/me/logo.svg">.
 - paper-gen:// URLs create AI-generated images. Only use them if the user asked for generated imagery, and read get_guide({ topic: "image-generation" }) first.
 - OpenPaper extension: <x-shader type="MeshGradient" …> adds a GPU shader layer (animated gradients, grain, dithering, glows, image filters). Read get_guide({ topic: "shaders" }) before using it.
+- OpenPaper extension, motion: the animation style plays on the canvas, with @keyframes from a <style> element in the same HTML; <video>, <x-lottie src> and <x-embed> (HTML and JavaScript run in a sandbox) add layers that play. Read get_guide({ topic: "animation" }) before adding motion.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `html` | string | yes | HTML to turn into design nodes. Standard elements with inline CSS styles. |
+| `html` | string | yes | HTML to turn into design nodes. Standard elements with inline CSS styles (a <style> element may define @keyframes). |
 | `targetNodeId` | string | yes | Target node. "insert-children" appends the new nodes inside it; "replace" removes it and puts the new nodes in its place. |
 | `mode` | "insert-children" \| "replace" | yes | "insert-children": add the new layers inside the target, after its existing children. "replace": put the new layers where the target was and remove the target. |
 | `fileId` | string | yes | The file to operate on. |
@@ -528,5 +530,31 @@ Returns one result per entry; per-entry errors are reported in the results.
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `tokens` | { name: string, newName?: string, value?: string \| number, delete?: boolean }[] | yes | Token edits, applied in order. |
+| `fileId` | string | yes | The file to operate on. |
+
+## `get_keyframes`
+
+_File-scoped · readOnly_
+
+OpenPaper extension. The file's CSS @keyframes animations, each with its CSS and the layers that play it (through their animation style). Also lists animation names layers use that no keyframes define. See get_guide({ topic: "animation" }).
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `names` | string[] |  | Only these keyframes. Omit for all. |
+| `fileId` | string | yes | The file to operate on. |
+
+## `set_keyframes`
+
+_File-scoped · destructive_
+
+OpenPaper extension. Create, change, rename or delete the file's @keyframes; layers play them through their animation style (update_styles: {"animation": "rise 600ms ease-out both"}).
+- Create or change: name and css, e.g. { "name": "rise", "css": "from { opacity: 0; transform: translateY(16px) } to { opacity: 1; transform: none }" } (a whole "@keyframes rise { … }" rule works too).
+- Rename: newName; layers that play the old name are updated.
+- Delete: delete: true (layers that use it stop moving).
+Returns one result per entry.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `keyframes` | { name: string, css?: string, newName?: string, delete?: boolean }[] | yes | Keyframes edits, applied in order. |
 | `fileId` | string | yes | The file to operate on. |
 

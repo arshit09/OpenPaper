@@ -104,9 +104,10 @@ export async function getScreenshot(call: Call): Promise<HandlerResult> {
     };
   }
   const scale = typeof call.args.scale === 'number' && call.args.scale >= 2 ? 2 : 1;
+  const animationTime = typeof call.args.animationTime === 'number' && call.args.animationTime >= 0 ? call.args.animationTime : null;
   const generating = generatingCount(call, [id]);
   try {
-    const shot = await call.env.render.screenshot(d, id, scale);
+    const shot = await call.env.render.screenshot(d, id, scale, animationTime);
     record(call, [id], 'read');
     const content: NonNullable<Extract<HandlerResult, { content: unknown }>['content']> = [
       { type: 'image', data: shot.data, mimeType: shot.mimeType },

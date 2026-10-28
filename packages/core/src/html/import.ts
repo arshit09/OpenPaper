@@ -6,7 +6,8 @@ import { findShader, type ShaderComponent, type ShaderProps } from '../shaders/r
 import { applyShaderPropsPatch, SHADER_DEFAULT_SIZE, shaderPresetProps } from '../shaders/props.ts';
 import { FREEFORM_DISPLAY } from '../render/render-spec.ts';
 import { inlineRunStyles, normalizeRuns } from '../model/text-runs.ts';
-import type { TextRun } from '../model/types.ts';
+import type { KeyframesRecord, TextRun } from '../model/types.ts';
+import { animationNames, keyframesName, renameAnimationValue, renameSvgAnimations, svgAnimationNames } from '../animation/keyframes.ts';
 import {
   attr,
   BLOCK_TAGS,
@@ -16,10 +17,11 @@ import {
   inlineStyle,
   isElement,
   isText,
+  LOTTIE_TAGS,
   NON_TEXT_INLINE,
-  parseFragment,
   SKIPPED_TAGS,
 } from './dom.ts';
+import { parseStyledFragment } from './stylesheet.ts';
 import { cleanSvgMarkup } from './svg.ts';
 
 /**
@@ -30,9 +32,14 @@ import { cleanSvgMarkup } from './svg.ts';
  *  - <img> becomes a Rectangle with an image fill; <svg> an SVG node
  *  - <x-paper-clone node-id="…"> deep-copies an existing node
  *  - <x-shader type="MeshGradient" …params> creates a shader layer (OpenPaper extension)
+ * OpenPaper extensions for motion:
+ *  - <style> sheets are resolved into inline styles and their @keyframes become the file's
+ *    keyframes (stylesheet.ts); `animation` styles are kept
+ *  - <video> becomes a Video layer, <x-lottie> / <lottie-player> / <dotlottie-player> a Lottie layer
+ *  - <x-embed> (HTML with scripts) and <iframe> become an Embed layer, run in a sandboxed frame
  */
 
-export type ImportedComponent = 'Frame' | 'Text' | 'Rectangle' | 'SVG' | ShaderComponent;
+export type ImportedComponent = 'Frame' | 'Text' | 'Rectangle' | 'SVG' | 'Video' | 'Lottie' | 'Embed' | ShaderComponent;
 
 export interface ImportedNode {
   component: ImportedComponent;
@@ -43,6 +50,12 @@ export interface ImportedNode {
   /** Mixed styles inside the text (see NodeRecord.textRuns). */
   textRuns?: TextRun[];
   svg?: string;
+  /** Video / Lottie source, or the page an Embed shows. */
+  src?: string;
+  /** Embed layers: the HTML document to run. */
+  html?: string;
+  /** Media playback settings (`loop`, `speed`). */
+  attrs?: Record<string, string>;
   isVisible: boolean;
   isLocked: boolean;
   children: ImportedNode[];
@@ -66,6 +79,8 @@ export interface ResolvedImage {
 export interface ImportOptions {
   /** Look up a pre-resolved image (see collectImageUrls). `undefined` = leave URL as written, `null` = failed. */
   resolveImage?: (src: string) => ResolvedImage | null | undefined;
+  /** The same for video and Lottie files (see collectMediaUrls). */
+  resolveMedia?: (src: string) => ResolvedImage | null | undefined;
   /** Whether a node id exists in the file (for x-paper-clone). */
   nodeExists?: (id: string) => boolean;
   /** Computed CSS `color` inherited from outside the snippet (for SVG currentColor). */
@@ -74,6 +89,8 @@ export interface ImportOptions {
 
 export interface ImportResult {
   roots: ImportedNode[];
+  /** `@keyframes` defined by the HTML (its <style> sheets and SVG drawings). */
+  keyframes: KeyframesRecord[];
   warnings: string[];
 }
 
@@ -298,12 +315,77 @@ function gcd(a: number, b: number): number {
   return b ? gcd(b, a % b) : a;
 }
 
+/** Size from the `width` / `height` attributes of media and frames, when the style doesn't set one. */
+function attributeSize(el: Element, s: StyleMap, fallback: { width: number; height: number }): void {
+  const dim = (name: string) => {
+    const v = attr(el, name)?.trim();
+    if (!v) return undefined;
+    return /^\d+(\.\d+)?$/.test(v) ? `${v}px` : v;
+  };
+  const w = dim('width');
+  const h = dim('height');
+  if (!s.width && w) s.width = w;
+  if (!s.height && h) s.height = h;
+  if (!s.width && !s.height) {
+    s.width = `${fallback.width}px`;
+    s.height = `${fallback.height}px`;
+  } else if ((!s.width || !s.height) && !s.aspectRatio) s.aspectRatio = `${fallback.width} / ${fallback.height}`;
+}
+
+/** `loop` / `speed` attributes of a media tag (layers loop unless told otherwise). */
+function playbackAttrs(el: Element): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  const loop = attr(el, 'loop');
+  if (loop !== undefined && /^(false|0|no)$/i.test(loop.trim())) out.loop = 'false';
+  const speed = Number(attr(el, 'speed') ?? attr(el, 'playbackrate') ?? '');
+  if (Number.isFinite(speed) && speed > 0 && speed !== 1) out.speed = String(Math.min(16, speed));
+  return Object.keys(out).length ? out : undefined;
+}
+
+const SAFE_PAGE = /^https?:\/\//i;
+
+/** Swap keyframes names through `renames` in imported layers (styles and SVG drawings). */
+export function renameImportedAnimations(roots: ImportedNode[], renames: ReadonlyMap<string, string>): void {
+  if (!renames.size) return;
+  const visit = (n: ImportedNode) => {
+    for (const prop of ['animation', 'animationName'] as const) {
+      const v = n.styles[prop];
+      if (v) n.styles[prop] = renameAnimationValue(prop, v, renames);
+    }
+    if (n.svg) n.svg = renameSvgAnimations(n.svg, renames);
+    n.children.forEach(visit);
+  };
+  roots.forEach(visit);
+}
+
+/** Every keyframes name the imported layers play. */
+function importedAnimationNames(roots: ImportedNode[]): Set<string> {
+  const names = new Set<string>();
+  const visit = (n: ImportedNode) => {
+    for (const name of animationNames('animation', n.styles.animation)) names.add(name);
+    for (const name of animationNames('animationName', n.styles.animationName)) names.add(name);
+    for (const name of svgAnimationNames(n.svg)) names.add(name);
+    n.children.forEach(visit);
+  };
+  roots.forEach(visit);
+  return names;
+}
+
 // ---------------------------------------------------------------------------
 
 export function importHtml(html: string, opts: ImportOptions = {}): ImportResult {
-  const warnings: string[] = [];
+  const styled = parseStyledFragment(html);
+  const warnings: string[] = [...styled.warnings];
+  const keyframes = new Map(styled.keyframes.map((k) => [k.name, k]));
   const topLevel: Build[] = [];
-  const rootCtx: Ctx = { inherited: {}, whiteSpace: 'normal' };
+  const rootCtx: Ctx = { inherited: pickInherited(styled.rootStyles), whiteSpace: whiteSpaceOf(styled.rootStyles, 'body', 'normal') };
+  /** Clean SVG markup, keeping the @keyframes its own sheet defines. */
+  const svgMarkup = (markup: string) => {
+    const found: KeyframesRecord[] = [];
+    const clean = cleanSvgMarkup(markup, found);
+    for (const k of found) if (!keyframes.has(k.name)) keyframes.set(k.name, k);
+    return clean;
+  };
 
   const resolveUrlsInStyles = (styles: StyleMap) => {
     for (const [k, v] of Object.entries(styles)) {
@@ -330,7 +412,7 @@ export function importHtml(html: string, opts: ImportOptions = {}): ImportResult
     children: [],
     inheritedAtNode: inherited,
     absolute: raw.position === 'absolute' || raw.position === 'fixed',
-    isReplaced: tag === 'img' || tag === 'svg',
+    isReplaced: tag === 'img' || tag === 'svg' || tag === 'video' || tag === 'iframe' || tag === 'x-embed' || LOTTIE_TAGS.has(tag),
   });
 
   const attach = (build: Build, parent: Build | null) => {
@@ -555,11 +637,82 @@ export function importHtml(html: string, opts: ImportOptions = {}): ImportResult
     if (tag === 'svg') {
       const node = base('SVG');
       if (layerName === undefined) node.label = 'SVG';
-      node.svg = cleanSvgMarkup(render(el, { xmlMode: true, selfClosingTags: true }));
+      node.svg = svgMarkup(render(el, { xmlMode: true, selfClosingTags: true }));
       const s = { ...own };
       s.display ??= 'inline-block';
       const color = nextInherited.color ?? opts.defaultColor;
       if (color && !s.color) s.color = color;
+      node.styles = s;
+      attach(makeBuild(node, s, tag, el, parent, ctx.inherited), parent);
+      return;
+    }
+
+    // <video>: a Video layer that plays on the canvas
+    if (tag === 'video') {
+      const sources = el.children.filter((c): c is Element => isElement(c) && c.name.toLowerCase() === 'source');
+      const preferred = sources.find((c) => /mp4|webm/i.test(attr(c, 'type') ?? attr(c, 'src') ?? '')) ?? sources[0];
+      const src = (attr(el, 'src') ?? (preferred ? attr(preferred, 'src') : undefined) ?? '').trim();
+      const resolved = src ? opts.resolveMedia?.(src) : null;
+      const url = resolved === undefined ? src : resolved?.url;
+      if (!url) {
+        warnings.push(src ? `Could not load the video ${src}` : 'A <video> without a src was skipped.');
+        return;
+      }
+      const node = base('Video');
+      if (layerName === undefined) node.label = 'Video';
+      node.src = url;
+      const s: StyleMap = { ...own };
+      attributeSize(el, s, { width: resolved?.width ?? 640, height: resolved?.height ?? 360 });
+      node.styles = s;
+      const playback = playbackAttrs(el);
+      if (playback) node.attrs = playback;
+      attach(makeBuild(node, s, tag, el, parent, ctx.inherited), parent);
+      return;
+    }
+
+    // <x-lottie src>, <lottie-player src>, <dotlottie-player src>, <dotlottie-wc src>
+    if (LOTTIE_TAGS.has(tag)) {
+      const src = (attr(el, 'src') ?? '').trim();
+      const resolved = src ? opts.resolveMedia?.(src) : null;
+      const url = resolved === undefined ? src : resolved?.url;
+      if (!url) {
+        warnings.push(src ? `Could not load the Lottie animation ${src}` : `A <${tag}> without a src was skipped.`);
+        return;
+      }
+      const node = base('Lottie');
+      if (layerName === undefined) node.label = 'Lottie';
+      node.src = url;
+      const s: StyleMap = { ...own };
+      attributeSize(el, s, { width: resolved?.width ?? 300, height: resolved?.height ?? 300 });
+      node.styles = s;
+      const playback = playbackAttrs(el);
+      if (playback) node.attrs = playback;
+      attach(makeBuild(node, s, tag, el, parent, ctx.inherited), parent);
+      return;
+    }
+
+    // <x-embed>…HTML with scripts…</x-embed>, <iframe srcdoc> and <iframe src="https://…">
+    if (tag === 'x-embed' || tag === 'iframe') {
+      const node = base('Embed');
+      if (layerName === undefined) node.label = 'Embed';
+      if (tag === 'x-embed') {
+        node.html = render(el.children, { decodeEntities: true });
+      } else {
+        const srcdoc = attr(el, 'srcdoc');
+        const src = (attr(el, 'src') ?? '').trim();
+        if (srcdoc) node.html = srcdoc;
+        else if (SAFE_PAGE.test(src)) node.src = src;
+        else {
+          warnings.push(src ? `Only http(s) pages can be embedded (${src.slice(0, 80)})` : 'An <iframe> without src or srcdoc was skipped.');
+          return;
+        }
+      }
+      if (node.html !== undefined && !node.html.trim()) {
+        warnings.push('An empty <x-embed> was skipped.');
+        return;
+      }
+      const s: StyleMap = { ...own };
+      attributeSize(el, s, tag === 'iframe' ? { width: 300, height: 150 } : { width: 400, height: 300 });
       node.styles = s;
       attach(makeBuild(node, s, tag, el, parent, ctx.inherited), parent);
       return;
@@ -579,7 +732,7 @@ export function importHtml(html: string, opts: ImportOptions = {}): ImportResult
       if (resolved?.svgMarkup) {
         const node = base('SVG');
         if (layerName === undefined) node.label = 'SVG';
-        node.svg = cleanSvgMarkup(resolved.svgMarkup);
+        node.svg = svgMarkup(resolved.svgMarkup);
         node.styles = { ...own, display: own.display ?? 'inline-block' };
         attach(makeBuild(node, node.styles, 'svg', el, parent, ctx.inherited), parent);
         return;
@@ -731,7 +884,7 @@ export function importHtml(html: string, opts: ImportOptions = {}): ImportResult
   };
 
   // ---- walk -------------------------------------------------------------
-  for (const node of parseFragment(html)) {
+  for (const node of styled.nodes) {
     if (isElement(node)) visitElement(node, null, rootCtx);
     // Text directly at the top level is ignored (top-level items must be elements).
   }
@@ -796,7 +949,7 @@ export function importHtml(html: string, opts: ImportOptions = {}): ImportResult
 
   // ---- pruning ------------------------------------------------------------
   const isEmpty = (n: ImportedNode) =>
-    !n.children.length && !n.textValue && !n.svg && !n.cloneOf && !n.generate && !n.props && Object.keys(n.styles).length === 0;
+    !n.children.length && !n.textValue && !n.svg && !n.src && n.html === undefined && !n.cloneOf && !n.generate && !n.props && Object.keys(n.styles).length === 0;
   const positioned = (n: ImportedNode, parentDisplay: string | undefined) =>
     n.styles.position === 'absolute' || parentDisplay === FREEFORM_DISPLAY;
   const invisible = (n: ImportedNode) =>
@@ -816,7 +969,15 @@ export function importHtml(html: string, opts: ImportOptions = {}): ImportResult
     return out;
   };
 
-  return { roots: toNodes(topLevel, undefined, true), warnings };
+  const roots = toNodes(topLevel, undefined, true);
+  // Names of the editor's own animations (`op-…`) reach the design under another name.
+  const reserved = new Map<string, string>();
+  for (const name of importedAnimationNames(roots)) {
+    const usable = keyframesName(name);
+    if (usable && usable !== name) reserved.set(name, usable);
+  }
+  renameImportedAnimations(roots, reserved);
+  return { roots, keyframes: [...keyframes.values()], warnings };
 }
 
 function foldAbsoluteMargins(s: StyleMap) {
@@ -892,6 +1053,7 @@ export function collectImageUrls(html: string): string[] {
       if (!isElement(n)) continue;
       const tag = n.name.toLowerCase();
       if (SKIPPED_TAGS.has(tag)) continue;
+      if (tag === 'x-embed') continue;
       if (tag === 'img') {
         const src = attr(n, 'src')?.trim();
         if (src && !src.startsWith('paper-gen://')) urls.add(src);
@@ -905,7 +1067,33 @@ export function collectImageUrls(html: string): string[] {
       if (tag !== 'svg') visit(n.children);
     }
   };
-  visit(parseFragment(html));
+  visit(parseStyledFragment(html).nodes);
+  return [...urls];
+}
+
+/** Video and Lottie files referenced by the HTML, for pre-resolution into the media store. */
+export function collectMediaUrls(html: string): string[] {
+  const urls = new Set<string>();
+  const visit = (nodes: ChildNode[]) => {
+    for (const n of nodes) {
+      if (!isElement(n)) continue;
+      const tag = n.name.toLowerCase();
+      if (SKIPPED_TAGS.has(tag) || tag === 'svg' || tag === 'x-embed' || tag === 'iframe') continue;
+      if (tag === 'video' || LOTTIE_TAGS.has(tag)) {
+        const own = attr(n, 'src')?.trim();
+        if (own) urls.add(own);
+        else if (tag === 'video') {
+          for (const c of n.children) {
+            const src = isElement(c) && c.name.toLowerCase() === 'source' ? attr(c, 'src')?.trim() : undefined;
+            if (src) urls.add(src);
+          }
+        }
+        continue;
+      }
+      visit(n.children);
+    }
+  };
+  visit(parseStyledFragment(html).nodes);
   return [...urls];
 }
 

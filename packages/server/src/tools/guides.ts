@@ -152,7 +152,58 @@ Call \`get_guide({ topic: "figma-import" })\` for the step-by-step workflow.
 
 ## Generating images
 
-Read \`get_guide({ topic: "image-generation" })\` before using \`paper-gen://\` URLs. Only generate images when the user explicitly asked — otherwise use simple placeholders (solid fills, SVG shapes).`;
+Read \`get_guide({ topic: "image-generation" })\` before using \`paper-gen://\` URLs. Only generate images when the user explicitly asked — otherwise use simple placeholders (solid fills, SVG shapes).
+
+## Animation
+
+Designs can move: CSS @keyframes animations, video, Lottie and scripted embeds play on the canvas. Read \`get_guide({ topic: "animation" })\` before adding motion.`;
+
+const ANIMATION_GUIDE = `## Animation (OpenPaper extension)
+
+Designs can move. Everything below plays on the canvas while the user watches; they can pause it all with the play/pause button in the top bar (Alt+P), and turning it back on replays from the start.
+
+### CSS animations
+Write the \`animation\` style on a layer and define its \`@keyframes\` in a \`<style>\` element in the same write_html call:
+\`\`\`html
+<style>
+  @keyframes rise { from { opacity: 0; transform: translateY(16px) } to { opacity: 1; transform: none } }
+</style>
+<div layer-name="Hero" style="display: flex; flex-direction: column; gap: 16px; animation: rise 600ms cubic-bezier(.2,.8,.2,1) both">…</div>
+\`\`\`
+- Keyframes belong to the whole file: once defined, any layer can use the name (write_html, update_styles: \`{ "animation": "rise 600ms ease-out 120ms both" }\`). Defining a name again in write_html redefines it everywhere. get_keyframes lists them with the layers that use them; set_keyframes creates, changes, renames or deletes them; a write_html with only a \`<style>\` defines keyframes without adding layers.
+- **Base styles are the finished design.** Animate *into* them: put the hidden or offset look in \`from\` and use \`animation-fill-mode: both\` (the \`both\` keyword). Screenshots, exports and layout measure the settled design, so a layer whose base style is \`opacity: 0\` looks missing everywhere.
+- Stagger groups with \`animation-delay\` (e.g. 0, 80ms, 160ms on list items). Several animations can be comma-separated.
+- Animate \`transform\`, \`translate\`, \`scale\`, \`rotate\`, \`opacity\`, \`filter\`, \`clip-path\` and colours; avoid animating width, height, padding or gap (it re-flows the layout).
+- Loops (\`infinite\`): keep them slow and subtle (a 2–4s float or pulse), and only on one or two elements — constant motion tires people.
+- A \`<style>\` sheet may also hold class rules (\`.card { animation: rise .5s both }\`); they are applied to the elements they match and stored as each layer's own styles. Rules for states or generated content (\`:hover\`, \`:focus\`, \`::before\`) can't become layers and are skipped. \`@media\` rules apply as on a 1440px-wide desktop screen.
+- \`transition\` styles are kept for code export but never run on the canvas (a design has no hover or focus states).
+- SVG drawings animate too: SMIL (\`<animate>\`, \`<animateTransform>\`, \`<animateMotion>\`) and CSS animations on their parts (an SVG's own \`<style>\` @keyframes become file keyframes).
+
+### Video
+\`<video src="https://…/clip.mp4" style="width: 640px; height: 360px; object-fit: cover"></video>\` adds a Video layer: the file is downloaded into the design and plays muted and looping (\`loop="false"\` plays once, \`speed="0.5"\` slows it). Use MP4 (H.264) or WebM, up to 100 MB. A \`<source>\` child works too.
+
+### Lottie
+\`<x-lottie src="https://…/animation.json" style="width: 240px; height: 240px"></x-lottie>\` adds a Lottie layer (Lottie JSON or a .lottie file, downloaded into the design). It loops; \`loop="false"\` plays once and \`speed="2"\` doubles the speed. \`<lottie-player>\`, \`<dotlottie-player>\` and \`<dotlottie-wc>\` from pasted pages work the same way. Only use URLs you know point at a Lottie file; never invent them.
+
+### Scripted animation (Embed layers)
+For motion CSS can't express — particles, physics, generative art, canvas or WebGL, GSAP timelines, three.js scenes, counters — write the HTML, CSS and JavaScript inside \`<x-embed>\`:
+\`\`\`html
+<x-embed layer-name="Particles" style="width: 600px; height: 400px; border-radius: 16px">
+  <canvas id="c"></canvas>
+  <script>/* draw with requestAnimationFrame */</script>
+</x-embed>
+\`\`\`
+- It runs as its own page in a sandboxed frame: scripts work, and libraries load from public CDNs (\`<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js">\`), but it can't reach the file, the editor or the user's data. Make it fill the layer (\`html, body { margin: 0; height: 100% }\`, a canvas sized to \`innerWidth\`/\`innerHeight\`).
+- Drive loops with requestAnimationFrame: the pause button freezes it (setInterval loops can't be paused).
+- To change it, rewrite the layer with write_html in "replace" mode; get_jsx shows its current HTML.
+- \`<iframe src="https://…">\` embeds a live web page (some sites refuse to be framed).
+- The layer doesn't take clicks: it is a picture of the page, not an interactive one.
+
+### Shaders
+Animated GPU effects (mesh gradients, grain, liquid metal…) are shader layers: see get_guide({ topic: "shaders" }).
+
+### Checking motion
+get_screenshot shows the settled design. Pass \`animationTime\` (milliseconds since the animations started) to see one moment: an entrance at 0, 150 and 600ms, or a loop at a few points. Videos and Lottie seek to that time too; scripted embeds show the moment after they load.`;
 
 const STATUS_BAR_GUIDE = `## Mobile status bar
 
@@ -273,6 +324,8 @@ export function guideContent(topic: string, imageGuide: () => string): string | 
       return imageGuide();
     case 'shaders':
       return shaderGuide();
+    case 'animation':
+      return ANIMATION_GUIDE;
     default:
       return null;
   }

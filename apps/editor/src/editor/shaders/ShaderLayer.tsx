@@ -61,11 +61,14 @@ const ShaderCanvas = memo(function ShaderCanvas({
   props,
   tokens,
   maxPixelCount,
+  paused,
 }: {
   component: string;
   props: ShaderProps | undefined;
   tokens: readonly TokenRecord[] | undefined;
   maxPixelCount: number | undefined;
+  /** Animations paused (Alt+P): the effect holds its frame. */
+  paused: boolean;
 }) {
   const def = shaderDef(component);
   const library = useShaderLibrary();
@@ -82,10 +85,11 @@ const ShaderCanvas = memo(function ShaderCanvas({
     el.addEventListener('webglcontextlost', lost, true);
     return () => el.removeEventListener('webglcontextlost', lost, true);
   }, [library, generation]);
-  const renderProps = useMemo(
-    () => (def ? shaderRenderProps(def, props, { tokens: tokens ?? [], resolveUrl: renderContext.resolveUrl }) : null),
-    [def, props, tokens]
-  );
+  const renderProps = useMemo(() => {
+    if (!def) return null;
+    const out = shaderRenderProps(def, props, { tokens: tokens ?? [], resolveUrl: renderContext.resolveUrl });
+    return paused && def.animated ? { ...out, speed: 0 } : out;
+  }, [def, props, tokens, paused]);
   const Comp = def && library ? library[def.name] : undefined;
   if (!Comp || !renderProps) return null;
   return (
@@ -104,6 +108,7 @@ const ShaderCanvas = memo(function ShaderCanvas({
 export function ShaderNode({ node, style }: { node: NodeRecord; style: CSSProperties }) {
   const tokens = useEditor((s) => s.doc?.tokens);
   const preview = useEditor((s) => s.shaderPreview[node.id]);
+  const paused = useEditor((s) => s.animationsPaused);
   const zoom = useRenderZoom();
   // Layer area in CSS px², rounded up to a power of two so resizing rarely changes the cap.
   const [area, setArea] = useState(0);
@@ -130,7 +135,7 @@ export function ShaderNode({ node, style }: { node: NodeRecord; style: CSSProper
   const maxPixelCount = zoom < 1 && area ? Math.max(MIN_PIXELS, Math.round(area * ratio * ratio)) : undefined;
   return (
     <div ref={ref} data-op-id={node.id} style={style}>
-      <ShaderCanvas component={node.component} props={preview ?? node.props} tokens={tokens} maxPixelCount={maxPixelCount} />
+      <ShaderCanvas component={node.component} props={preview ?? node.props} tokens={tokens} maxPixelCount={maxPixelCount} paused={paused} />
     </div>
   );
 }

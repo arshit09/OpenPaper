@@ -24,3 +24,6 @@ export * from './sync/protocol.ts';
 export * from './commands/types.ts';
 export * from './shaders/index.ts';
 export * from './figma/index.ts';
+export * from './animation/keyframes.ts';
+export * from './animation/lottie.ts';
+export * from './html/stylesheet.ts';

@@ -1,10 +1,11 @@
 import { FREEFORM_DISPLAY, isFreeform } from '../render/render-spec.ts';
 import { normalizeStyleValue, type StyleMap } from '../styles/css.ts';
-import type { ImportedNode } from '../html/import.ts';
+import { renameImportedAnimations, type ImportedNode } from '../html/import.ts';
+import { mergeKeyframes } from '../animation/keyframes.ts';
 import { deleteSubtree, duplicateSubtree, OpError, patchStyles } from '../model/ops.ts';
 import type { Transaction } from '../model/transaction.ts';
 import { cloneRuns } from '../model/text-runs.ts';
-import type { NodeRecord } from '../model/types.ts';
+import type { KeyframesRecord, NodeRecord } from '../model/types.ts';
 import { subtreeOf } from '../model/tree.ts';
 
 /** Styles that make no sense on items placed directly on the canvas (Paper strips them). */
@@ -36,6 +37,11 @@ const CANVAS_STRIP = [
 export interface InsertOptions {
   /** Pick a canvas position for a new top-level node (page-root inserts). */
   placeTopLevel?: (styles: StyleMap) => { x: number; y: number };
+  /**
+   * `@keyframes` that came with the HTML. `replace` redefines rules with the same name (an agent
+   * updating its animation); `rename` keeps the file's own and renames the incoming ones (paste).
+   */
+  keyframes?: { list: KeyframesRecord[]; mode: 'replace' | 'rename' };
 }
 
 export interface InsertResult {
@@ -79,6 +85,9 @@ function createRecord(tx: Transaction, n: ImportedNode, parentId: string, out: I
   if (n.textValue !== undefined) record.textValue = n.textValue;
   if (n.textRuns) record.textRuns = cloneRuns(n.textRuns);
   if (n.svg !== undefined) record.svg = n.svg;
+  if (n.src !== undefined) record.src = n.src;
+  if (n.html !== undefined) record.html = n.html;
+  if (n.attrs) record.attrs = { ...n.attrs };
   if (n.props) record.props = structuredClone(n.props);
   tx.putNode(record);
   tx.updateNode(parentId, (p) => {
@@ -105,6 +114,11 @@ export function insertImported(
   const target = tx.getNode(targetId);
   if (!target) throw new OpError(`Node not found: ${targetId}`);
   const out: InsertResult = { createdIds: [], topLevelIds: [], generations: [] };
+  if (opts.keyframes?.list.length) {
+    const merged = mergeKeyframes(tx.getKeyframes(), opts.keyframes.list, opts.keyframes.mode);
+    if (merged.changed) tx.setKeyframes(merged.keyframes);
+    renameImportedAnimations(roots, merged.renames);
+  }
 
   let parent: NodeRecord;
   let insertIndex: number;

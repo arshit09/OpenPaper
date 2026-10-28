@@ -169,6 +169,9 @@ export function basicInfo(reader: DocReader, opts: BasicInfoOptions) {
   out.pages = describePageList(reader, opts.activePageId);
   out.fontFamilies = fontFamiliesUsed(reader);
   out.tokens = { items: filterTokens(reader.getTokens()).map((t) => ({ name: tokenCssName(t), value: t.value })) };
+  // OpenPaper extension: the file's @keyframes (get_keyframes has their CSS).
+  const keyframes = reader.getKeyframes();
+  if (keyframes.length) out.keyframes = keyframes.map((k) => k.name);
   return out;
 }
 

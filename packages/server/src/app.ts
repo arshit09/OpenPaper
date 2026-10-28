@@ -3,8 +3,9 @@ import { stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { extname, join, normalize, sep } from 'node:path';
 import { pipeline, type Duplex } from 'node:stream';
-import { assetUrlToPath, IMAGE_MIME, MEDIA_ROUTE, type MediaStore } from './media.ts';
-import { SHADER_RUNTIME_PATH } from '@openpaper/core';
+import { assetUrlToPath, IMAGE_MIME, MEDIA_MIME, MEDIA_ROUTE, type MediaStore } from './media.ts';
+import { EMBED_ROUTE, LOTTIE_RUNTIME_PATH, SHADER_RUNTIME_PATH } from '@openpaper/core';
+import { embedDocument, EMBED_HEADERS } from './embed.ts';
 import { MCP_PATH } from './paths.ts';
 import type { OriginPolicy } from './security.ts';
 import { THUMBNAIL_ROUTE } from './thumbnails.ts';
@@ -40,6 +41,10 @@ export interface AppHandlers {
   thumbnail: (name: string) => string | null;
   /** Script that mounts shader layers in render documents (SHADER_RUNTIME_PATH). */
   shaderRuntime: () => Promise<string>;
+  /** Script that draws Lottie layers in render documents (LOTTIE_RUNTIME_PATH). */
+  lottieRuntime: () => Promise<string>;
+  /** HTML of an Embed layer (null when there is no such layer). */
+  embedHtml: (fileId: string, nodeId: string) => Promise<string | null>;
   shutdown: () => void;
 }
 
@@ -62,16 +67,39 @@ const MEDIA_HEADERS = {
   'x-content-type-options': 'nosniff',
 };
 
-/** Render documents carry user designs: only the shader runtime may run, and nothing can be framed or embedded. */
-const RENDER_CSP = "script-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'";
+/**
+ * Render documents carry user designs: only OpenPaper's runtimes may run. Frames are Embed layers
+ * (their own HTML from EMBED_ROUTE, sandboxed, or a web page).
+ */
+const RENDER_CSP = "script-src 'self'; object-src 'none'; frame-src 'self' https:; base-uri 'none'";
 
 /** The editor itself may not be framed by another site (clickjacking). */
 const EDITOR_HEADERS = { 'content-security-policy': "frame-ancestors 'none'", 'x-frame-options': 'DENY' };
 
-async function sendFile(res: ServerResponse, path: string, mime: string, cache = 'no-store', headers: Record<string, string> = {}) {
+async function sendFile(res: ServerResponse, path: string, mime: string, cache = 'no-store', headers: Record<string, string> = {}, range?: string) {
   const info = await stat(path).catch(() => null);
   if (!info?.isFile()) return sendText(res, 404, 'Not found');
-  res.writeHead(200, { 'content-type': mime, 'content-length': info.size, 'cache-control': cache, ...headers });
+  // One byte range (video players seek and loop with them).
+  const m = range ? /^bytes=(\d*)-(\d*)$/.exec(range.trim()) : null;
+  if (m && (m[1] || m[2]) && info.size > 0) {
+    const start = m[1] ? Number(m[1]) : Math.max(0, info.size - Number(m[2]));
+    const end = m[1] && m[2] ? Math.min(Number(m[2]), info.size - 1) : info.size - 1;
+    if (start > end || start >= info.size) {
+      res.writeHead(416, { 'content-range': `bytes */${info.size}` });
+      return void res.end();
+    }
+    res.writeHead(206, {
+      'content-type': mime,
+      'content-length': end - start + 1,
+      'content-range': `bytes ${start}-${end}/${info.size}`,
+      'accept-ranges': 'bytes',
+      'cache-control': cache,
+      ...headers,
+    });
+    pipeline(createReadStream(path, { start, end }), res, () => {});
+    return;
+  }
+  res.writeHead(200, { 'content-type': mime, 'content-length': info.size, 'cache-control': cache, 'accept-ranges': 'bytes', ...headers });
   // A file that can't be opened after all (locked, deleted, offline) ends this response, not the server.
   pipeline(createReadStream(path), res, () => {});
 }
@@ -142,7 +170,16 @@ export function createApp(h: AppHandlers): Server {
       if (!h.policy.notCrossSite(req)) return sendText(res, 403, 'Forbidden');
       const file = h.media.pathFor(path);
       if (!file) return sendText(res, 404, 'Not found');
-      return sendFile(res, file, IMAGE_MIME[extname(file)] ?? 'application/octet-stream', 'public, max-age=31536000, immutable', MEDIA_HEADERS);
+      return sendFile(res, file, MEDIA_MIME[extname(file)] ?? 'application/octet-stream', 'public, max-age=31536000, immutable', MEDIA_HEADERS, req.headers.range);
+    }
+    if (path.startsWith(EMBED_ROUTE)) {
+      // Only OpenPaper's own pages frame these (and the CSP says so too).
+      if (!h.policy.notCrossSite(req)) return sendText(res, 403, 'Forbidden');
+      const [fileId, nodeId] = path.slice(EMBED_ROUTE.length).split('/').map((p) => decodeURIComponent(p));
+      const html = fileId && nodeId ? await h.embedHtml(fileId, nodeId) : null;
+      if (html === null) return sendText(res, 404, 'Not found');
+      res.writeHead(200, EMBED_HEADERS);
+      return void res.end(embedDocument(html));
     }
     if (path === '/local-asset') {
       // Equivalent of paper-asset://: only images, never to other sites.
@@ -161,8 +198,8 @@ export function createApp(h: AppHandlers): Server {
       return void res.end(html);
     }
 
-    if (path === SHADER_RUNTIME_PATH) {
-      const js = await h.shaderRuntime();
+    if (path === SHADER_RUNTIME_PATH || path === LOTTIE_RUNTIME_PATH) {
+      const js = await (path === SHADER_RUNTIME_PATH ? h.shaderRuntime() : h.lottieRuntime());
       res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' });
       return void res.end(js);
     }

@@ -6,6 +6,7 @@ import { computedStyles } from '../query/info.ts';
 import { runsHtml } from '../render/to-html.ts';
 import { styleMapToCss } from '../styles/css.ts';
 import { shaderDef, type ShaderProps } from '../shaders/registry.ts';
+import { formatKeyframes, keyframesUsedBy } from '../animation/keyframes.ts';
 
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -59,17 +60,26 @@ export function nodesToHtml(reader: DocReader, ids: string[], opts: { resolveUrl
     }
     const shader = shaderDef(node.component);
     if (shader) return `${indent}<x-shader type="${shader.name}"${name}${shaderAttrs(node.props, resolve)}${style}></x-shader>`;
+    const playback = `${node.attrs?.loop === 'false' ? ' loop="false"' : ''}${node.attrs?.speed ? ` speed="${escAttr(node.attrs.speed)}"` : ''}`;
+    if (node.component === 'Video') {
+      return `${indent}<video${name} src="${escAttr(resolve(node.src ?? ''))}" autoplay muted playsinline${node.attrs?.loop === 'false' ? '' : ' loop'}${style}></video>`;
+    }
+    if (node.component === 'Lottie') return `${indent}<x-lottie${name} src="${escAttr(resolve(node.src ?? ''))}"${playback}${style}></x-lottie>`;
+    if (node.component === 'Embed') {
+      if (node.html === undefined) return `${indent}<iframe${name} src="${escAttr(node.src ?? '')}"${style}></iframe>`;
+      return `${indent}<x-embed${name}${style}>${node.html}</x-embed>`;
+    }
     const kids = node.children.map((id) => reader.getNode(id)).filter((n): n is NodeRecord => !!n);
     const tag = node.component === 'Rectangle' ? ' paper-node="Rectangle"' : '';
     if (!kids.length) return `${indent}<div${name}${tag}${style}></div>`;
     const inner = kids.map((k) => emit(k, false, indent + '  ')).join('\n');
     return `${indent}<div${name}${style}>\n${inner}\n${indent}</div>`;
   };
-  return ids
-    .map((id) => reader.getNode(id))
-    .filter((n): n is NodeRecord => !!n && n.component !== 'PageRoot')
-    .map((n) => emit(n, true, ''))
-    .join('\n');
+  const roots = ids.map((id) => reader.getNode(id)).filter((n): n is NodeRecord => !!n && n.component !== 'PageRoot');
+  const html = roots.map((n) => emit(n, true, '')).join('\n');
+  // The animations the layers play travel with them (a paste into another file re-creates them).
+  const keyframes = keyframesUsedBy(reader, roots.map((n) => n.id));
+  return keyframes.length ? `<style>\n${keyframes.map(formatKeyframes).join('\n')}\n</style>\n${html}` : html;
 }
 
 export function describeNodes(reader: DocReader, ids: string[]): string {

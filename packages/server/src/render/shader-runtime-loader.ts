@@ -3,13 +3,14 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
- * Source of the shader runtime script served to static renders. The production build ships it as
- * dist/shader-runtime.js next to cli.js; in development it is bundled from source on first use.
+ * Source of a runtime script served to static renders (`shader-runtime` mounts shader layers,
+ * `lottie-runtime` draws Lottie layers). The production build ships it as dist/<name>.js next to
+ * cli.js; in development it is bundled from source on first use.
  */
-export function createShaderRuntimeLoader(): () => Promise<string> {
+export function createRuntimeLoader(name: 'shader-runtime' | 'lottie-runtime'): () => Promise<string> {
   let cached: Promise<string> | null = null;
   return () => {
-    cached ??= load().catch((error) => {
+    cached ??= load(name).catch((error) => {
       cached = null;
       throw error;
     });
@@ -17,16 +18,21 @@ export function createShaderRuntimeLoader(): () => Promise<string> {
   };
 }
 
-async function load(): Promise<string> {
+/** The shader runtime (SHADER_RUNTIME_PATH). */
+export function createShaderRuntimeLoader(): () => Promise<string> {
+  return createRuntimeLoader('shader-runtime');
+}
+
+async function load(name: string): Promise<string> {
   const here = dirname(fileURLToPath(import.meta.url));
   try {
-    return await readFile(join(here, 'shader-runtime.js'), 'utf8');
+    return await readFile(join(here, `${name}.js`), 'utf8');
   } catch {
-    // Development (tsx): bundle src/render/shader-runtime.ts.
+    // Development (tsx): bundle src/render/<name>.ts.
   }
   const { build } = await import('esbuild');
   const result = await build({
-    entryPoints: [join(here, 'shader-runtime.ts')],
+    entryPoints: [join(here, `${name}.ts`)],
     bundle: true,
     write: false,
     format: 'iife',

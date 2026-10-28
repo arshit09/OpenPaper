@@ -42,6 +42,8 @@ export type EditorCommand =
       place?: Record<string, { index?: number; styles?: StyleInput }>;
     }
   | { type: 'setFlags'; nodeIds: string[]; isVisible?: boolean; isLocked?: boolean }
+  /** Video and Lottie layers: loop (false plays once) and speed (1 = normal). */
+  | { type: 'setPlayback'; nodeIds: string[]; loop?: boolean; speed?: number }
   /** Wrap layers in a new frame. styles are applied to the frame; ordered keeps nodeIds order inside it (else layer order). */
   | { type: 'group'; nodeIds: string[]; label?: string; styles?: StyleInput; ordered?: boolean }
   | { type: 'ungroup'; nodeIds: string[] }

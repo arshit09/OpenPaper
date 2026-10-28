@@ -5,6 +5,9 @@ import {
   AlignRight,
   AlignJustify,
   ALargeSmall,
+  Gauge,
+  Repeat,
+  RotateCcw,
   ArrowDown,
   ArrowRight,
   Contrast,
@@ -20,15 +23,17 @@ import {
   WrapText,
 } from 'lucide-react';
 import {
+  animationNames,
   displayName,
   FREEFORM_DISPLAY,
   parentKindOf,
   parseInlineStyle,
+  renameAnimationValue,
   styleMapToCss,
   type NodeRecord,
   type StyleInput,
 } from '@openpaper/core';
-import { setState, useEditor } from '../../state/store.ts';
+import { replayAnimations, setState, useEditor } from '../../state/store.ts';
 import { ShaderInspector } from '../shaders/ShaderInspector.tsx';
 import { client, command } from '../../sync/session.ts';
 import { ColorSwatch } from '../../ui/ColorSwatch.tsx';
@@ -278,6 +283,79 @@ function useFontList(): string[] {
   return list;
 }
 
+/** Default timing when a layer starts playing keyframes from the picker. */
+const DEFAULT_ANIMATION = '600ms cubic-bezier(0.2, 0.8, 0.2, 1) both';
+
+/** Motion: the CSS animation a layer plays and, for Video and Lottie layers, how they play. */
+function MotionSection({ nodes }: { nodes: NodeRecord[] }) {
+  const keyframes = useEditor((s) => s.doc?.keyframes ?? []);
+  const animation = common(nodes, 'animation');
+  const media = nodes.every((n) => n.component === 'Video' || n.component === 'Lottie');
+  if (!keyframes.length && !animation && !media) return null;
+  const playing = animation ? animationNames('animation', animation)[0] : undefined;
+  const pick = (name: string) => {
+    if (!name) return apply(nodes, { animation: null });
+    // Keep each layer's timing; only the keyframes change.
+    for (const n of nodes) {
+      const current = n.styles.animation;
+      const from = current ? animationNames('animation', current)[0] : undefined;
+      const next = current && from ? renameAnimationValue('animation', current, new Map([[from, name]])) : `${name} ${DEFAULT_ANIMATION}`;
+      apply([n], { animation: next });
+    }
+  };
+  const loop = nodes.every((n) => n.attrs?.loop !== 'false');
+  const speeds = new Set(nodes.map((n) => n.attrs?.speed ?? '1'));
+  const speed = speeds.size === 1 ? [...speeds][0]! : null;
+  return (
+    <Section
+      title="Motion"
+      right={
+        <button className="op-icon-btn" title="Replay animations (Alt+Shift+P)" onClick={replayAnimations}>
+          <RotateCcw size={13} />
+        </button>
+      }
+    >
+      {keyframes.length > 0 && (
+        <div className="op-row">
+          <span className="op-label op-prop-label">Animation</span>
+          <Select
+            value={animation === null ? '' : (playing ?? '')}
+            placeholder={animation === null ? 'Mixed' : 'None'}
+            options={[{ value: '', label: 'None' }, ...keyframes.map((k) => ({ value: k.name, label: k.name }))]}
+            onChange={pick}
+          />
+        </div>
+      )}
+      <StyleField nodes={nodes} prop="animation" hint="CSS animation (name, duration, easing, delay, repeat)" placeholder="none" unitless />
+      {media && (
+        <div className="op-grid-2">
+          <label className="op-row" title="Loop">
+            <Repeat size={12} />
+            <input type="checkbox" checked={loop} onChange={(e) => void command({ type: 'setPlayback', nodeIds: nodes.map((n) => n.id), loop: e.currentTarget.checked })} />
+            <span className="op-label">Loop</span>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+            <span className="op-field-icon" title="Speed">
+              <Gauge size={12} />
+            </span>
+            <input
+              className="op-input"
+              key={speed ?? 'mixed'}
+              defaultValue={speed ?? ''}
+              placeholder={speed === null ? 'Mixed' : '1'}
+              onBlur={(e) => {
+                const v = Number(e.currentTarget.value);
+                if (Number.isFinite(v) && v > 0 && String(v) !== speed) void command({ type: 'setPlayback', nodeIds: nodes.map((n) => n.id), speed: v });
+              }}
+              onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+            />
+          </label>
+        </div>
+      )}
+    </Section>
+  );
+}
+
 function CssEditor({ nodes }: { nodes: NodeRecord[] }) {
   const node = nodes[0]!;
   const css = styleMapToCss(node.styles, '\n');
@@ -498,6 +576,8 @@ export function Inspector() {
           </div>
         </Section>
       )}
+
+      <MotionSection nodes={nodes} />
 
       {nodes.length === 1 && (
         <Section title="CSS">

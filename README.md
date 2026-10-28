@@ -27,8 +27,9 @@ It speaks the same MCP tool set as [Paper](https://paper.design) — all 37 tool
 - Design tokens (CSS variables) used live across the file
 - Comments pinned to layers, threads, resolve/reopen
 - **Shaders**: 30 live GPU effects — mesh and grain gradients, dithering, noise, metaballs, god rays, liquid metal, halftone and other image filters — as layers with presets and full controls (`S`)
+- **Animation**: CSS `@keyframes` animations, video, Lottie and scripted (JavaScript) embeds play on the canvas; pasted pages keep their `<style>` rules and animations. One button in the top bar pauses everything (`Alt+P`)
 - **Paste from Figma**: copy layers in Figma and paste them onto the canvas as editable frames, text, shapes and vectors (auto layout, components, gradients, effects and images included)
-- Copy/paste as clean HTML (paste HTML from any AI chat straight onto the canvas), drag-and-drop images
+- Copy/paste as clean HTML (paste HTML from any AI chat straight onto the canvas), drag-and-drop images, videos and Lottie files
 - Export PNG / JPG / WebP / SVG / PDF; live JSX & Tailwind code panel
 - Undo/redo covers agent changes too: `Ctrl+Z` steps back through your edits and the agents' edits, newest first, and the Agents panel undoes one agent's last change
 
@@ -45,6 +46,7 @@ It speaks the same MCP tool set as [Paper](https://paper.design) — all 37 tool
 - Built-in guides (`get_guide`) that teach agents to design incrementally, review their work and use tokens
 - `paper-gen://` image generation with your own OpenAI or Gemini key
 - Agents can create and tune shader layers too (`<x-shader>` in `write_html`, `update_shader`, the `shaders` guide)
+- Agents animate designs: `@keyframes` in `write_html`, `get_keyframes` / `set_keyframes`, `<video>`, `<x-lottie>` and `<x-embed>` layers, and `get_screenshot` at any moment of an animation (the `animation` guide)
 - One-click setup for Claude Code, Claude Desktop, Cursor, VS Code, Codex, Windsurf, Gemini CLI, Antigravity, OpenCode and GitHub Copilot CLI
 
 ## Quick start
@@ -133,7 +135,7 @@ Edit the site you're actually building, not a mock-up of it. On the home screen,
 | Tokens | `get_tokens`, `create_tokens`, `set_tokens` |
 | Comments | `list_comment_threads`, `get_comment_thread`, `list_comment_thread_authors`, `set_comment_thread_status` |
 | Export | `export`, `export_combined_pdf` |
-| OpenPaper extension | `update_shader` (shader layers; create them with `<x-shader>` in `write_html`) |
+| OpenPaper extension | `update_shader` (shader layers; create them with `<x-shader>` in `write_html`), `get_keyframes`, `set_keyframes` (CSS animations) |
 
 Full reference: [docs/mcp-tools.md](docs/mcp-tools.md).
 
@@ -148,6 +150,20 @@ Agents use the same effects:
 ```
 
 `get_jsx` exports shader layers as [`@paper-design/shaders-react`](https://shaders.paper.design) components with the same parameters, and screenshots/exports render them through headless Chrome. Shaders are powered by Paper Shaders (Apache-2.0) — see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Animation
+
+Designs can move, and everything plays on the canvas as you work:
+
+- **CSS animations.** A layer's `animation` style plays the file's `@keyframes`. HTML written by an agent or pasted from a page brings its `<style>` sheet along: its `@keyframes` join the file and its class rules become each layer's own styles (`:hover` and `::before` rules are skipped, `@media` rules apply as on a 1440px-wide screen). Transitions are kept for code export but don't run (a design has no hover states).
+- **SVG animation.** `<animate>`, `<animateTransform>` and CSS animations inside a drawing.
+- **Video.** `<video>` or a dropped MP4/WebM file becomes a Video layer that plays muted on a loop.
+- **Lottie.** `<x-lottie src>` (and `<lottie-player>`, `<dotlottie-player>`), or a dropped `.json` / `.lottie` file, plays with lottie-web.
+- **Scripted embeds.** `<x-embed>` holds HTML, CSS and JavaScript (canvas, WebGL, GSAP, three.js…) that runs in a sandboxed frame with no access to your files or the editor; `<iframe src>` embeds a web page.
+
+The play/pause button in the top bar (`Alt+P`) holds every animation still, including shaders, videos and embeds, and remembers the choice; playing again starts them all over (`Alt+Shift+P` replays). Select a layer to pick its keyframes, timing, loop and speed in the inspector's **Motion** section.
+
+Ask an agent for motion in plain words (*"make the headline float"*, *"add a particle background"*): the `animation` guide teaches it the markup, `get_keyframes` / `set_keyframes` manage the file's keyframes, and `get_screenshot({ animationTime: 250 })` shows it any moment of an animation. Screenshots, exports and measurements otherwise show the settled design: animations that end at their end, loops at rest. `get_jsx` exports the keyframes, `<video>`, `DotLottieReact` and sandboxed `<iframe>` layers.
 
 ## Paste from Figma
 
@@ -181,6 +197,7 @@ OpenPaper uses Paper's shortcuts, plus Figma's where Paper has none. `Ctrl` is `
 | Measure distances: select, then hover another layer | hold `Alt` |
 | Show / hide UI; collapse / expand panels | `.` or `Ctrl+\`; `Shift+\` or `Shift+.` |
 | Layers / Tokens panel; show / hide comments | `Alt+1` / `Alt+2`; `Shift+C` |
+| Pause / play animations; replay them | `Alt+P`; `Alt+Shift+P` |
 | Keyboard shortcuts | `Ctrl+Shift+?` or `Ctrl+/` |
 
 **Selection**

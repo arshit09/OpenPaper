@@ -36,6 +36,7 @@ import {
   writeHtml,
 } from './write-tools.ts';
 import { updateShader } from './shader-tools.ts';
+import { getKeyframes, setKeyframes } from './animation-tools.ts';
 
 const TOOL_TIMEOUT_MS = 60_000;
 
@@ -78,6 +79,8 @@ const HANDLERS: Record<string, (call: Call) => Promise<HandlerResult>> = {
   get_tokens: getTokens,
   create_tokens: createTokens,
   set_tokens: setTokens,
+  get_keyframes: getKeyframes,
+  set_keyframes: setKeyframes,
 };
 
 for (const name of TOOLS_BY_NAME.keys()) {
@@ -145,6 +148,10 @@ export function summarize(name: string, args: Record<string, any>): string {
       return `Created ${n(args.tokens)} token(s)`;
     case 'set_tokens':
       return `Updated ${n(args.tokens)} token(s)`;
+    case 'get_keyframes':
+      return 'Read animations';
+    case 'set_keyframes':
+      return `Updated ${n(args.keyframes)} animation(s)`;
     case 'finish_working_on_nodes':
       return 'Finished working';
     case 'export':

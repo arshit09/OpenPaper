@@ -16,12 +16,14 @@ import {
   ChevronLeft,
   Blend,
   Keyboard,
+  CirclePause,
+  CirclePlay,
 } from 'lucide-react';
-import { useEditor, setState, type Tool } from '../state/store.ts';
+import { useEditor, setAnimationsPaused, setState, type Tool } from '../state/store.ts';
 import { command, redo, undo } from '../sync/session.ts';
 import { zoomBy, zoomToFit } from './canvas/Canvas.tsx';
 import { Logo } from '../ui/Logo.tsx';
-import { insertImageFiles } from './clipboard.ts';
+import { insertImageFiles, PLACEABLE_FILES } from './clipboard.ts';
 import { MAC } from './shortcuts.ts';
 import { bindingLabel } from './hotkeys.ts';
 
@@ -43,6 +45,7 @@ export function TopBar() {
   const agents = useEditor((s) => s.agents);
   const zoom = useEditor((s) => (s.pageId && s.cameras[s.pageId]?.zoom) || 1);
   const connection = useEditor((s) => s.connection);
+  const paused = useEditor((s) => s.animationsPaused);
   const [editingName, setEditingName] = useState(false);
   const imageInput = useRef<HTMLInputElement>(null);
 
@@ -101,7 +104,7 @@ export function TopBar() {
         <input
           ref={imageInput}
           type="file"
-          accept="image/*"
+          accept={PLACEABLE_FILES}
           multiple
           hidden
           onChange={(e) => {
@@ -139,6 +142,14 @@ export function TopBar() {
         </button>
         <button className="op-btn op-topbar-optional" title={`Zoom (${bindingLabel('Shift+1', MAC)} fit, ${bindingLabel('Shift+0', MAC)} 100%)`} onClick={() => zoomToFit()} onContextMenu={(e) => (e.preventDefault(), zoomBy(1))}>
           <span className="op-zoom">{Math.round(zoom * 100)}%</span>
+        </button>
+        <button
+          className={`op-icon-btn${paused ? ' active' : ''}`}
+          title={`${paused ? 'Play animations' : 'Pause animations'} (${bindingLabel('Alt+P', MAC)})\nShift+click or ${bindingLabel('Alt+Shift+P', MAC)} to replay`}
+          aria-pressed={paused}
+          onClick={(e) => (e.shiftKey && !paused ? setAnimationsPaused(false) : setAnimationsPaused(!paused))}
+        >
+          {paused ? <CirclePlay size={16} /> : <CirclePause size={16} />}
         </button>
         <button className="op-icon-btn" title="Export" onClick={() => setState({ showExport: true })}>
           <Download size={16} />

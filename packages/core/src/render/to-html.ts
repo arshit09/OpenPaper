@@ -5,7 +5,18 @@ import { styleMapToCss, type StyleMap } from '../styles/css.ts';
 import { tokenVars } from '../tokens/tokens.ts';
 import { shaderRenderProps } from '../shaders/props.ts';
 import { shaderDef } from '../shaders/registry.ts';
-import { BASE_CSS, parentKindOf, renderSpec, SHADER_RUNTIME_PATH, type RenderContext } from './render-spec.ts';
+import { keyframesCss } from '../animation/keyframes.ts';
+import {
+  BASE_CSS,
+  embedFrameUrl,
+  embedSandbox,
+  EMBED_FRAME_STYLE,
+  LOTTIE_RUNTIME_PATH,
+  parentKindOf,
+  renderSpec,
+  SHADER_RUNTIME_PATH,
+  type RenderContext,
+} from './render-spec.ts';
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -54,8 +65,17 @@ export function renderNodeHtml(reader: DocReader, node: NodeRecord, ctx: RenderC
     const props = shaderRenderProps(shaderDef(node.component)!, node.props, { tokens: reader.getTokens(), resolveUrl: (u) => ctx.resolveUrl(u) });
     return `<div data-op-id="${id}"${styleAttr} data-op-shader="${escapeAttr(spec.shader!)}" data-op-shader-props="${escapeAttr(JSON.stringify(props))}"></div>`;
   }
+  if (spec.kind === 'lottie') {
+    // Drawn by the Lottie runtime script (LOTTIE_RUNTIME_PATH) at the start of the animation.
+    return `<div data-op-id="${id}"${styleAttr} data-op-lottie="${escapeAttr(spec.attrs.src ?? '')}" data-op-lottie-loop="${spec.attrs.loop}"></div>`;
+  }
+  if (spec.kind === 'embed') {
+    const url = embedFrameUrl(reader.fileId, node);
+    const frame = `<iframe src="${escapeAttr(url)}" sandbox="${embedSandbox(url, ctx.origin ?? '')}" style="${escapeAttr(styleMapToCss(EMBED_FRAME_STYLE))}"></iframe>`;
+    return `<div data-op-id="${id}"${styleAttr}>${frame}</div>`;
+  }
   if (spec.tag === 'img') return `<img data-op-id="${id}"${styleAttr} src="${escapeAttr(spec.attrs.src ?? '')}" alt="">`;
-  if (spec.tag === 'video') return `<video data-op-id="${id}"${styleAttr} src="${escapeAttr(spec.attrs.src ?? '')}" muted></video>`;
+  if (spec.tag === 'video') return `<video data-op-id="${id}"${styleAttr} src="${escapeAttr(spec.attrs.src ?? '')}" muted playsinline preload="auto"></video>`;
   let inner = '';
   for (const childId of node.children) {
     const child = reader.getNode(childId);
@@ -88,9 +108,11 @@ export function renderDocumentHtml(reader: DocReader, ctx: RenderContext, opts: 
     if (node) body += renderNodeHtml(reader, node, ctx);
   }
   const links = opts.fontCss.map((href) => `<link rel="stylesheet" href="${escapeAttr(href)}">`).join('');
-  const scripts = body.includes('data-op-shader=') ? `<script src="${SHADER_RUNTIME_PATH}" defer></script>` : '';
+  let scripts = body.includes('data-op-shader=') ? `<script src="${SHADER_RUNTIME_PATH}" defer></script>` : '';
+  if (body.includes('data-op-lottie=')) scripts += `<script src="${LOTTIE_RUNTIME_PATH}" defer></script>`;
   return `<!doctype html><html><head><meta charset="utf-8">${links}${scripts}<style>${BASE_CSS}
 html,body{background:${escapeStyleText(opts.background)};overflow:hidden}
 [data-op-world]{position:absolute;left:0;top:0;transform:translate(${-opts.offsetX}px,${-opts.offsetY}px);${escapeStyleText(varsCss)}}
+${keyframesCss(reader.getKeyframes())}
 ${opts.extraCss ?? ''}</style></head><body><div data-op-world>${body}</div></body></html>`;
 }

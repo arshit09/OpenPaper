@@ -50,6 +50,7 @@ export const GUIDE_TOPICS = [
   ['figma-import', 'Workflow for bringing Figma designs into OpenPaper'],
   ['image-generation', 'Generating AI images inside write_html, update_styles and create_artboard with paper-gen:// URLs'],
   ['shaders', 'Shader layers (GPU effects: mesh gradients, grain, dithering, image filters…): the x-shader tag and every effect\'s parameters (OpenPaper extension)'],
+  ['animation', 'Motion: CSS @keyframes animations, video, Lottie and scripted (JavaScript) embed layers, and checking them with screenshots (OpenPaper extension)'],
 ] as const;
 
 const pageIdParam = z
@@ -223,6 +224,11 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     input: z.object({
       nodeId: z.string().describe('Id of the node to capture.'),
       scale: z.number().optional().describe('1 (default) for layout checks; 2 to read small text or fine detail.'),
+      animationTime: z
+        .number()
+        .min(0)
+        .optional()
+        .describe('OpenPaper extension: show animations this many milliseconds after they start. Omit for the settled design.'),
     }),
   },
   {
@@ -440,9 +446,10 @@ Markup rules:
 - Give layers names with the layer-name attribute, e.g. <div layer-name="Hero">.
 - Local image files need absolute paper-asset:// URLs, e.g. <img src="paper-asset:///C:/Users/me/logo.svg">.
 - paper-gen:// URLs create AI-generated images. Only use them if the user asked for generated imagery, and read get_guide({ topic: "image-generation" }) first.
-- OpenPaper extension: <x-shader type="MeshGradient" …> adds a GPU shader layer (animated gradients, grain, dithering, glows, image filters). Read get_guide({ topic: "shaders" }) before using it.`,
+- OpenPaper extension: <x-shader type="MeshGradient" …> adds a GPU shader layer (animated gradients, grain, dithering, glows, image filters). Read get_guide({ topic: "shaders" }) before using it.
+- OpenPaper extension, motion: the animation style plays on the canvas, with @keyframes from a <style> element in the same HTML; <video>, <x-lottie src> and <x-embed> (HTML and JavaScript run in a sandbox) add layers that play. Read get_guide({ topic: "animation" }) before adding motion.`,
     input: z.object({
-      html: z.string().describe('HTML to turn into design nodes. Standard elements with inline CSS styles.'),
+      html: z.string().describe('HTML to turn into design nodes. Standard elements with inline CSS styles (a <style> element may define @keyframes).'),
       targetNodeId: z
         .string()
         .describe('Target node. "insert-children" appends the new nodes inside it; "replace" removes it and puts the new nodes in its place.'),
@@ -661,6 +668,41 @@ Returns one result per entry; per-entry errors are reported in the results.`,
         .array(z.object({ name: tokenName, newName: tokenName.optional(), value: styleValue.optional(), delete: z.boolean().optional() }))
         .min(1)
         .describe('Token edits, applied in order.'),
+    }),
+  },
+
+  // ---- animation -------------------------------------------------------------
+  {
+    name: 'get_keyframes',
+    scope: 'file',
+    annotations: { readOnlyHint: true },
+    description:
+      "OpenPaper extension. The file's CSS @keyframes animations, each with its CSS and the layers that play it (through their animation style). Also lists animation names layers use that no keyframes define. See get_guide({ topic: \"animation\" }).",
+    input: z.object({
+      names: z.array(z.string()).optional().describe('Only these keyframes. Omit for all.'),
+    }),
+  },
+  {
+    name: 'set_keyframes',
+    scope: 'file',
+    annotations: { destructiveHint: true },
+    description: `OpenPaper extension. Create, change, rename or delete the file's @keyframes; layers play them through their animation style (update_styles: {"animation": "rise 600ms ease-out both"}).
+- Create or change: name and css, e.g. { "name": "rise", "css": "from { opacity: 0; transform: translateY(16px) } to { opacity: 1; transform: none }" } (a whole "@keyframes rise { … }" rule works too).
+- Rename: newName; layers that play the old name are updated.
+- Delete: delete: true (layers that use it stop moving).
+Returns one result per entry.`,
+    input: z.object({
+      keyframes: z
+        .array(
+          z.object({
+            name: z.string().describe('Keyframes name (letters, digits, - and _).'),
+            css: z.string().optional().describe('The keyframe steps: from / to / percentages with declarations.'),
+            newName: z.string().optional().describe('Rename to this.'),
+            delete: z.boolean().optional().describe('Remove these keyframes.'),
+          })
+        )
+        .min(1)
+        .describe('Keyframes edits, applied in order.'),
     }),
   },
 ];

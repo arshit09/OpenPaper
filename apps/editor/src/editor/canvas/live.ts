@@ -1,6 +1,7 @@
 import type { ActorInfo, AgentPresence, NodeRecord, PaperDocument, Patch } from '@openpaper/core';
 import { camera, getState, useEditor } from '../../state/store.ts';
 import { elementFor, getViewportElement, muteVideos, viewportRect, type Rect } from './geometry.ts';
+import { restartAnimations } from './motion.ts';
 
 /**
  * Live preview of agent edits. The server applies each tool call at once; the editor plays the
@@ -614,6 +615,8 @@ function begin(r: Reveal, now: number, instant: boolean) {
     startDrawing(el, r, now);
   }
   el.removeAttribute(PENDING);
+  // The layer's own animations (an entrance, say) ran while it waited hidden: they start as it appears.
+  restartAnimations(el);
 }
 
 function startDrawing(el: Element, r: Reveal, now: number) {

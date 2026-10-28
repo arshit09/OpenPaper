@@ -2,6 +2,8 @@ import { parseDocument } from 'htmlparser2';
 import render from 'dom-serializer';
 import { Element, Text, type ChildNode } from 'domhandler';
 import { sanitizeSvg } from './sanitize.ts';
+import { cssBlocks, keyframesFromCss } from '../animation/keyframes.ts';
+import type { KeyframesRecord } from '../model/types.ts';
 
 const STRIP_ELEMENTS = new Set(['title', 'desc', 'metadata', 'foreignobject', 'script']);
 const TEXT_ELEMENTS = new Set(['text', 'tspan', 'textpath']);
@@ -9,9 +11,10 @@ const TEXT_ELEMENTS = new Set(['text', 'tspan', 'textpath']);
 /**
  * `<style>` inside inline SVG is document-wide, so it would leak onto other designs
  * and the editor. Inline simple rules (`.a`, `#b`, `path`, comma lists) into style
- * attributes and drop the `<style>` elements and `class` attributes.
+ * attributes and drop the `<style>` elements and `class` attributes. `@keyframes` go to
+ * `keyframes` (the file's list) so the drawing's CSS animations keep playing.
  */
-function inlineSvgStyles(root: Element): void {
+function inlineSvgStyles(root: Element, keyframes?: KeyframesRecord[]): void {
   const styles: Element[] = [];
   const collect = (nodes: ChildNode[]) => {
     for (const n of nodes) {
@@ -24,12 +27,11 @@ function inlineSvgStyles(root: Element): void {
   if (!styles.length) return;
   const rules: Array<{ selector: string; decls: string }> = [];
   for (const s of styles) {
-    const css = s.children
-      .map((c) => (c instanceof Text ? c.data : ''))
-      .join('')
-      .replace(/\/\*[\s\S]*?\*\//g, '');
-    for (const m of css.matchAll(/([^{}@]+)\{([^{}]*)\}/g)) {
-      for (const sel of m[1]!.split(',')) rules.push({ selector: sel.trim(), decls: m[2]!.trim().replace(/;?\s*$/, '') });
+    const css = s.children.map((c) => (c instanceof Text ? c.data : '')).join('');
+    if (keyframes) keyframes.push(...keyframesFromCss(css));
+    for (const [prelude, body] of cssBlocks(css)) {
+      if (prelude.startsWith('@')) continue;
+      for (const sel of prelude.split(',')) rules.push({ selector: sel.trim(), decls: body.trim().replace(/;?\s*$/, '') });
     }
   }
   const matches = (el: Element, selector: string): boolean => {
@@ -109,15 +111,15 @@ function clean(nodes: ChildNode[], inText: boolean): void {
 /**
  * Sanitize and tidy SVG markup for storage: strips scripts/handlers, metadata,
  * editor-specific attributes and external references; ensures xmlns, width/height
- * and viewBox are present.
+ * and viewBox are present. Keyframes from the drawing's own `<style>` are added to `keyframes`.
  */
-export function cleanSvgMarkup(markup: string): string {
+export function cleanSvgMarkup(markup: string, keyframes?: KeyframesRecord[]): string {
   const safe = sanitizeSvg(markup);
   const doc = parseDocument(safe, { xmlMode: true, recognizeSelfClosing: true });
   clean(doc.children, false);
   const root = doc.children.find((n): n is Element => n instanceof Element && n.name.toLowerCase() === 'svg');
   if (!root) return '<svg xmlns="http://www.w3.org/2000/svg"></svg>';
-  inlineSvgStyles(root);
+  inlineSvgStyles(root, keyframes);
   root.attribs.xmlns ??= 'http://www.w3.org/2000/svg';
   delete root.attribs['layer-name'];
   const vbKey = Object.keys(root.attribs).find((k) => k.toLowerCase() === 'viewbox');

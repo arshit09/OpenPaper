@@ -2,6 +2,7 @@ import type {
   CommentThread,
   CommentUser,
   DocCounters,
+  KeyframesRecord,
   NodeRecord,
   PageListItem,
   PageRecord,
@@ -20,6 +21,7 @@ export interface Patch {
   pages?: { upsert: PageRecord[]; remove: string[] };
   pageList?: PageListItem[];
   tokens?: TokenRecord[];
+  keyframes?: KeyframesRecord[];
   comments?: { upsert: CommentThread[]; remove: string[] };
   /** Full replacement of the comment-author map. */
   users?: Record<string, CommentUser>;
@@ -34,6 +36,7 @@ export function isEmptyPatch(p: Patch): boolean {
     !p.pages?.remove.length &&
     !p.pageList &&
     !p.tokens &&
+    !p.keyframes &&
     !p.comments?.upsert.length &&
     !p.comments?.remove.length &&
     !p.users &&
@@ -58,6 +61,7 @@ export function applyPatch(doc: PaperDocument, patch: Patch): PaperDocument {
   }
   if (patch.pageList) next.pageList = patch.pageList;
   if (patch.tokens) next.tokens = patch.tokens;
+  if (patch.keyframes) next.keyframes = patch.keyframes;
   if (patch.comments) {
     const comments = { ...doc.comments };
     for (const id of patch.comments.remove) delete comments[id];
@@ -85,6 +89,7 @@ export interface DocReader {
   getPage(id: string): PageRecord | undefined;
   getPageList(): PageListItem[];
   getTokens(): TokenRecord[];
+  getKeyframes(): KeyframesRecord[];
   getThread(id: string): CommentThread | undefined;
   allThreads(): CommentThread[];
   allNodes(): Iterable<NodeRecord>;
@@ -98,6 +103,7 @@ export function readerOf(doc: PaperDocument): DocReader {
     getPage: (id) => doc.pages[id],
     getPageList: () => doc.pageList,
     getTokens: () => doc.tokens,
+    getKeyframes: () => doc.keyframes ?? [],
     getThread: (id) => doc.comments[id],
     allThreads: () => Object.values(doc.comments),
     allNodes: () => Object.values(doc.nodes),
@@ -127,6 +133,7 @@ export class Transaction implements DocReader {
   private readonly touchedThreads = new Map<string, CommentThread | null>();
   private pageListValue: PageListItem[] | undefined;
   private tokensValue: TokenRecord[] | undefined;
+  private keyframesValue: KeyframesRecord[] | undefined;
   private usersValue: Record<string, CommentUser> | undefined;
   private nameValue: string | undefined;
   private readonly counters: DocCounters;
@@ -156,6 +163,9 @@ export class Transaction implements DocReader {
   }
   getTokens(): TokenRecord[] {
     return this.tokensValue ?? this.base.tokens;
+  }
+  getKeyframes(): KeyframesRecord[] {
+    return this.keyframesValue ?? this.base.keyframes ?? [];
   }
   getThread(id: string): CommentThread | undefined {
     if (this.touchedThreads.has(id)) return this.touchedThreads.get(id) ?? undefined;
@@ -223,6 +233,9 @@ export class Transaction implements DocReader {
   setTokens(tokens: TokenRecord[]): void {
     this.tokensValue = tokens;
   }
+  setKeyframes(keyframes: KeyframesRecord[]): void {
+    this.keyframesValue = keyframes;
+  }
   putThread(thread: CommentThread): void {
     this.touchedThreads.set(thread.id, thread);
   }
@@ -246,6 +259,7 @@ export class Transaction implements DocReader {
       this.touchedThreads.size > 0 ||
       this.pageListValue !== undefined ||
       this.tokensValue !== undefined ||
+      this.keyframesValue !== undefined ||
       this.usersValue !== undefined ||
       this.nameValue !== undefined ||
       this.counters.nodes !== this.base.counters.nodes ||
@@ -305,6 +319,10 @@ export class Transaction implements DocReader {
     if (this.tokensValue) {
       patch.tokens = this.tokensValue;
       inverse.tokens = base.tokens;
+    }
+    if (this.keyframesValue) {
+      patch.keyframes = this.keyframesValue;
+      inverse.keyframes = base.keyframes ?? [];
     }
     if (this.usersValue) {
       patch.users = this.usersValue;

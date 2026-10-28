@@ -15,6 +15,7 @@ export default defineConfig({
       '/api': { target, changeOrigin: false },
       '/media': { target, changeOrigin: false },
       '/local-asset': { target, changeOrigin: false },
+      '/__op': { target, changeOrigin: false },
     },
   },
   build: {

@@ -13,6 +13,19 @@ export interface RenderViewport {
   deviceScaleFactor?: number;
 }
 
+export interface DocumentOptions {
+  /**
+   * Show animations this many milliseconds after they start (paused there). Without it a render
+   * shows the settled design: animations that end are finished, loops are left out.
+   */
+  animationTime?: number | null;
+  /**
+   * How long the browser stays up afterwards for the next render (background work passes less,
+   * so it doesn't keep a browser around on its own).
+   */
+  lingerMs?: number;
+}
+
 /**
  * Headless Chromium used for pixel-exact screenshots, exports (PNG/JPEG/WebP/PDF),
  * computed styles and layout measurement. Pages are served by the OpenPaper server
@@ -89,11 +102,10 @@ export class HeadlessRenderer {
   }
 
   /**
-   * Load `html` in a fresh page sized to `viewport`, wait for fonts and images,
-   * run `fn`, then dispose the page. The browser stays up `lingerMs` afterwards for the next
-   * render (background work passes less, so it doesn't keep a browser around on its own).
+   * Load `html` in a fresh page sized to `viewport`, wait for fonts, images and media, settle its
+   * animations, run `fn`, then dispose the page.
    */
-  async withDocument<T>(html: string, viewport: RenderViewport, fn: (page: Page) => Promise<T>, lingerMs = IDLE_CLOSE_MS): Promise<T> {
+  async withDocument<T>(html: string, viewport: RenderViewport, fn: (page: Page) => Promise<T>, opts: DocumentOptions = {}): Promise<T> {
     const browser = await this.getBrowser();
     const token = randomUUID();
     this.documents.set(token, html);
@@ -114,12 +126,18 @@ export class HeadlessRenderer {
           .waitForFunction(() => (window as unknown as { __opShadersReady?: boolean }).__opShadersReady === true, { timeout: SHADER_TIMEOUT_MS })
           .catch(() => {});
       }
+      if (html.includes('data-op-lottie=')) {
+        await page
+          .waitForFunction(() => (window as unknown as { __opLottieReady?: boolean }).__opLottieReady === true, { timeout: SHADER_TIMEOUT_MS })
+          .catch(() => {});
+      }
+      await page.evaluate(settleAnimationsInPage, opts.animationTime ?? null);
       return await fn(page);
     } finally {
       this.documents.delete(token);
       this.active--;
       await page?.close().catch(() => {});
-      this.touch(lingerMs);
+      this.touch(opts.lingerMs ?? IDLE_CLOSE_MS);
     }
   }
 
@@ -164,6 +182,10 @@ async function waitForAssetsInPage(timeoutMs: number): Promise<void> {
       if (!img.complete) loads.push(new Promise((r) => ((img.onload = r), (img.onerror = r))));
       else if (img.decode) loads.push(img.decode().catch(() => {}));
     }
+    // A video shows its first frame once that frame is loaded.
+    for (const video of Array.from(document.querySelectorAll('video'))) {
+      if (video.readyState < 2) loads.push(new Promise((r) => ((video.onloadeddata = r), (video.onerror = r))));
+    }
     for (const url of urls) {
       loads.push(
         new Promise((resolve) => {
@@ -177,4 +199,42 @@ async function waitForAssetsInPage(timeoutMs: number): Promise<void> {
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   })();
   await Promise.race([work, deadline]);
+}
+
+/**
+ * Runs inside the page: hold every animation still. `time` (ms) shows that moment of each one;
+ * null shows the settled design (finite animations at their end, loops removed, the first frame
+ * of SVG animations and videos, Lottie at its settled frame).
+ */
+async function settleAnimationsInPage(time: number | null): Promise<void> {
+  for (const a of document.getAnimations()) {
+    try {
+      if (time !== null) {
+        a.pause();
+        a.currentTime = time;
+      } else if (Number.isFinite(Number(a.effect?.getComputedTiming().endTime ?? Infinity))) a.finish();
+      else a.cancel();
+    } catch {
+      // An animation the browser can't move (e.g. zero playback rate) stays as it is.
+    }
+  }
+  for (const svg of Array.from(document.querySelectorAll('svg'))) {
+    try {
+      svg.pauseAnimations();
+      svg.setCurrentTime((time ?? 0) / 1000);
+    } catch {
+      // not an SVG root that animates
+    }
+  }
+  const seeks: Promise<unknown>[] = [];
+  for (const video of Array.from(document.querySelectorAll('video'))) {
+    video.pause();
+    if (time !== null && Number.isFinite(video.duration) && video.duration > 0) {
+      seeks.push(new Promise((r) => ((video.onseeked = r), (video.onerror = r), setTimeout(r, 3000))));
+      video.currentTime = (time / 1000) % video.duration;
+    }
+  }
+  (window as unknown as { __opSeekLottie?: (ms: number | null) => void }).__opSeekLottie?.(time);
+  await Promise.all(seeks);
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 }

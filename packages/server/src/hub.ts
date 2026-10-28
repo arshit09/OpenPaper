@@ -38,6 +38,7 @@ interface Touched {
   comments: Map<string, CommentThread | undefined>;
   pageList?: PaperDocument['pageList'];
   tokens?: PaperDocument['tokens'];
+  keyframes?: PaperDocument['keyframes'];
   users?: PaperDocument['users'];
   name?: string;
 }
@@ -85,6 +86,7 @@ function touched(doc: PaperDocument, forward: Patch, inverse: Patch): Touched {
     comments: pick(doc.comments, 'comments'),
     pageList: either((p) => !!p.pageList) ? doc.pageList : undefined,
     tokens: either((p) => !!p.tokens) ? doc.tokens : undefined,
+    keyframes: either((p) => !!p.keyframes) ? doc.keyframes : undefined,
     users: either((p) => !!p.users) ? doc.users : undefined,
     name: either((p) => p.meta?.name !== undefined) ? doc.name : undefined,
   };
@@ -102,6 +104,7 @@ function restrict(patch: Patch, kept: Patch): Patch {
   }
   if (patch.pageList && kept.pageList) out.pageList = patch.pageList;
   if (patch.tokens && kept.tokens) out.tokens = patch.tokens;
+  if (patch.keyframes && kept.keyframes) out.keyframes = patch.keyframes;
   if (patch.users && kept.users) out.users = patch.users;
   if (patch.meta) {
     out.meta = { ...patch.meta };
@@ -288,6 +291,7 @@ export class LiveDocument {
     }
     if (patch.pageList && current.pageList === expected.pageList) filtered.pageList = patch.pageList;
     if (patch.tokens && current.tokens === expected.tokens) filtered.tokens = patch.tokens;
+    if (patch.keyframes && current.keyframes === expected.keyframes) filtered.keyframes = patch.keyframes;
     if (patch.users && current.users === expected.users) filtered.users = patch.users;
     if (patch.comments) {
       const unchanged = (id: string) => current.comments[id] === expected.comments.get(id);

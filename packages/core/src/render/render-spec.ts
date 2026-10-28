@@ -18,6 +18,8 @@ export const EMPTY_TEXT = '‍';
 export interface RenderContext {
   /** Turn a stored URL (/media/…, paper-asset://…, https://…) into one the renderer can load. */
   resolveUrl(src: string): string;
+  /** Origin of the OpenPaper server the render runs on (decides how much an Embed's page may do). */
+  origin?: string;
 }
 
 export const identityUrls: RenderContext = { resolveUrl: (s) => s };
@@ -27,7 +29,7 @@ export function defaultResolveUrl(src: string, origin = ''): string {
   if (src.startsWith('paper-asset://')) {
     return `${origin}/local-asset?path=${encodeURIComponent(src.slice('paper-asset://'.length))}`;
   }
-  if (src.startsWith('/media/')) return `${origin}${src}`;
+  if (src.startsWith('/media/') || src.startsWith(EMBED_ROUTE)) return `${origin}${src}`;
   return src;
 }
 
@@ -59,6 +61,9 @@ export function renderStyle(node: NodeRecord, parentKind: ParentKind, ctx: Rende
   const style: StyleMap = {};
   for (const [k, v] of Object.entries(node.styles)) {
     if (v === undefined || v === null || v === '') continue;
+    // Transitions are kept for code export but never run on the canvas: there are no hover or
+    // focus states to move between, and an edit (a drag, a new size) must land at once.
+    if (k.startsWith('transition')) continue;
     style[k] = rewriteUrls(String(v), ctx);
   }
   if (style.display === FREEFORM_DISPLAY) {
@@ -85,7 +90,7 @@ export function renderStyle(node: NodeRecord, parentKind: ParentKind, ctx: Rende
   return style;
 }
 
-export type RenderKind = 'element' | 'text' | 'svg' | 'shader';
+export type RenderKind = 'element' | 'text' | 'svg' | 'shader' | 'lottie' | 'embed';
 
 export interface RenderSpec {
   kind: RenderKind;
@@ -111,6 +116,12 @@ export const SHADER_HOST_STYLE = { position: 'absolute', inset: '0', borderRadiu
 /** Script that mounts shader layers in static renders (served by the OpenPaper server). */
 export const SHADER_RUNTIME_PATH = '/__op/shaders.js';
 
+/** Script that draws Lottie layers in static renders. */
+export const LOTTIE_RUNTIME_PATH = '/__op/lottie.js';
+
+/** The frame inside an Embed layer fills it; the canvas, not the page, takes the pointer. */
+export const EMBED_FRAME_STYLE = { display: 'block', width: '100%', height: '100%', border: '0', borderRadius: 'inherit', pointerEvents: 'none' } as const;
+
 /** Render spec using a reader to find the parent. */
 export function renderSpecIn(reader: DocReader, node: NodeRecord, ctx: RenderContext): RenderSpec {
   return renderSpec(node, parentKindOf(node.parentId ? reader.getNode(node.parentId) : undefined), ctx);
@@ -135,7 +146,16 @@ export function renderSpec(node: NodeRecord, parentKind: ParentKind, ctx: Render
     }
     case 'Video': {
       if (node.src) attrs.src = ctx.resolveUrl(node.src);
-      return { kind: 'element', tag: 'video', style, attrs };
+      return { kind: 'element', tag: 'video', style, attrs: { ...attrs, ...playbackAttrs(node) } };
+    }
+    case 'Lottie': {
+      if (node.src) attrs.src = ctx.resolveUrl(node.src);
+      return { kind: 'lottie', tag: 'div', style, attrs: { ...attrs, ...playbackAttrs(node) } };
+    }
+    case 'Embed': {
+      // Pages are framed as they are; an embed's own HTML is served by EMBED_ROUTE (see embedFrameUrl).
+      if (node.src && node.html === undefined) attrs.src = node.src;
+      return { kind: 'embed', tag: 'div', style, attrs };
     }
     default: {
       const shader = shaderDef(node.component);
@@ -143,6 +163,44 @@ export function renderSpec(node: NodeRecord, parentKind: ParentKind, ctx: Render
       return { kind: 'element', tag: 'div', style, attrs };
     }
   }
+}
+
+/** Video / Lottie playback: `loop` ("false" plays once) and `speed` (a rate, 1 = normal). */
+export function playbackAttrs(node: NodeRecord): { loop: string; speed: string } {
+  const speed = Number(node.attrs?.speed);
+  return { loop: node.attrs?.loop === 'false' ? 'false' : 'true', speed: Number.isFinite(speed) && speed > 0 ? String(speed) : '1' };
+}
+
+/** Server route that serves an Embed layer's HTML into its sandboxed frame. */
+export const EMBED_ROUTE = '/__op/embed/';
+
+/** Short content hash, so a frame reloads when its HTML changes (FNV-1a). */
+function contentHash(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+  return (h >>> 0).toString(36);
+}
+
+/** Frame URL of an Embed layer: its page, or its own HTML served by the OpenPaper server. */
+export function embedFrameUrl(fileId: string, node: NodeRecord): string {
+  if (node.html === undefined) return node.src ?? 'about:blank';
+  return `${EMBED_ROUTE}${encodeURIComponent(fileId)}/${encodeURIComponent(node.id)}?v=${contentHash(node.html)}`;
+}
+
+/**
+ * Sandbox of an Embed frame. Its own HTML runs with an opaque origin (scripts, nothing of the
+ * editor's); another site keeps its origin, which is what lets players and widgets work.
+ */
+export function embedSandbox(frameUrl: string, editorOrigin: string): string {
+  try {
+    const url = new URL(frameUrl, editorOrigin);
+    if (url.origin !== editorOrigin && /^https?:$/.test(url.protocol) && !/^(localhost|127\.|\[::1\]|0\.0\.0\.0)/.test(url.hostname)) {
+      return 'allow-scripts allow-same-origin allow-popups allow-forms';
+    }
+  } catch {
+    // fall through
+  }
+  return 'allow-scripts';
 }
 
 /** CSS custom properties for the file's tokens (applied on the canvas root). */

@@ -35,6 +35,7 @@ export function createDocument(opts: { id?: string; name?: string; now?: string 
     pages: { [page.id]: page },
     nodes: { [root.id]: root },
     tokens: [],
+    keyframes: [],
     comments: {},
     counters: { nodes: 0, pages: 1 },
   };
@@ -59,6 +60,7 @@ export function normalizeDocument(raw: unknown): PaperDocument {
   if (doc.schemaVersion !== SCHEMA_VERSION) throw new Error(`Unsupported schemaVersion ${String(doc.schemaVersion)}`);
   if (!doc.id || !doc.nodes || !doc.pages || !Array.isArray(doc.pageList)) throw new Error('Malformed OpenPaper document');
   doc.tokens ??= [];
+  doc.keyframes ??= [];
   doc.comments ??= {};
   doc.counters ??= { nodes: Object.keys(doc.nodes).length, pages: Object.keys(doc.pages).length };
   for (const node of Object.values(doc.nodes)) {

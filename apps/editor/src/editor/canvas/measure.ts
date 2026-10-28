@@ -2,6 +2,7 @@ import type { LayoutMap } from '@openpaper/core';
 import { camera } from '../../state/store.ts';
 import { elementFor, getViewportElement } from './geometry.ts';
 import { suspendLive } from './live.ts';
+import { atRest, settleForCapture } from './motion.ts';
 import { holdFullShaderResolution } from '../shaders/ShaderLayer.tsx';
 
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
@@ -11,11 +12,16 @@ const round = (n: number) => Math.round(n * 100) / 100;
 /**
  * Layout of every rendered node on the current page, in world coordinates. Agent edits that are
  * still playing back don't matter: they only hide (visibility) or animate paint, never layout.
+ * The design's own animations are measured at rest (each layer where its styles put it).
  */
 export function measureRenderedPage(): LayoutMap {
   const viewport = getViewportElement();
   const world = viewport?.querySelector('[data-op-world]') as HTMLElement | null;
   if (!world) return {};
+  return atRest(world, () => measureWorld(world));
+}
+
+function measureWorld(world: HTMLElement): LayoutMap {
   const zoom = camera().zoom || 1;
   const wr = world.getBoundingClientRect();
   const out: LayoutMap = {};
@@ -51,6 +57,9 @@ export async function captureNode(nodeId: string, scale: number): Promise<{ data
   const release = suspendLive();
   // Zoomed out, shaders render below full resolution; the capture is taken at the layer's size.
   const releaseShaders = holdFullShaderResolution();
+  // The settled design, as in headless captures: animations that end at their end, loops at rest.
+  const world = getViewportElement()?.querySelector('[data-op-world]');
+  const releaseMotion = world ? settleForCapture(world) : () => {};
   try {
     const el = elementFor(nodeId) as HTMLElement | null;
     if (!el) throw new Error(`Node "${nodeId}" is not on the page the editor is showing.`);
@@ -66,6 +75,7 @@ export async function captureNode(nodeId: string, scale: number): Promise<{ data
     await img.decode().catch(() => {});
     return { data: dataUrl.slice(dataUrl.indexOf(',') + 1), mimeType: 'image/jpeg', width: img.naturalWidth, height: img.naturalHeight };
   } finally {
+    releaseMotion();
     releaseShaders();
     release();
   }
