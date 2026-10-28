@@ -109,15 +109,29 @@ export interface AgentUsage {
   cacheWriteTokens: number;
 }
 
+/**
+ * What runs the built-in agent: the Anthropic API with a key, or a coding agent the user installed and
+ * signed in to themselves (Claude Code, OpenAI's Codex CLI, Google's Antigravity CLI `agy`).
+ */
+export type AgentRunner = 'api' | 'claude-code' | 'codex' | 'agy';
+
 export interface AgentConfigInfo {
-  /** What runs the agent: the Anthropic API with a key, or the user's own Claude Code install and sign-in. */
-  runner: 'api' | 'claude-code';
+  runner: AgentRunner;
   /** Where the API key comes from (null = not configured). */
   keySource: 'settings' | 'environment' | 'profile' | null;
   /** The local Claude Code install (null = not found). */
   claudeCode: { version: string; loggedIn: boolean; plan: string | null } | null;
+  /** The local Codex CLI (null = not found). `plan` is how it signs in ("ChatGPT", "API key"). */
+  codex: { version: string; loggedIn: boolean; plan: string | null } | null;
+  /**
+   * The local Antigravity CLI (null = not found). `allowed`: its settings let OpenPaper's design tools run
+   * (headless agy refuses MCP tools without an allow rule).
+   */
+  agy: { version: string; allowed: boolean } | null;
+  /** The current runner's model ("" = the runner's own default). */
   model: string;
   effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  /** Models the current runner offers. */
   models: Array<{ id: string; label: string }>;
 }
 

@@ -39,6 +39,7 @@ export function SelectionPrompt({ rects }: { rects: Record<string, Rect | null> 
       shortcut={SHORTCUT}
       open={open}
       hidden={busy}
+      picker
       onOpenChange={(v) => setState({ selectionPrompt: v })}
       onDraftChange={(v) => (hasDraft.current = v)}
       onSend={(text) => sendToAgent(text, { target: { label, nodeIds: targets } })}

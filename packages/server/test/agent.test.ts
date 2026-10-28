@@ -1,11 +1,15 @@
+import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import Anthropic from '@anthropic-ai/sdk';
 import { createSubtree, type AgentEvent, type SiteElementInfo, type SiteInfo } from '@openpaper/core';
 import { AgentService } from '../src/agent/agent.ts';
+import { AGY_RULE, agyStatus, allowAgyDesignTools } from '../src/agent/agy.ts';
 import { claudeCodeStatus } from '../src/agent/claude-code.ts';
+import { codexStatus } from '../src/agent/codex.ts';
 import { AgentSettings } from '../src/agent/settings.ts';
 import { resolvePaths } from '../src/paths.ts';
 import { startServer, type RunningServer } from '../src/server.ts';
@@ -13,6 +17,16 @@ import { ToolRuntime } from '../src/tools/runtime.ts';
 
 let server: RunningServer;
 let home: string;
+
+/** No coding agents installed: info() would otherwise ask the real ones on this machine. */
+const NO_PROBES = {
+  claudeCode: async () => null,
+  codex: async () => null,
+  agy: async () => null,
+  codexModels: async () => [],
+  codexDefault: async () => null,
+  agyModels: async () => [],
+};
 
 beforeAll(async () => {
   home = await mkdtemp(join(tmpdir(), 'openpaper-agent-test-'));
@@ -155,13 +169,13 @@ describe('built-in design agent', () => {
   }
 
   it('asks for a key when none is configured', async () => {
-    const settings = new AgentSettings(join(home, 'empty-config.json'));
+    const settings = new AgentSettings(join(home, 'empty-config.json'), NO_PROBES);
     const configDir = await mkdtemp(join(home, 'anthropic-empty-'));
     expect(await withCredentialEnv(configDir, async () => (await settings.info()).keySource)).toBeNull();
   });
 
   it('recognises an `ant auth login` profile', async () => {
-    const settings = new AgentSettings(join(home, 'empty-config.json'));
+    const settings = new AgentSettings(join(home, 'empty-config.json'), NO_PROBES);
     const configDir = await mkdtemp(join(home, 'anthropic-profile-'));
     await mkdir(join(configDir, 'configs'));
     await writeFile(join(configDir, 'configs', 'default.json'), JSON.stringify({ authentication: { type: 'user_oauth' } }));
@@ -273,7 +287,7 @@ describe('built-in design agent on Claude Code', () => {
   async function claudeCodeChat(name: string, events: AgentEvent[] = []) {
     const doc = await server.env.store.create({ name });
     server.env.hub.adopt(doc);
-    const settings = new AgentSettings(join(home, `cc-${doc.id}.json`), async () => null);
+    const settings = new AgentSettings(join(home, `cc-${doc.id}.json`), NO_PROBES);
     await settings.update({ runner: 'claude-code' });
     const agents = new AgentService({
       runtime: new ToolRuntime(server.env),
@@ -290,7 +304,7 @@ describe('built-in design agent on Claude Code', () => {
   async function siteChat(runner: 'claude-code' | 'api' = 'claude-code') {
     const folder = await mkdtemp(join(home, 'site-project-'));
     const site: SiteInfo = { id: 'site1', name: 'My site', url: 'http://localhost:5173/', folder, createdAt: '', updatedAt: '' };
-    const settings = new AgentSettings(join(folder, '..', `site-${runner}-${Date.now()}.json`), async () => null);
+    const settings = new AgentSettings(join(folder, '..', `site-${runner}-${Date.now()}.json`), NO_PROBES);
     await settings.update({ runner });
     const agents = new AgentService({
       runtime: new ToolRuntime(server.env),
@@ -374,7 +388,7 @@ describe('built-in design agent on Claude Code', () => {
   it('reports the install and sign-in from Claude Code itself', async () => {
     expect(await claudeCodeStatus(command)).toEqual({ version: '9.9.9', loggedIn: true, plan: 'max' });
     expect(await claudeCodeStatus(null)).toBeNull();
-    const settings = new AgentSettings(join(home, 'runner-config.json'), () => claudeCodeStatus(command));
+    const settings = new AgentSettings(join(home, 'runner-config.json'), { ...NO_PROBES, claudeCode: () => claudeCodeStatus(command) });
     expect((await settings.info()).runner).toBe('api');
     await settings.update({ runner: 'claude-code' });
     expect(await settings.info()).toMatchObject({ runner: 'claude-code', claudeCode: { loggedIn: true, plan: 'max' } });
@@ -422,5 +436,285 @@ describe('built-in design agent on Claude Code', () => {
     const last = chat.items.at(-1)!;
     expect(last).toMatchObject({ kind: 'notice', level: 'error' });
     expect(last.kind === 'notice' && last.text).toContain('Claude Code');
+  });
+});
+
+/** Stand-in for the `codex` CLI: logs its args and prompt, then prints scripted `exec --json` events (no network). */
+const FAKE_CODEX = `
+const fs = require('node:fs');
+const [log, ...args] = process.argv.slice(2);
+if (args[0] === '--version') { console.log('codex-cli 0.160.0'); process.exit(0); }
+if (args[0] === 'login') { console.error('Logged in using ChatGPT'); process.exit(0); }
+let prompt = '';
+process.stdin.on('data', (d) => (prompt += d)).on('end', () => {
+  fs.appendFileSync(log, JSON.stringify({ args, prompt, cwd: process.cwd() }) + '\\n');
+  const out = (m) => process.stdout.write(JSON.stringify(m) + '\\n');
+  out({ type: 'thread.started', thread_id: 'thread-1' });
+  out({ type: 'turn.started' });
+  if (prompt.includes('SIGNED_OUT')) {
+    out({ type: 'error', message: 'unexpected status 401 Unauthorized' });
+    out({ type: 'turn.failed', error: { message: 'unexpected status 401 Unauthorized' } });
+    process.exit(1);
+  }
+  out({ type: 'item.completed', item: { id: 'i0', type: 'reasoning', text: 'Planning.' } });
+  out({ type: 'item.completed', item: { id: 'i1', type: 'agent_message', text: 'Placing the image.' } });
+  const call = { id: 'i2', type: 'mcp_tool_call', server: 'openpaper', tool: 'create_artboard', arguments: { name: 'Hero shot' } };
+  out({ type: 'item.started', item: { ...call, result: null, error: null, status: 'in_progress' } });
+  out({ type: 'item.completed', item: { ...call, result: { content: [{ type: 'text', text: 'ok' }] }, error: null, status: 'completed' } });
+  out({ type: 'item.completed', item: { id: 'i3', type: 'agent_message', text: 'Done.' } });
+  out({ type: 'turn.completed', usage: { input_tokens: 100, cached_input_tokens: 60, output_tokens: 7 } });
+});
+`;
+
+/** Stand-in for the `agy` CLI: logs its args, then prints scripted stream-json (no network). */
+const FAKE_AGY = `
+const fs = require('node:fs');
+const [log, ...args] = process.argv.slice(2);
+if (args[0] === '--version') { console.log('1.4.8'); process.exit(0); }
+if (args[0] === 'models') { console.log('Fetching available models...'); console.log('gem-fast-low\\tGem Fast (Low)'); process.exit(0); }
+const prompt = args[args.indexOf('--print') + 1] || '';
+fs.appendFileSync(log, JSON.stringify({ args, prompt, cwd: process.cwd() }) + '\\n');
+const out = (m) => process.stdout.write(JSON.stringify(m) + '\\n');
+const step = (s) => out({ event: 'step_update', step_update: { conversation_id: 'conv-1', ...s } });
+out({ event: 'init', conversation_id: 'conv-1', init: { model: 'gem-fast-low' } });
+step({ step_index: 0, state: 'DONE', step_type: 'user_input' });
+step({ step_index: 1, state: 'ACTIVE', step_type: 'agent_response', text_delta: 'Making ' });
+step({ step_index: 1, state: 'DONE', step_type: 'agent_response', text_delta: 'an image.' });
+const read = { name: 'read_file', parameters: { Path: 'C:/schemas/create_artboard.json' } };
+step({ step_index: 2, state: 'ACTIVE', step_type: 'tool', tool_name: 'read_file', tool_info: read });
+step({ step_index: 2, state: 'DONE', step_type: 'tool', tool_name: 'read_file', tool_info: read });
+const image = { name: 'generate_image', parameters: { ImageName: 'hero', Prompt: 'a hero' } };
+step({ step_index: 3, state: 'ACTIVE', step_type: 'tool', tool_name: 'generate_image', tool_info: image });
+step({ step_index: 3, state: 'DONE', step_type: 'tool', tool_name: 'generate_image', tool_info: image });
+const mcp = { name: 'call_mcp_tool', parameters: { ServerName: 'openpaper_openpaper', ToolName: 'create_artboard', Arguments: { name: 'Hero' } } };
+step({ step_index: 4, state: 'ACTIVE', step_type: 'tool', tool_name: 'call_mcp_tool', tool_info: mcp });
+step({ step_index: 4, state: 'DONE', step_type: 'tool', tool_name: 'call_mcp_tool', tool_info: mcp });
+step({ step_index: 5, state: 'DONE', step_type: 'agent_response', text_delta: 'Done.' });
+const denied = prompt.includes('DENIED') ? [{ action: 'mcp', display_name: 'CallMcpTool' }] : undefined;
+out({ event: 'result', result: { conversation_id: 'conv-1', status: 'SUCCESS', response: 'Done.', usage: { input_tokens: 50, output_tokens: 5, thinking_tokens: 2, cache_read_tokens: 10 }, denied_actions: denied } });
+console.log('jetski: a note that is not JSON');
+`;
+
+describe('built-in design agent on Codex and Antigravity', () => {
+  let dir: string;
+  let codexCommand: string[];
+  let agyCommand: string[];
+  let codexLog: string;
+  let agyLog: string;
+  let agySettings: string;
+  const calls = async (log: string) =>
+    (await readFile(log, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l) as { args: string[]; prompt: string; cwd: string });
+
+  beforeAll(async () => {
+    dir = await mkdtemp(join(home, 'fake-clis-'));
+    codexLog = join(dir, 'codex-calls.jsonl');
+    agyLog = join(dir, 'agy-calls.jsonl');
+    await writeFile(join(dir, 'codex.cjs'), FAKE_CODEX);
+    await writeFile(join(dir, 'agy.cjs'), FAKE_AGY);
+    codexCommand = [process.execPath, join(dir, 'codex.cjs'), codexLog];
+    agyCommand = [process.execPath, join(dir, 'agy.cjs'), agyLog];
+    agySettings = join(dir, 'agy-home', 'settings.json');
+    // Codex reads the user's default model from CODEX_HOME/config.toml.
+    process.env.CODEX_HOME = join(dir, 'codex-home');
+    await mkdir(process.env.CODEX_HOME, { recursive: true });
+    await writeFile(join(process.env.CODEX_HOME, 'config.toml'), 'model = "gpt-test"\n\n[tui]\nmodel = "not-this-one"\n');
+  });
+
+  afterAll(() => {
+    delete process.env.CODEX_HOME;
+  });
+
+  async function cliChat(runner: 'codex' | 'agy', name: string, model?: string) {
+    const doc = await server.env.store.create({ name });
+    server.env.hub.adopt(doc);
+    const settings = new AgentSettings(join(dir, `${runner}-${doc.id}.json`), NO_PROBES);
+    await settings.update({ runner, ...(model ? { model } : {}) });
+    const agents = new AgentService({
+      runtime: new ToolRuntime(server.env),
+      settings,
+      getDoc: (id) => server.env.hub.peek(id)?.doc,
+      viewFor: () => null,
+      emit: () => {},
+      codex: { mcpUrl: 'http://127.0.0.1:1/mcp', dir: join(dir, 'codex-run'), command: codexCommand },
+      agy: { mcpUrl: 'http://127.0.0.1:1/mcp', dir: join(dir, 'agy-run'), command: agyCommand, settingsPath: agySettings },
+    });
+    return agents.chat(doc.id);
+  }
+
+  it('runs a turn on Codex with only the design tools, then resumes its thread', async () => {
+    const chat = await cliChat('codex', 'Codex test');
+    await chat.send('Generate a hero image');
+
+    expect(chat.items.map((i) => i.kind)).toEqual(['user', 'assistant', 'tool', 'assistant']);
+    expect(chat.items[1]).toMatchObject({ kind: 'assistant', text: 'Placing the image.', thinking: 'Planning.' });
+    expect(chat.items[2]).toMatchObject({ kind: 'tool', name: 'create_artboard', status: 'done', summary: 'Created artboard “Hero shot”' });
+    expect(chat.items[3]).toMatchObject({ kind: 'assistant', text: 'Done.' });
+    expect(chat.usage).toEqual({ inputTokens: 40, outputTokens: 7, cacheReadTokens: 60, cacheWriteTokens: 0 });
+
+    const [first] = await calls(codexLog);
+    const args = first!.args;
+    expect(args[0]).toBe('exec');
+    expect(args).toEqual(expect.arrayContaining(['--json', '--skip-git-repo-check', '--ignore-user-config']));
+    expect(args.join(' ')).toContain('--disable shell_tool --disable unified_exec');
+    expect(args).toEqual(expect.arrayContaining(['sandbox_mode="read-only"', 'approval_policy="never"', 'mcp_servers.openpaper.url="http://127.0.0.1:1/mcp"', 'mcp_servers.openpaper.default_tools_approval_mode="approve"', 'model_reasoning_effort="high"']));
+    // The user's own default model, from the top of their config.toml.
+    expect(args[args.indexOf('-m') + 1]).toBe('gpt-test');
+    expect(args.at(-1)).toBe('-');
+    expect(first!.cwd).toBe(join(dir, 'codex-run'));
+    const instructions = await readFile(join(dir, 'codex-run', 'AGENTS.md'), 'utf8');
+    expect(instructions).toContain("You are OpenPaper's built-in design agent");
+    expect(instructions).toContain('image_gen');
+    expect(instructions).toContain('paper-asset:///');
+    expect(first!.prompt).toContain('<context>');
+    expect(first!.prompt).toContain('Generate a hero image');
+
+    await chat.send('Make it warmer');
+    const second = (await calls(codexLog)).at(-1)!.args;
+    expect(second.slice(0, 2)).toEqual(['exec', 'resume']);
+    expect(second.at(-2)).toBe('thread-1');
+  });
+
+  it('passes the Codex model the user picked', async () => {
+    const chat = await cliChat('codex', 'Codex model', 'gpt-picked');
+    await chat.send('Hello');
+    const args = (await calls(codexLog)).at(-1)!.args;
+    expect(args[args.indexOf('-m') + 1]).toBe('gpt-picked');
+  });
+
+  it('asks the user to sign in to Codex', async () => {
+    const chat = await cliChat('codex', 'Codex signed out');
+    await chat.send('SIGNED_OUT');
+    const last = chat.items.at(-1)!;
+    expect(last).toMatchObject({ kind: 'notice', level: 'error' });
+    expect(last.kind === 'notice' && last.text).toContain('codex login');
+    expect(chat.running).toBe(false);
+  });
+
+  it('asks before running Antigravity without its permission', async () => {
+    const chat = await cliChat('agy', 'agy not allowed');
+    await chat.send('Hello');
+    const last = chat.items.at(-1)!;
+    expect(last).toMatchObject({ kind: 'notice', level: 'error' });
+    expect(last.kind === 'notice' && last.text).toContain('Allow');
+    expect(existsSync(agyLog)).toBe(false);
+  });
+
+  it('runs a turn on Antigravity from its own workspace, then resumes the conversation', async () => {
+    await allowAgyDesignTools(agySettings);
+    const chat = await cliChat('agy', 'agy test');
+    await chat.send('Generate a hero image');
+
+    // Reading OpenPaper's tool docs stays out of the chat.
+    expect(chat.items.map((i) => i.kind)).toEqual(['user', 'assistant', 'tool', 'tool', 'assistant']);
+    expect(chat.items[1]).toMatchObject({ kind: 'assistant', text: 'Making an image.' });
+    expect(chat.items[2]).toMatchObject({ kind: 'tool', name: 'generate_image', status: 'done', summary: 'Generated image “hero”' });
+    expect(chat.items[3]).toMatchObject({ kind: 'tool', name: 'create_artboard', status: 'done', summary: 'Created artboard “Hero”' });
+    expect(chat.items[4]).toMatchObject({ kind: 'assistant', text: 'Done.' });
+    expect(chat.usage).toEqual({ inputTokens: 50, outputTokens: 7, cacheReadTokens: 10, cacheWriteTokens: 0 });
+
+    const [first] = await calls(agyLog);
+    const run = join(dir, 'agy-run');
+    expect(first!.cwd).toBe(run);
+    expect(first!.args.slice(0, 2)).toEqual(['--output-format', 'stream-json']);
+    expect(first!.args).not.toContain('--model');
+    expect(first!.args).not.toContain('--conversation');
+    expect(first!.prompt).toContain('<context>');
+    expect(await readFile(join(run, 'AGENTS.md'), 'utf8')).toContain('image-generator');
+    const plugin = join(run, '.agents', 'plugins', 'openpaper');
+    expect(JSON.parse(await readFile(join(plugin, 'mcp_config.json'), 'utf8'))).toEqual({ mcpServers: { openpaper: { url: 'http://127.0.0.1:1/mcp' } } });
+    const hooks = JSON.parse(await readFile(join(plugin, 'hooks.json'), 'utf8'));
+    expect(hooks.openpaper.PreToolUse[0].matcher).toBe('*');
+    expect(hooks.openpaper.Stop).toHaveLength(1);
+    expect(existsSync(join(plugin, 'hook.cjs'))).toBe(true);
+
+    await chat.send('Make it warmer');
+    const second = (await calls(agyLog)).at(-1)!.args;
+    expect(second[second.indexOf('--conversation') + 1]).toBe('conv-1');
+  });
+
+  it('reports a refused design tool on Antigravity', async () => {
+    await allowAgyDesignTools(agySettings);
+    const chat = await cliChat('agy', 'agy denied');
+    await chat.send('DENIED');
+    const last = chat.items.at(-1)!;
+    expect(last).toMatchObject({ kind: 'notice', level: 'error' });
+    expect(last.kind === 'notice' && last.text).toContain("hasn't allowed OpenPaper's design tools");
+  });
+
+  it("only lets OpenPaper's tools through agy's hook, and waits for images", async () => {
+    await allowAgyDesignTools(agySettings);
+    const chat = await cliChat('agy', 'agy gate');
+    await chat.send('Hello');
+    const hook = join(dir, 'agy-run', '.agents', 'plugins', 'openpaper', 'hook.cjs');
+    const schemas = join(dirname(agySettings), 'mcp', 'openpaper_openpaper');
+    const artifacts = join(dir, 'brain', 'conv-1');
+    const run = (payload: unknown) => JSON.parse(spawnSync(process.execPath, [hook], { input: JSON.stringify(payload), encoding: 'utf8' }).stdout) as { decision?: string; reason?: string };
+    const decide = (toolCall: unknown) => run({ toolCall, artifactDirectoryPath: artifacts });
+    expect(decide({ name: 'call_mcp_tool', args: { ServerName: 'openpaper_openpaper', ToolName: 'write_html' } }).decision).toBe('allow');
+    expect(decide({ name: 'call_mcp_tool', args: { ServerName: 'github_github', ToolName: 'create_issue' } }).decision).toBe('deny');
+    expect(decide({ name: 'generate_image', args: { Prompt: 'a cat' } }).decision).toBe('allow');
+    expect(decide({ name: 'run_command', args: { CommandLine: 'echo hi' } }).decision).toBe('deny');
+    expect(decide({ name: 'write_to_file', args: { TargetFile: join(dir, 'x.txt') } }).decision).toBe('deny');
+    expect(decide({ name: 'read_file', args: { Path: join(schemas, 'write_html.json') } }).decision).toBe('allow');
+    expect(decide({ name: 'view_file', args: { AbsolutePath: join(artifacts, 'hero.png') } }).decision).toBe('allow');
+    expect(decide({ name: 'read_file', args: { Path: join(dir, 'agy-home', 'settings.json') } }).decision).toBe('deny');
+    expect(decide({ name: 'read_file', args: { Path: `${schemas}-evil${'/'}x.json` } }).decision).toBe('deny');
+    // agy's main agent makes images through its image subagent, which messages back the file.
+    expect(decide({ name: 'invoke_subagent', args: { TypeName: 'image-generator' } }).decision).toBe('allow');
+    expect(decide({ name: 'invoke_subagent', args: { TypeName: 'browser' } }).decision).toBe('deny');
+    expect(decide({ name: 'wait_5_seconds', args: {} }).decision).toBe('allow');
+    // While the image subagent works, stopping waits for it.
+    expect(run({ fullyIdle: false, terminationReason: 'NO_TOOL_CALL' })).toMatchObject({ decision: 'continue' });
+    expect(run({ fullyIdle: true, terminationReason: 'NO_TOOL_CALL' })).toEqual({});
+  });
+
+  it('adds the agy allow rule once, keeping the rest of its settings', async () => {
+    const path = join(dir, 'allow-test', 'settings.json');
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, JSON.stringify({ model: 'Gemini', permissions: { allow: ['command(ls)'], deny: ['command(rm)'] }, trustedWorkspaces: ['C:/work'] }));
+    await allowAgyDesignTools(path);
+    await allowAgyDesignTools(path);
+    expect(JSON.parse(await readFile(path, 'utf8'))).toEqual({
+      model: 'Gemini',
+      permissions: { allow: ['command(ls)', AGY_RULE], deny: ['command(rm)'] },
+      trustedWorkspaces: ['C:/work'],
+    });
+
+    const fresh = join(dir, 'allow-fresh', 'settings.json');
+    await allowAgyDesignTools(fresh);
+    expect(JSON.parse(await readFile(fresh, 'utf8'))).toEqual({ permissions: { allow: [AGY_RULE] } });
+
+    // A file it can't read is the user's to fix, never overwritten.
+    const broken = join(dir, 'allow-broken', 'settings.json');
+    await mkdir(dirname(broken), { recursive: true });
+    await writeFile(broken, '{ "model": "Gemini", // a comment\n}');
+    await expect(allowAgyDesignTools(broken)).rejects.toThrow(AGY_RULE);
+    expect(await readFile(broken, 'utf8')).toBe('{ "model": "Gemini", // a comment\n}');
+  });
+
+  it('reports Codex and agy installs as they report themselves', async () => {
+    expect(await codexStatus(codexCommand)).toEqual({ version: '0.160.0', loggedIn: true, plan: 'ChatGPT' });
+    expect(await codexStatus(null)).toBeNull();
+    const settingsPath = join(dir, 'status', 'settings.json');
+    expect(await agyStatus(agyCommand, settingsPath)).toEqual({ version: '1.4.8', allowed: false });
+    await allowAgyDesignTools(settingsPath);
+    expect(await agyStatus(agyCommand, settingsPath)).toEqual({ version: '1.4.8', allowed: true });
+  });
+
+  it('keeps a model per runner, with the CLI default as ""', async () => {
+    const settings = new AgentSettings(join(dir, 'models.json'), { ...NO_PROBES, codexModels: async () => [{ id: 'gpt-a', label: 'GPT A' }], codexDefault: async () => 'gpt-a' });
+    await settings.update({ runner: 'codex', model: 'gpt-a' });
+    expect(await settings.resolved()).toMatchObject({ runner: 'codex', model: 'gpt-a' });
+    const info = await settings.info();
+    expect(info.models).toEqual([{ id: '', label: 'Default (gpt-a)' }, { id: 'gpt-a', label: 'GPT A' }]);
+    // A model can't smuggle in a flag.
+    await settings.update({ model: '--dangerously-bypass-approvals-and-sandbox' });
+    expect((await settings.resolved()).model).toBe('');
+    // The Claude model is untouched.
+    await settings.update({ runner: 'claude-code' });
+    expect((await settings.resolved()).model).toBe('claude-opus-5-5');
   });
 });

@@ -1,5 +1,5 @@
 import { flushSync } from 'react-dom';
-import type { AgentChatItem, AgentTarget, AgentUsage, EditorCommand, OpenFileResult, ResourceInfo, ViewState } from '@openpaper/core';
+import type { AgentChatItem, AgentConfigInfo, AgentTarget, AgentUsage, EditorCommand, OpenFileResult, ResourceInfo, ViewState } from '@openpaper/core';
 import { applyServerPatch, getState, setDocument, setState, toast, useEditor } from '../state/store.ts';
 import { applyLive, flushLive, noteAgentReads, planLive } from '../editor/canvas/live.ts';
 import { SyncClient } from './client.ts';
@@ -169,6 +169,37 @@ export function openChat(key: string | null): void {
       setState((s) => ({ agentChat: { ...s.agentChat, items: h.items, running: h.running, usage: h.usage } }));
     })
     .catch(() => {});
+}
+
+/** Ask the server what runs the agent and which coding agents are installed (the dock and the selection prompt share it). */
+export async function loadAgentConfig(): Promise<AgentConfigInfo> {
+  const config = await client.request<AgentConfigInfo>('agent.config.get');
+  setState({ agentConfig: config });
+  return config;
+}
+
+/** Change the agent's runner, model, effort or API key. A runner change shows at once; the server's answer replaces it. */
+export async function setAgentConfig(patch: { runner?: AgentConfigInfo['runner']; model?: string; effort?: AgentConfigInfo['effort']; apiKey?: string | null }): Promise<AgentConfigInfo> {
+  const before = getState().agentConfig;
+  if (before && patch.runner) setState({ agentConfig: { ...before, runner: patch.runner } });
+  try {
+    const config = await client.request<AgentConfigInfo>('agent.config.set', patch);
+    setState({ agentConfig: config });
+    return config;
+  } catch (error) {
+    setState({ agentConfig: before });
+    toast(error instanceof Error ? error.message : String(error));
+    throw error;
+  }
+}
+
+/** Let Antigravity run OpenPaper's design tools (the server adds one allow rule to agy's settings). */
+export async function allowAgy(): Promise<void> {
+  try {
+    setState({ agentConfig: await client.request<AgentConfigInfo>('agent.agy.allow') });
+  } catch (error) {
+    toast(error instanceof Error ? error.message : String(error));
+  }
 }
 
 /** Send a message to the open agent chat. `target` is what the user pointed at; `page` the live-site page. */

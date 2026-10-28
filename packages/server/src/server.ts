@@ -155,6 +155,8 @@ export async function startServer(opts: StartOptions): Promise<RunningServer> {
     getSite: (id) => siteStore.get(id),
     emit: (fileId, event) => views.broadcast(fileId, { t: 'agent', fileId, event }),
     claudeCode: { mcpUrl: `${url}${MCP_PATH}`, dir: join(paths.home, 'claude-code') },
+    codex: { mcpUrl: `${url}${MCP_PATH}`, dir: join(paths.home, 'codex') },
+    agy: { mcpUrl: `${url}${MCP_PATH}`, dir: join(paths.home, 'agy') },
   });
   const speech = new SpeechService({ dir: join(paths.home, 'models'), onStatus: (status) => views.broadcast(null, { t: 'speech', status }) });
   sync = createSyncServer({

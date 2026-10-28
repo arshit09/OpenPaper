@@ -121,7 +121,8 @@ export function summarize(name: string, args: Record<string, any>): string {
     case 'create_artboard':
       return `Created artboard “${args.name}”`;
     case 'update_styles':
-      return `Restyled ${args.updates?.reduce((s: number, u: { nodeIds: string[] }) => s + u.nodeIds.length, 0) ?? 0} layer(s)`;
+      // Runs on the model's input before validation, so any shape can arrive here.
+      return `Restyled ${Array.isArray(args.updates) ? args.updates.reduce((s: number, u: { nodeIds?: unknown }) => s + n(u?.nodeIds), 0) : 0} layer(s)`;
     case 'set_text_content':
       return `Edited text in ${n(args.updates)} layer(s)`;
     case 'update_shader':

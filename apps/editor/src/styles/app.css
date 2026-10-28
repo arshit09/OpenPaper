@@ -1298,6 +1298,121 @@ textarea.op-input {
   outline: 2px solid var(--op-accent);
   outline-offset: 1px;
 }
+/* The button with the chip that picks who answers (ui/RunnerPicker.tsx). */
+.op-point-cluster {
+  position: absolute;
+  z-index: 42;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: auto;
+}
+.op-point-cluster > .op-point-btn {
+  position: static;
+}
+.op-runner-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 20px;
+  padding: 0 5px 0 7px;
+  border-radius: 999px;
+  border: 1px solid var(--op-border-strong);
+  background: var(--op-panel);
+  color: var(--op-text-2);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    border-color var(--op-fast) ease,
+    color var(--op-fast) ease;
+}
+.op-point-cluster > .op-runner-chip {
+  box-shadow: var(--op-shadow);
+  animation: op-point-in 0.16s var(--op-ease-out) both;
+}
+.op-runner-chip:hover,
+.op-runner-chip.open {
+  border-color: var(--op-text-3);
+  color: var(--op-text);
+}
+.op-runner-chip:focus-visible {
+  outline: 2px solid var(--op-accent);
+  outline-offset: 1px;
+}
+.op-point-row > .op-runner-chip {
+  margin-bottom: 5px;
+}
+.op-runner-menu {
+  width: 248px;
+  animation: op-select-in 0.12s var(--op-ease) both;
+}
+.op-runner-head {
+  padding: 4px 8px 6px;
+  color: var(--op-text-3);
+  font-size: 11px;
+}
+.op-runner-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.op-runner-option {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px 0 6px;
+  border: none;
+  border-radius: var(--op-radius-sm);
+  background: transparent;
+  color: var(--op-text);
+  text-align: left;
+  cursor: pointer;
+}
+.op-runner-option:hover:not(:disabled) {
+  background: var(--op-hover);
+}
+.op-runner-option:disabled {
+  color: var(--op-text-3);
+  cursor: default;
+}
+.op-runner-note {
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--op-text-3);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.op-runner-info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  color: var(--op-text-3);
+  vertical-align: middle;
+  cursor: help;
+}
+.op-runner-info:hover,
+.op-runner-info:focus-visible {
+  color: var(--op-text);
+  outline: none;
+  background: var(--op-hover);
+}
+.op-btn.op-runner-allow {
+  height: 22px;
+  padding: 0 8px;
+  border-color: var(--op-border-strong);
+  font-size: 11px;
+}
 .op-point-prompt {
   position: absolute;
   z-index: 42;
@@ -1634,6 +1749,8 @@ textarea.op-input {
   }
   .op-point-btn,
   .op-point-prompt,
+  .op-point-cluster > .op-runner-chip,
+  .op-runner-menu,
   .op-voice-panel {
     animation: none;
   }

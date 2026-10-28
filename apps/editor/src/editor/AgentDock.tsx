@@ -1,10 +1,11 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { Send, Square, ChevronDown, ChevronUp, Settings2, RotateCcw, Check, X, Loader2, Wrench, Crosshair } from 'lucide-react';
+import { Send, Square, ChevronDown, ChevronUp, Settings2, RotateCcw, Check, X, Loader2, Wrench, Crosshair, Info } from 'lucide-react';
 import type { AgentChatItem, AgentConfigInfo, AgentTarget } from '@openpaper/core';
 import { useEditor, setState } from '../state/store.ts';
-import { client, sendToAgent } from '../sync/session.ts';
+import { allowAgy, client, loadAgentConfig, sendToAgent, setAgentConfig } from '../sync/session.ts';
 import { MarkdownView } from '../ui/MarkdownView.tsx';
 import { AgentMark } from '../ui/Logo.tsx';
+import { AGY_NOTE, runnerReady } from '../ui/RunnerPicker.tsx';
 import { Select } from '../ui/Select.tsx';
 import { VoiceButton, type VoiceHandle, type VoicePhase } from '../ui/VoiceButton.tsx';
 import { bindingLabel } from './hotkeys.ts';
@@ -12,6 +13,8 @@ import { MAC } from './shortcuts.ts';
 
 const RUNNERS = [
   { value: 'claude-code', label: 'Claude Code sign-in' },
+  { value: 'codex', label: 'Codex sign-in' },
+  { value: 'agy', label: 'Antigravity (agy)' },
   { value: 'api', label: 'Anthropic API key' },
 ] as const;
 const EFFORTS = (['low', 'medium', 'high', 'xhigh', 'max'] as const).map((e) => ({ value: e, label: `Effort: ${e}` }));
@@ -22,24 +25,104 @@ const KEY_SOURCES: Record<NonNullable<AgentConfigInfo['keySource']>, string> = {
   profile: '`ant auth login` profile',
 };
 
-function claudeCodeLabel(cc: AgentConfigInfo['claudeCode']): string {
-  if (!cc) return 'Claude Code not found';
-  if (!cc.loggedIn) return 'Claude Code is not signed in';
-  return `Claude Code ${cc.version}${cc.plan ? ` · ${cc.plan} plan` : ''}`;
+/** What the selected runner is, or what it still needs. */
+function runnerLabel(config: AgentConfigInfo): string {
+  switch (config.runner) {
+    case 'claude-code': {
+      const cc = config.claudeCode;
+      if (!cc) return 'Claude Code not found';
+      if (!cc.loggedIn) return 'Claude Code is not signed in';
+      return `Claude Code ${cc.version}${cc.plan ? ` · ${cc.plan} plan` : ''}`;
+    }
+    case 'codex': {
+      const cx = config.codex;
+      if (!cx) return 'Codex not found';
+      if (!cx.loggedIn) return 'Codex is not signed in';
+      return `Codex ${cx.version}${cx.plan ? ` · ${cx.plan}` : ''}`;
+    }
+    case 'agy':
+      return !config.agy ? 'Antigravity CLI not found' : `Antigravity ${config.agy.version}${config.agy.allowed ? '' : ' · needs permission'}`;
+    case 'api':
+      return config.keySource ? KEY_SOURCES[config.keySource] : 'No API key';
+  }
 }
 
-/** Choose what runs the agent. `claudeCodeOnly`: a live site, which edits code with Claude Code's file tools. */
-function AgentSetup({ config, claudeCodeOnly, onChange }: { config: AgentConfigInfo; claudeCodeOnly?: boolean; onChange: (info: AgentConfigInfo) => void }) {
-  const [key, setKey] = useState('');
+/** Why agy needs a permission, on hover or focus. */
+const AgyInfo = () => (
+  <span className="op-runner-info" tabIndex={0} title={AGY_NOTE} aria-label={AGY_NOTE}>
+    <Info size={12} />
+  </span>
+);
+
+/** Runs a settings request with the buttons disabled meanwhile (failures are toasted by the request). */
+function useBusy() {
   const [busy, setBusy] = useState(false);
-  const run = async (request: Promise<AgentConfigInfo>) => {
+  const run = async (request: () => Promise<unknown>) => {
     setBusy(true);
     try {
-      onChange(await request);
+      await request();
+    } catch {
+      // Already shown.
     } finally {
       setBusy(false);
     }
   };
+  return [busy, run] as const;
+}
+
+/** Codex or Antigravity picked but not ready: install, sign in, or (agy) allow OpenPaper's design tools. */
+function CliSetup({ config }: { config: AgentConfigInfo }) {
+  const [busy, run] = useBusy();
+  const codex = config.runner === 'codex';
+  const status = codex ? config.codex : config.agy;
+  return (
+    <div style={{ padding: '12px 12px 4px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ fontWeight: 600 }}>{codex ? 'Design with Codex' : 'Design with Antigravity'}</div>
+      <div className="op-label" style={{ lineHeight: 1.5 }}>
+        Runs your own {codex ? 'Codex CLI with your ChatGPT sign-in' : 'Antigravity CLI (agy) with your Google sign-in'}. It works through OpenPaper's
+        design tools on the canvas, and makes images with its own image generator.
+      </div>
+      <div className="op-row" style={{ gap: 8 }}>
+        <div className="op-label" style={{ flex: 1, lineHeight: 1.5 }}>
+          {!status ? (
+            codex ? (
+              <>
+                Install the Codex CLI from <b>developers.openai.com/codex</b>, then run <code>codex login</code>.
+              </>
+            ) : (
+              <>
+                Install the Antigravity CLI from <b>antigravity.google</b> and sign in.
+              </>
+            )
+          ) : codex ? (
+            <>
+              Codex is installed but not signed in. Run <code>codex login</code> in a terminal.
+            </>
+          ) : (
+            <>
+              agy needs a one-time permission: Allow adds <code>mcp(openpaper_openpaper/*)</code> to <code>~/.gemini/antigravity-cli/settings.json</code>.{' '}
+              <AgyInfo />
+            </>
+          )}
+        </div>
+        {!codex && config.agy && !config.agy.allowed ? (
+          <button className="op-btn primary" disabled={busy} onClick={() => void run(allowAgy)}>
+            Allow
+          </button>
+        ) : (
+          <button className="op-btn" disabled={busy} onClick={() => void run(loadAgentConfig)}>
+            Check again
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Choose what runs the agent. `claudeCodeOnly`: a live site, which edits code with Claude Code's file tools. */
+function AgentSetup({ config, claudeCodeOnly }: { config: AgentConfigInfo; claudeCodeOnly?: boolean }) {
+  const [key, setKey] = useState('');
+  const [busy, run] = useBusy();
   const cc = config.claudeCode;
   return (
     <div style={{ padding: '12px 12px 4px', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -49,8 +132,8 @@ function AgentSetup({ config, claudeCodeOnly, onChange }: { config: AgentConfigI
           <>Live sites run on Claude Code with your own Claude sign-in: it edits the code in your project folder. An Anthropic API key can't do that.</>
         ) : (
           <>
-            Run the built-in design agent on Claude Code with your own Claude sign-in, or with an Anthropic API key. Prefer to chat from Claude
-            Code, Cursor or another agent? Use <b>Connect agent</b> instead.
+            Run the built-in design agent on Claude Code with your own Claude sign-in, or with an Anthropic API key. Codex and Antigravity work too:
+            pick them in the settings. Prefer to chat from Claude Code, Cursor or another agent? Use <b>Connect agent</b> instead.
           </>
         )}
       </div>
@@ -71,11 +154,11 @@ function AgentSetup({ config, claudeCodeOnly, onChange }: { config: AgentConfigI
           )}
         </div>
         {cc?.loggedIn ? (
-          <button className="op-btn primary" disabled={busy} onClick={() => void run(client.request<AgentConfigInfo>('agent.config.set', { runner: 'claude-code' }))}>
+          <button className="op-btn primary" disabled={busy} onClick={() => void run(() => setAgentConfig({ runner: 'claude-code' }))}>
             Use Claude Code
           </button>
         ) : (
-          <button className="op-btn" disabled={busy} onClick={() => void run(client.request<AgentConfigInfo>('agent.config.get'))}>
+          <button className="op-btn" disabled={busy} onClick={() => void run(loadAgentConfig)}>
             Check again
           </button>
         )}
@@ -91,7 +174,7 @@ function AgentSetup({ config, claudeCodeOnly, onChange }: { config: AgentConfigI
             onSubmit={(e) => {
               e.preventDefault();
               if (!key.trim()) return;
-              void run(client.request<AgentConfigInfo>('agent.config.set', { apiKey: key.trim(), runner: 'api' }));
+              void run(() => setAgentConfig({ apiKey: key.trim(), runner: 'api' }));
             }}
           >
             <input className="op-input" type="password" placeholder="sk-ant-…" value={key} onChange={(e) => setKey(e.target.value)} autoComplete="off" />
@@ -191,7 +274,7 @@ export function AgentDock({
   const chat = useEditor((s) => s.agentChat);
   const [text, setText] = useState('');
   const [voice, setVoice] = useState<VoicePhase>('idle');
-  const [config, setConfig] = useState<AgentConfigInfo | null>(null);
+  const config = useEditor((s) => s.agentConfig);
   const [showSettings, setShowSettings] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -202,7 +285,7 @@ export function AgentDock({
   const open = chat.open;
 
   useEffect(() => {
-    client.request<AgentConfigInfo>('agent.config.get').then(setConfig).catch(() => {});
+    loadAgentConfig().catch(() => {});
   }, []);
 
   // Grow the prompt with its content (up to the CSS max-height, then scroll).
@@ -222,9 +305,8 @@ export function AgentDock({
   const key = chat.key;
   if (!key) return null;
   const setOpen = (v: boolean) => setState((s) => ({ agentChat: { ...s.agentChat, open: v } }));
-  const needsSetup =
-    config !== null &&
-    (claudeCodeOnly ? config.runner !== 'claude-code' || !config.claudeCode?.loggedIn : config.runner === 'api' ? config.keySource === null : !config.claudeCode?.loggedIn);
+  const needsSetup = config !== null && (claudeCodeOnly ? config.runner !== 'claude-code' || !config.claudeCode?.loggedIn : !runnerReady(config));
+  const cliRunner = config?.runner === 'codex' || config?.runner === 'agy';
 
   const listening = voice === 'recording' || voice === 'transcribing';
 
@@ -285,33 +367,40 @@ export function AgentDock({
                 title="What runs the agent"
                 value={config.runner}
                 options={RUNNERS}
-                onChange={async (runner) => setConfig(await client.request<AgentConfigInfo>('agent.config.set', { runner }))}
+                onChange={(runner) => void setAgentConfig({ runner }).catch(() => {})}
               />
               <Select
                 style={{ width: 'auto' }}
                 title="Model"
                 value={config.model}
                 options={config.models.map((m) => ({ value: m.id, label: m.label }))}
-                onChange={async (model) => setConfig(await client.request<AgentConfigInfo>('agent.config.set', { model }))}
+                onChange={(model) => void setAgentConfig({ model }).catch(() => {})}
               />
-              <Select
-                style={{ width: 'auto' }}
-                title="Effort"
-                value={config.effort}
-                options={EFFORTS}
-                onChange={async (effort) => setConfig(await client.request<AgentConfigInfo>('agent.config.set', { effort }))}
-              />
-              <span className="op-label">
-                {config.runner === 'claude-code' ? claudeCodeLabel(config.claudeCode) : config.keySource ? KEY_SOURCES[config.keySource] : 'No API key'}
-              </span>
+              {/* agy's model ids carry their own effort. */}
+              {config.runner !== 'agy' && (
+                <Select
+                  style={{ width: 'auto' }}
+                  title="Effort"
+                  value={config.effort}
+                  options={EFFORTS}
+                  onChange={(effort) => void setAgentConfig({ effort }).catch(() => {})}
+                />
+              )}
+              <span className="op-label">{runnerLabel(config)}</span>
+              {config.runner === 'agy' && <AgyInfo />}
+              {config.runner === 'agy' && config.agy && !config.agy.allowed && (
+                <button className="op-btn" onClick={() => void allowAgy()}>
+                  Allow
+                </button>
+              )}
               {config.keySource === 'settings' && (
-                <button className="op-btn" style={{ marginLeft: 'auto' }} onClick={async () => setConfig(await client.request<AgentConfigInfo>('agent.config.set', { apiKey: null }))}>
+                <button className="op-btn" style={{ marginLeft: 'auto' }} onClick={() => void setAgentConfig({ apiKey: null }).catch(() => {})}>
                   Remove key
                 </button>
               )}
             </div>
           )}
-          {needsSetup && config && <AgentSetup config={config} claudeCodeOnly={claudeCodeOnly} onChange={setConfig} />}
+          {needsSetup && config && (cliRunner && !claudeCodeOnly ? <CliSetup config={config} /> : <AgentSetup config={config} claudeCodeOnly={claudeCodeOnly} />)}
           {(!needsSetup || chat.items.length > 0) && (
             <div ref={listRef} className="op-scroll" style={{ maxHeight: 'min(46vh, 420px)', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
               {!chat.items.length && (
@@ -319,7 +408,8 @@ export function AgentDock({
                   {emptyHint ?? (
                     <>
                       Ask for a design and watch it appear on the canvas. Try: <i>“Design a sign-up screen for a meditation app”</i>, or select a
-                      layer and use the agent button beside it ({bindingLabel('Mod+K', MAC)}) to change just that.
+                      layer and use the agent button beside it ({bindingLabel('Mod+K', MAC)}) to change just that. The chip next to that button picks
+                      who answers: Claude Code, Codex or Antigravity, which can also generate images.
                     </>
                   )}
                 </div>

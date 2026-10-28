@@ -232,9 +232,13 @@ export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings
         await agentSettings.update({
           ...(params?.runner ? { runner: String(params.runner) as Runner } : {}),
           ...(params?.apiKey !== undefined ? { apiKey: params.apiKey as string | null } : {}),
-          ...(params?.model ? { model: String(params.model) } : {}),
+          // "" picks the runner's own default model (Codex, agy).
+          ...(typeof params?.model === 'string' ? { model: params.model } : {}),
           ...(params?.effort ? { effort: String(params.effort) as Effort } : {}),
         });
+        return agentSettings.info();
+      case 'agent.agy.allow':
+        await agentSettings.allowAgy();
         return agentSettings.info();
       case 'figma.config.get':
         return figmaSettings?.info() ?? { tokenSource: null };

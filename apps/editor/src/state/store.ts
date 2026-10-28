@@ -3,6 +3,7 @@ import {
   applyPatch,
   type ActivityEntry,
   type AgentChatItem,
+  type AgentConfigInfo,
   type AgentPresence,
   type AgentUsage,
   type NodeRecord,
@@ -61,6 +62,8 @@ export interface EditorState {
   pendingComment: { nodeId: string | null; world: { x: number; y: number } } | null;
   /** Built-in agent chat for the open file or live site (`key`: file id, or `site:<id>`). */
   agentChat: { key: string | null; items: AgentChatItem[]; running: boolean; usage: AgentUsage | null; open: boolean };
+  /** What runs the built-in agent and what's installed (null until first asked). */
+  agentConfig: AgentConfigInfo | null;
   /** The ask-the-agent prompt beside the canvas selection is expanded (Mod+K or its button). */
   selectionPrompt: boolean;
   /** Local speech-to-text engine (null until first asked). */
@@ -104,6 +107,7 @@ export const useEditor = create<EditorState>(() => ({
   agentOpened: null,
   pendingComment: null,
   agentChat: { key: null, items: [], running: false, usage: null, open: false },
+  agentConfig: null,
   selectionPrompt: false,
   speech: null,
   showShaders: false,

@@ -3,6 +3,7 @@ import { ArrowUp, Loader2, MessageSquare, Square, X } from 'lucide-react';
 import { setState, useEditor } from '../state/store.ts';
 import { client } from '../sync/session.ts';
 import { AgentMark } from './Logo.tsx';
+import { RUNNER_NAMES, RunnerPicker } from './RunnerPicker.tsx';
 import { VoiceButton, type VoiceHandle, type VoicePhase } from './VoiceButton.tsx';
 
 export interface PromptRect {
@@ -41,6 +42,7 @@ function place(rect: PromptRect, bounds: { width: number; height: number }, w: n
 /**
  * Ask the agent about exactly the thing the user pointed at: a button with the agent mark beside it that
  * opens a small prompt (type or speak). After sending it shows the agent's progress and reply in place.
+ * With `picker`, a tiny chip beside the button (and in the prompt) picks who answers: Claude Code, Codex or agy.
  */
 export function PointPrompt({
   rect,
@@ -50,6 +52,7 @@ export function PointPrompt({
   open,
   focusKey,
   hidden,
+  picker,
   onOpenChange,
   onDraftChange,
   onSend,
@@ -67,17 +70,21 @@ export function PointPrompt({
   focusKey?: unknown;
   /** Hidden for now (mid-drag) but kept, with its draft and progress. */
   hidden?: boolean;
+  /** Show the chip that picks which coding agent answers. */
+  picker?: boolean;
   onOpenChange: (open: boolean) => void;
   /** Whether there's unsent text (the owner keeps the prompt open across target changes then). */
   onDraftChange?: (hasDraft: boolean) => void;
   onSend: (text: string) => Promise<void>;
 }) {
   const chat = useEditor((s) => s.agentChat);
+  const runner = useEditor((s) => s.agentConfig?.runner);
   const [text, setText] = useState('');
   const [voice, setVoice] = useState<VoicePhase>('idle');
   /** Index into the chat where this prompt's last message starts (its progress and reply follow it). */
   const [sentAt, setSentAt] = useState<number | null>(null);
-  const [height, setHeight] = useState(BUTTON);
+  /** Measured size: the button (and chip) while closed, the prompt while open. */
+  const [size, setSize] = useState({ width: BUTTON, height: BUTTON });
   const root = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const voiceRef = useRef<VoiceHandle>(null);
@@ -97,7 +104,8 @@ export function PointPrompt({
       el.style.height = 'auto';
       el.style.height = `${el.scrollHeight}px`;
     }
-    setHeight(root.current?.offsetHeight ?? BUTTON);
+    const next = { width: root.current?.offsetWidth ?? BUTTON, height: root.current?.offsetHeight ?? BUTTON };
+    setSize((s) => (s.width === next.width && s.height === next.height ? s : next));
   });
 
   const mine = sentAt !== null ? chat.items.slice(sentAt) : [];
@@ -135,29 +143,44 @@ export function PointPrompt({
     }
   };
 
-  const pos = place(rect, bounds, open ? WIDTH : BUTTON, open ? height : BUTTON);
+  const pos = place(rect, bounds, open ? WIDTH : size.width, open ? size.height : BUTTON);
+  /** Who answers, when the user can pick. */
+  const who = picker && runner ? RUNNER_NAMES[runner].short : null;
   const shortLabel = label.length > 28 ? `${label.slice(0, 27)}…` : label;
   // Layer names get quotes; labels that quote their own text ("“Get started” link") don't.
   const named = /[“"<]/.test(shortLabel) ? shortLabel : `“${shortLabel}”`;
 
   if (!open) {
-    return (
+    const button = (
       <button
         data-op-overlay-ui
         className={`op-point-btn${working ? ' working' : ''}`}
-        style={{ left: pos.left, top: pos.top, ...(hidden ? HIDDEN : {}) }}
-        title={`Ask the agent to change ${label}${shortcut ? ` (${shortcut})` : ''}`}
-        aria-label={`Ask the agent to change ${label}`}
+        style={picker ? undefined : { left: pos.left, top: pos.top, ...(hidden ? HIDDEN : {}) }}
+        title={`Ask ${who ?? 'the agent'} ${who ? 'about' : 'to change'} ${label}${shortcut ? ` (${shortcut})` : ''}`}
+        aria-label={`Ask ${who ?? 'the agent'} ${who ? 'about' : 'to change'} ${label}`}
         onPointerDown={(e) => e.stopPropagation()}
         onClick={() => onOpenChange(true)}
       >
         {working ? <Loader2 size={15} className="op-spin" /> : <AgentMark size={16} />}
       </button>
     );
+    if (!picker) return button;
+    return (
+      <div
+        ref={root}
+        data-op-overlay-ui
+        className="op-point-cluster"
+        style={{ left: pos.left, top: pos.top, ...(hidden ? HIDDEN : {}) }}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        {button}
+        <RunnerPicker />
+      </div>
+    );
   }
 
   const placeholder =
-    voice === 'recording' ? 'Listening… click the mic to stop' : voice === 'transcribing' ? 'Transcribing…' : chat.running && !working ? 'The agent is busy…' : `Ask AI to change ${named}…`;
+    voice === 'recording' ? 'Listening… click the mic to stop' : voice === 'transcribing' ? 'Transcribing…' : chat.running && !working ? 'The agent is busy…' : who ? `Ask ${who} about ${named}…` : `Ask AI to change ${named}…`;
   return (
     <div
       ref={root}
@@ -190,6 +213,7 @@ export function PointPrompt({
             }
           }}
         />
+        {picker && <RunnerPicker />}
         <VoiceButton
           ref={voiceRef}
           onPhase={setVoice}
