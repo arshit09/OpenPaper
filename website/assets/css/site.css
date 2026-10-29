@@ -310,7 +310,14 @@ em.s {
     transform 0.15s var(--ease),
     background-color 0.15s ease,
     border-color 0.15s ease,
-    opacity 0.15s ease;
+    opacity 0.15s ease,
+    --peel 0.4s var(--ease);
+}
+.btn:hover {
+  --peel: 20px;
+}
+.btn-sm:hover {
+  --peel: 16px;
 }
 .btn:active {
   transform: translateY(1px);
@@ -2441,11 +2448,11 @@ a:hover .link-arrow .i {
 .pillar .ill {
   transition:
     border-color 0.2s ease,
-    translate 0.3s var(--ease);
+    --peel 0.4s var(--ease);
 }
 .pillar:hover .ill {
   border-color: var(--line-2);
-  translate: 0 -3px;
+  --peel: 40px;
 }
 .start {
   display: grid;
@@ -2497,11 +2504,11 @@ a:hover .link-arrow .i {
   text-decoration: none;
   transition:
     border-color 0.15s ease,
-    translate 0.25s var(--ease);
+    --peel 0.4s var(--ease);
 }
 .topic:hover {
   border-color: var(--text-3);
-  translate: 0 -2px;
+  --peel: 28px;
 }
 .topic .icon-chip {
   width: 48px;
@@ -2816,12 +2823,12 @@ a:hover .link-arrow .i {
 .xcard .ill-icon {
   transition:
     border-color 0.2s ease,
-    translate 0.3s var(--ease);
+    --peel 0.4s var(--ease);
 }
 .xcard:hover .ill,
 .xcard:hover .ill-icon {
   border-color: var(--line-2);
-  translate: 0 -3px;
+  --peel: 40px;
 }
 .xcard:hover h3 .i {
   translate: 3px 0;
@@ -2840,6 +2847,55 @@ a:hover .link-arrow .i {
   width: 44px;
   height: 44px;
   stroke-width: 1.5;
+}
+/* ---------- Corner peel ---------- */
+/* Hovered cards and buttons peel back their top-right corner like the logo's sheet: the corner is cut on a
+   45° fold and its grey back lies on the card. Each sets --peel (the fold's length on each edge) on hover. */
+@property --peel {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+.btn,
+.pillar .ill,
+.xcard .ill,
+.xcard .ill-icon,
+.topic {
+  position: relative;
+  /* Keeps the flap and its shadow inside the rounded corner while the fold is still small. */
+  overflow: clip;
+  /* Drawn 6px outside the box so focus rings aren't clipped. */
+  clip-path: polygon(
+    -6px -6px,
+    calc(100% - var(--peel) - 6px) -6px,
+    calc(100% + 6px) calc(var(--peel) + 6px),
+    calc(100% + 6px) calc(100% + 6px),
+    -6px calc(100% + 6px)
+  );
+}
+.btn::after,
+.pillar .ill::after,
+.xcard .ill::after,
+.xcard .ill-icon::after,
+.topic::after {
+  content: '';
+  position: absolute;
+  z-index: 10;
+  /* The flap's tip (this box's bottom-left corner) sits --peel in from each edge. The box reaches 24px
+     past the corner so its rounding never shrinks to fit while the fold is small; the card's clip-path
+     trims it at the fold and the card's overflow clip at its edges. */
+  top: -24px;
+  right: -24px;
+  width: calc(var(--peel) + 24px);
+  height: calc(var(--peel) + 24px);
+  /* The cut corner's edges and rounding, folded over: the card's outline carries on around the flap. */
+  border-style: solid;
+  border-width: 0 0 1px 1px;
+  border-color: inherit;
+  border-bottom-left-radius: inherit;
+  background: var(--fold);
+  filter: drop-shadow(-1px 2px 2px rgba(0, 0, 0, 0.18));
+  pointer-events: none;
 }
 /* ---------- Pager + closing band ---------- */
 .pager {
