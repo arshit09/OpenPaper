@@ -1292,19 +1292,40 @@ em.s {
   font-size: 13.5px;
   font-weight: 500;
 }
+/* The names scroll left in one line. The track holds the list twice, so sliding it by half lands on the
+   copy and the loop has no seam; each list ends in the same gap that sits between its names. */
+.strip-marquee {
+  --strip-gap: 40px;
+  margin-top: 24px;
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+}
+.strip-track {
+  display: flex;
+  width: max-content;
+  animation: strip-scroll 45s linear infinite;
+}
+.strip-marquee:hover .strip-track {
+  animation-play-state: paused;
+}
+@keyframes strip-scroll {
+  to {
+    transform: translateX(-50%);
+  }
+}
 .strip-list {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 14px 40px;
-  max-width: 940px;
-  margin: 24px auto 0;
+  flex-shrink: 0;
+  gap: var(--strip-gap);
+  padding-right: var(--strip-gap);
 }
 .strip-list li {
   color: var(--text-2);
   font-size: 18px;
   font-weight: 600;
   letter-spacing: -0.03em;
+  white-space: nowrap;
   opacity: 0.8;
 }
 /* ---------- Sections ---------- */
@@ -2262,6 +2283,26 @@ details[open] .plus::after {
   .m-cursor {
     display: none;
   }
+  /* Without motion the names sit still, wrapped and centred, and the loop's copy goes away. */
+  .strip-marquee {
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
+  .strip-track {
+    width: auto;
+    animation: none;
+  }
+  .strip-list {
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 14px;
+    max-width: 940px;
+    margin: 0 auto;
+    padding-right: 0;
+  }
+  .strip-list[aria-hidden='true'] {
+    display: none;
+  }
 }
 /* ---------- Responsive ---------- */
 @media (max-width: 1080px) {
@@ -2353,8 +2394,8 @@ details[open] .plus::after {
   .kcap span {
     font-size: 11px;
   }
-  .strip-list {
-    gap: 10px 24px;
+  .strip-marquee {
+    --strip-gap: 28px;
   }
   .strip-list li {
     font-size: 16px;
