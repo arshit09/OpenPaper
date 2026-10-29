@@ -44,35 +44,6 @@
   --ease: cubic-bezier(0.2, 0, 0, 1);
   color-scheme: light;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --bg: #111111;
-    --bg-2: #191919;
-    --bg-3: #222222;
-    --line: #262626;
-    --line-2: #363636;
-    --text: #f2f2f2;
-    --text-2: #a8a8a8;
-    --text-3: #8c8c8c;
-    --solid: #ffffff;
-    --solid-text: #111111;
-    --bevel: inset 0 4px 4px -2px rgba(255, 255, 255, 0.6), inset 0 -4px 4px -2px rgba(0, 0, 0, 0.18);
-    --float: 0 24px 64px -24px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.04);
-    --nav-bg: rgba(17, 17, 17, 0.8);
-    --grid-dot: rgba(255, 255, 255, 0.07);
-    --m-panel: #222222;
-    --m-panel-2: #2a2a2a;
-    --m-canvas: #282828;
-    --m-border: #333333;
-    --m-text: #ededed;
-    --m-text-2: #b0b0b0;
-    --m-text-3: #7d7d7d;
-    --m-active: #383838;
-    --m-agent: #ffffff;
-    --m-agent-text: #111111;
-    color-scheme: dark;
-  }
-}
 :root[data-theme='dark'] {
   --bg: #111111;
   --bg-2: #191919;
@@ -441,14 +412,6 @@ em.s {
 }
 :root[data-theme='dark'] .theme-toggle .i-moon {
   display: none;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) .theme-toggle .i-sun {
-    display: block;
-  }
-  :root:not([data-theme='light']) .theme-toggle .i-moon {
-    display: none;
-  }
 }
 .menu-toggle {
   display: none;

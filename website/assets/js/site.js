@@ -2,14 +2,17 @@
 (() => {
   const root = document.documentElement;
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
-  const darkScheme = matchMedia('(prefers-color-scheme: dark)');
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   /* ---------- Theme ---------- */
+  // Light unless the visitor picked dark with the toggle; the system setting is ignored.
   const themeBtn = document.querySelector('.theme-toggle');
-  const currentTheme = () => root.dataset.theme || (darkScheme.matches ? 'dark' : 'light');
+  const themeColor = document.querySelector('meta[name="theme-color"]');
+  const currentTheme = () => (root.dataset.theme === 'dark' ? 'dark' : 'light');
   const labelTheme = () => {
-    themeBtn?.setAttribute('aria-label', currentTheme() === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
+    const dark = currentTheme() === 'dark';
+    themeBtn?.setAttribute('aria-label', dark ? 'Switch to light theme' : 'Switch to dark theme');
+    themeColor?.setAttribute('content', dark ? '#111111' : '#ffffff');
   };
   themeBtn?.addEventListener('click', () => {
     const next = currentTheme() === 'dark' ? 'light' : 'dark';
@@ -17,10 +20,6 @@
     try {
       localStorage.setItem('op-site-theme', next);
     } catch {}
-    labelTheme();
-    window.dispatchEvent(new Event('op-theme'));
-  });
-  darkScheme.addEventListener('change', () => {
     labelTheme();
     window.dispatchEvent(new Event('op-theme'));
   });
