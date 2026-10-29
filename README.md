@@ -51,6 +51,21 @@ It speaks the same MCP tool set as [Paper](https://paper.design) — all 37 tool
 
 ## Quick start
 
+### Windows: the desktop app
+
+Download **[OpenPaper-Setup.exe](https://github.com/arshit09/OpenPaper/releases/latest/download/OpenPaper-Setup.exe)** (4 MB) and run it. It
+downloads OpenPaper (50 MB), installs it for your account with no admin prompt, and adds it to the Start menu and your desktop. Node.js comes
+with it, and the app runs in its own window.
+
+- **Connect agent** in the app sets up Claude Code, Cursor and the others in one click.
+- Closing the window keeps OpenPaper running in the tray for your agents; **Quit OpenPaper** in the tray stops it.
+- To update, run the installer again. To uninstall, open Settings → Apps → OpenPaper (your designs stay unless you choose to delete them).
+- The installer isn't code-signed yet: if Windows shows "Windows protected your PC", click **More info**, then **Run anyway**.
+
+Windows 10 or 11, 64-bit. How the app and installer are built: [apps/desktop](apps/desktop/README.md).
+
+### macOS and Linux (or Windows from source)
+
 Requirements: **Node.js 20.19+** (22 recommended) and, for screenshots/exports, any Chromium browser (Chrome, Edge, Brave or Chromium — Edge ships with Windows).
 
 ```bash
@@ -268,6 +283,7 @@ packages/server   `openpaper` CLI: local server, file storage, live sync (WebSoc
                   Tailwind worker, image generation, built-in Claude agent,
                   agent-harness installers
 apps/editor       React canvas editor (served by the server)
+apps/desktop      Windows app and web installer (Rust + Tauri), and the release packager
 ```
 
 The server owns every document. Editors and agents send commands; each change becomes a patch broadcast to every open editor, so you see agents work in real time. Agent edits run as their own actor and join the undo timeline, so `Ctrl+Z` reaches them. Rendering rules live in `core`, so headless screenshots, exports and the canvas are identical. See [docs/architecture.md](docs/architecture.md).
@@ -285,6 +301,7 @@ npm run dev          # server with live reload (expects the editor on :5173)
 npm run dev:editor   # Vite dev server for the editor
 npm test             # unit + MCP integration tests (vitest)
 npm run typecheck
+npm run package:windows   # Windows app, installer and release files (needs Rust; see apps/desktop)
 ```
 
 ## Compatibility with Paper

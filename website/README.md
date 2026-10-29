@@ -24,8 +24,9 @@ The details live on topic pages, reached from `explore.html`.
 | `shortcuts.html` | Every shortcut, searchable, with a Windows/macOS toggle |
 | `agents.html` | Built-in agent, connecting agents, live presence, screenshots, prompts |
 | `mcp.html` | Transports, every MCP tool, Paper compatibility |
-| `install.html` | Requirements, steps, the `openpaper` CLI, environment variables, development |
+| `install.html` | The Windows app download, running from source on macOS and Linux, the `openpaper` CLI, environment variables, development |
 | `privacy.html` | The data folder, localhost only, what goes online and when |
+| `terms.html` | Terms of Use (the same text the Windows installer shows) |
 | `faq.html` | Common questions |
 
 ## Files

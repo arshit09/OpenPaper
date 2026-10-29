@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
     <title>Install · OpenPaper</title>
-    <meta name="description" content="Install OpenPaper in a few minutes: requirements, clone and build, start the editor, connect an agent, CLI commands and environment variables." />
+    <meta name="description" content="Install OpenPaper: the Windows app, or run it from source on macOS and Linux. Requirements, connecting an agent, CLI commands and environment variables." />
     <meta property="og:title" content="Install · OpenPaper" />
-    <meta property="og:description" content="Install OpenPaper in a few minutes: requirements, clone and build, start the editor, connect an agent, CLI commands and environment variables." />
+    <meta property="og:description" content="Install OpenPaper: the Windows app, or run it from source on macOS and Linux. Requirements, connecting an agent, CLI commands and environment variables." />
     <meta property="og:image" content="assets/brand/openpaper-app-icon-1024.png" />
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)" />
@@ -179,7 +179,7 @@
           <div>
             <nav class="crumbs reveal" aria-label="Breadcrumb"><a href="explore.html">Explore</a><svg class="i"><use href="#i-chevron-right" /></svg>Install</nav>
             <h1 class="h1 reveal">Up and running <em class="s">in minutes.</em></h1>
-            <p class="lede reveal">Three commands and the editor opens in your browser. Everything runs on your machine.</p>
+            <p class="lede reveal">Download the app on Windows, or run three commands on macOS and Linux. Everything runs on your machine.</p>
           </div>
           <div class="ill ill-install reveal" aria-hidden="true">
             <div class="it-term">
@@ -198,7 +198,58 @@
       <section class="block">
         <div class="wrap">
           <div class="block-head reveal">
-            <h2 class="h3">What you need.</h2>
+            <h2 class="h3">Pick your platform.</h2>
+          </div>
+          <div class="platforms reveal">
+            <article class="platform">
+              <span class="icon-chip"><svg class="i"><use href="#i-monitor" /></svg></span>
+              <h3>Windows 10 and 11</h3>
+              <p>
+                The desktop app. A 4 MB installer downloads OpenPaper (50 MB), installs it for your account with no admin prompt, and adds it to the
+                Start menu and your desktop. Node.js comes with it.
+              </p>
+              <div class="platform-actions">
+                <a class="btn btn-solid" href="https://github.com/arshit09/OpenPaper/releases/latest/download/OpenPaper-Setup.exe"><svg class="i"><use href="#i-download" /></svg>Download for Windows</a>
+                <span class="platform-note">64-bit · <a href="https://github.com/arshit09/OpenPaper/releases">All releases</a></span>
+              </div>
+            </article>
+            <article class="platform">
+              <span class="icon-chip"><svg class="i"><use href="#i-terminal" /></svg></span>
+              <h3>macOS and Linux</h3>
+              <p>
+                Run it from source: clone, build and start with Node.js 20.19+. The editor opens in your browser, with everything the Windows app has.
+                Works on Windows too, if you'd rather build it yourself.
+              </p>
+              <div class="platform-actions">
+                <a class="btn btn-ghost" href="#source">Steps below <svg class="i"><use href="#i-arrow-right" /></svg></a>
+              </div>
+            </article>
+          </div>
+          <p class="callout reveal">
+            <svg class="i"><use href="#i-shield-check" /></svg><span><b>"Windows protected your PC"?</b> The installer isn't code-signed yet, so Windows SmartScreen may stop it the first time. Click <b>More info</b>, then <b>Run anyway</b>. It downloads OpenPaper from this project's GitHub releases and checks the file's SHA-256 before installing.</span>
+          </p>
+        </div>
+      </section>
+
+      <section class="block block-alt">
+        <div class="wrap">
+          <div class="block-head reveal">
+            <h2 class="h3">Using the Windows app.</h2>
+          </div>
+          <div class="facts reveal">
+            <div class="fact"><span class="icon-chip"><svg class="i"><use href="#i-plug" /></svg></span><h4>Connect your agent</h4><p>Click <b>Connect agent</b> in the app to set up Claude Code, Cursor and others in one click.</p></div>
+            <div class="fact"><span class="icon-chip"><svg class="i"><use href="#i-layers" /></svg></span><h4>Lives in the tray</h4><p>Closing the window keeps OpenPaper running for your agents. Quit from the tray icon.</p></div>
+            <div class="fact"><span class="icon-chip"><svg class="i"><use href="#i-download" /></svg></span><h4>Update</h4><p>Run the installer again. It updates in place and keeps your designs.</p></div>
+            <div class="fact"><span class="icon-chip"><svg class="i"><use href="#i-x" /></svg></span><h4>Uninstall</h4><p>Settings, then Apps, then OpenPaper. Your designs stay unless you choose to delete them.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="block" id="source">
+        <div class="wrap">
+          <div class="block-head reveal">
+            <h2 class="h3">From source.</h2>
+            <p>On macOS and Linux, or on Windows if you prefer. Here's what you need.</p>
           </div>
           <div class="facts reveal">
             <div class="fact"><span class="icon-chip"><svg class="i"><use href="#i-cpu" /></svg></span><h4>Node.js 20.19+</h4><p>22 recommended.</p></div>
@@ -248,7 +299,7 @@ openpaper install claude-code</code></pre>
               <p>Or click <b>Connect agent</b> in the editor. <a href="agents.html#connect">All agents</a></p>
             </li>
           </ol>
-          <p class="callout reveal"><svg class="i"><use href="#i-monitor" /></svg><span><b>On Windows?</b> Double-click <code>OpenPaper.bat</code> in the repository. It installs dependencies, builds when sources change, and starts the editor.</span></p>
+          <p class="callout reveal"><svg class="i"><use href="#i-monitor" /></svg><span><b>Building on Windows?</b> Double-click <code>OpenPaper.bat</code> in the repository. It installs dependencies, builds when sources change, and starts the editor.</span></p>
         </div>
       </section>
 
@@ -369,6 +420,7 @@ openpaper install claude-code</code></pre>
           <h3>Start</h3>
           <a href="install.html">Install</a>
           <a href="privacy.html">Privacy &amp; data</a>
+          <a href="terms.html">Terms of Use</a>
           <a href="faq.html">FAQ</a>
           <a href="explore.html">Explore all</a>
         </nav>

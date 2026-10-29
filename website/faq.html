@@ -250,7 +250,25 @@
             </details>
             <details>
               <summary>Which platforms does it run on?<span class="plus" aria-hidden="true"></span></summary>
-              <p>Anywhere Node.js 20.19+ runs: macOS, Windows and Linux. The editor opens in your browser, and screenshots use Chrome, Edge, Brave or Chromium.</p>
+              <p>
+                On Windows 10 and 11, install the desktop app: it brings everything it needs. On macOS and Linux, run it from source with Node.js 20.19+, and
+                the editor opens in your browser. Screenshots and exports use Chrome, Edge, Brave or Chromium. See <a href="install.html">Install</a>.
+              </p>
+            </details>
+            <details>
+              <summary>Windows says "Windows protected your PC". Is the installer safe?<span class="plus" aria-hidden="true"></span></summary>
+              <p>
+                The installer isn't code-signed yet, so Windows SmartScreen doesn't recognize it. Click <b>More info</b>, then <b>Run anyway</b>. It downloads
+                OpenPaper from this project's <a href="https://github.com/arshit09/OpenPaper/releases">GitHub releases</a> and checks the file's SHA-256
+                before installing.
+              </p>
+            </details>
+            <details>
+              <summary>How do I update or uninstall the Windows app?<span class="plus" aria-hidden="true"></span></summary>
+              <p>
+                To update, run the installer again; it replaces the app and keeps your designs. To uninstall, open Settings, then Apps, then OpenPaper. Your
+                designs in <code>%USERPROFILE%\.openpaper</code> stay unless you tick the box to delete them too.
+              </p>
             </details>
             <details>
               <summary>Screenshots or exports don't work. What now?<span class="plus" aria-hidden="true"></span></summary>
@@ -303,6 +321,7 @@
           <h3>Start</h3>
           <a href="install.html">Install</a>
           <a href="privacy.html">Privacy &amp; data</a>
+          <a href="terms.html">Terms of Use</a>
           <a href="faq.html">FAQ</a>
           <a href="explore.html">Explore all</a>
         </nav>
