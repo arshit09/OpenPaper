@@ -1,12 +1,14 @@
 // Bundle the OpenPaper server + CLI (with @openpaper/core inlined) and ship the built editor next to it.
 import { build } from 'esbuild';
 import { cp, mkdir, readFile, rm, stat } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
-const dist = join(root, 'dist');
+// `--outdir <dir>` builds elsewhere (the desktop packager does), leaving a running server's dist/ alone.
+const outArg = process.argv.indexOf('--outdir');
+const dist = outArg > 0 && process.argv[outArg + 1] ? resolve(process.argv[outArg + 1]) : join(root, 'dist');
 
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });

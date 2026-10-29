@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="color-scheme" content="light dark" />
+    <title>OpenPaper</title>
+    <link rel="stylesheet" href="splash.css" />
+  </head>
+  <body>
+    <main class="splash">
+      <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
+        <path class="front" d="M25.01 1.19A30.86 30.86 0 1 0 62.81 38.99Z" />
+        <path class="fold" d="M25.01 1.19A30.86 30.86 0 0 0 62.81 38.99Z" />
+      </svg>
+      <div class="loading" aria-label="Starting OpenPaper"><span></span></div>
+      <section class="error" hidden>
+        <h1>OpenPaper couldn't <em>start.</em></h1>
+        <p class="message"></p>
+        <button class="btn" type="button" id="retry">Try again</button>
+      </section>
+    </main>
+    <script src="splash.js"></script>
+  </body>
+</html>

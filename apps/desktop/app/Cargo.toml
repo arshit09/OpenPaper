@@ -1,0 +1,30 @@
+[package]
+name = "openpaper-app"
+description = "OpenPaper"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "openpaper"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { workspace = true }
+
+[dependencies]
+openpaper-common = { workspace = true }
+tauri = { workspace = true, features = ["tray-icon"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-window-state = "2"
+tauri-plugin-opener = "2"
+serde_json = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.39"
+windows-core = "0.62"
+
+[features]
+# Serve ui/ from the binary (what `tauri build` turns on); `cargo build` gets it by default.
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

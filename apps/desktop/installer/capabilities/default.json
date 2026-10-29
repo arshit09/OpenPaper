@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The setup window's own title bar: drag, minimize and close.",
+  "windows": ["setup"],
+  "permissions": ["core:default", "core:window:allow-start-dragging", "core:window:allow-minimize", "core:window:allow-close"]
+}

@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="color-scheme" content="light dark" />
+    <title>OpenPaper Setup</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <!-- lucide (ISC), the set the website and editor use -->
+      <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14" /></symbol>
+      <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></symbol>
+      <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /></symbol>
+      <symbol id="i-monitor" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="3" rx="2" /><line x1="8" x2="16" y1="21" y2="21" /><line x1="12" x2="12" y1="17" y2="21" /></symbol>
+      <symbol id="i-hard-drive" viewBox="0 0 24 24"><path d="M10 16h.01" /><path d="M2.212 11.577a2 2 0 0 0-.212.896V18a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-5.527a2 2 0 0 0-.212-.896L18.55 5.11A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /><path d="M21.946 12.013H2.054" /><path d="M6 16h.01" /></symbol>
+      <symbol id="i-bot" viewBox="0 0 24 24"><path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13v2" /><path d="M9 13v2" /></symbol>
+      <symbol id="i-github" viewBox="0 0 16 16"><path fill="currentColor" stroke="none" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z" /></symbol>
+      <symbol id="i-mark" viewBox="0 0 64 64"><path class="front" d="M25.01 1.19A30.86 30.86 0 1 0 62.81 38.99Z" /><path class="fold" d="M25.01 1.19A30.86 30.86 0 0 0 62.81 38.99Z" /></symbol>
+    </svg>
+
+    <header class="titlebar" data-tauri-drag-region>
+      <div class="brand" data-tauri-drag-region>
+        <svg class="mark" data-tauri-drag-region><use href="#i-mark" /></svg>
+        <span data-tauri-drag-region>OpenPaper Setup</span>
+      </div>
+      <div class="controls">
+        <button class="ctl" type="button" id="minimize" aria-label="Minimize"><svg class="i"><use href="#i-minus" /></svg></button>
+        <button class="ctl" type="button" id="close" aria-label="Close"><svg class="i"><use href="#i-x" /></svg></button>
+      </div>
+    </header>
+
+    <div class="layout">
+      <main class="content">
+        <!-- Install -->
+        <section class="view" data-view="install" hidden>
+          <p class="eyebrow"><span class="dot"></span><span id="release-line">Checking for the latest version…</span></p>
+          <h1>The design canvas your agents <em>draw on.</em></h1>
+          <p class="lede">Open source. Real HTML and CSS. Any AI agent designs with you, live.</p>
+
+          <div class="card">
+            <div class="row">
+              <span class="chip"><svg class="i"><use href="#i-folder" /></svg></span>
+              <div class="row-text">
+                <span class="label">Install location</span>
+                <span class="path" id="dir"></span>
+              </div>
+              <button class="btn btn-ghost btn-sm" type="button" id="change">Change</button>
+            </div>
+            <label class="row check">
+              <input type="checkbox" id="desktop" checked />
+              <span>Add a shortcut to the desktop</span>
+            </label>
+          </div>
+
+          <label class="check consent">
+            <input type="checkbox" id="agree" />
+            <span>I agree to the <a href="#" data-legal="terms">Terms of Use</a> and <a href="#" data-legal="privacy">Privacy Policy</a>.</span>
+          </label>
+
+          <footer class="actions">
+            <span class="meta" id="size-line"></span>
+            <button class="btn btn-solid" type="button" id="install" disabled>Install</button>
+          </footer>
+        </section>
+
+        <!-- Installing / removing -->
+        <section class="view" data-view="progress" hidden>
+          <p class="eyebrow"><span class="dot live"></span><span id="progress-eyebrow"></span></p>
+          <h1 id="progress-title"></h1>
+          <ol class="steps" id="steps"></ol>
+          <div class="bar" aria-hidden="true"><span id="bar"></span></div>
+          <footer class="actions">
+            <span class="meta" id="progress-meta"></span>
+            <button class="btn btn-ghost" type="button" id="cancel">Cancel</button>
+          </footer>
+        </section>
+
+        <!-- Installed -->
+        <section class="view" data-view="done" hidden>
+          <p class="eyebrow"><span class="dot ok"></span><span id="done-eyebrow">Installed</span></p>
+          <h1>You're all <em>set.</em></h1>
+          <p class="lede" id="done-lede"></p>
+          <div class="card">
+            <div class="row">
+              <span class="chip"><svg class="i"><use href="#i-folder" /></svg></span>
+              <div class="row-text">
+                <span class="label">Installed to</span>
+                <span class="path" id="done-dir"></span>
+              </div>
+            </div>
+            <div class="row">
+              <span class="chip"><svg class="i"><use href="#i-hard-drive" /></svg></span>
+              <div class="row-text">
+                <span class="label">Your designs are saved in</span>
+                <span class="path" id="done-data"></span>
+              </div>
+            </div>
+          </div>
+          <footer class="actions">
+            <button class="btn btn-ghost" type="button" data-action="close">Close</button>
+            <button class="btn btn-solid" type="button" id="launch">Open OpenPaper</button>
+          </footer>
+        </section>
+
+        <!-- Uninstall -->
+        <section class="view" data-view="uninstall" hidden>
+          <p class="eyebrow"><span class="dot"></span><span id="uninstall-eyebrow">OpenPaper</span></p>
+          <h1>Uninstall <em>OpenPaper?</em></h1>
+          <p class="lede">This removes OpenPaper from this PC. Your designs stay in your data folder unless you delete them too.</p>
+          <div class="card">
+            <label class="row check">
+              <input type="checkbox" id="remove-data" />
+              <span class="row-text">
+                <span>Also delete my designs and settings</span>
+                <span class="path" id="data-dir"></span>
+              </span>
+            </label>
+          </div>
+          <footer class="actions">
+            <button class="btn btn-ghost" type="button" data-action="close">Cancel</button>
+            <button class="btn btn-solid" type="button" id="uninstall">Uninstall</button>
+          </footer>
+        </section>
+
+        <!-- Uninstalled -->
+        <section class="view" data-view="removed" hidden>
+          <p class="eyebrow"><span class="dot ok"></span><span>Uninstalled</span></p>
+          <h1>OpenPaper was <em>removed.</em></h1>
+          <p class="lede" id="removed-lede"></p>
+          <footer class="actions">
+            <span></span>
+            <button class="btn btn-solid" type="button" data-action="close">Close</button>
+          </footer>
+        </section>
+
+        <!-- Error -->
+        <section class="view" data-view="error" hidden>
+          <p class="eyebrow"><span class="dot bad"></span><span>Setup stopped</span></p>
+          <h1>Something went <em>wrong.</em></h1>
+          <p class="error-text" id="error-text"></p>
+          <footer class="actions">
+            <button class="btn btn-ghost" type="button" data-action="close">Close</button>
+            <button class="btn btn-solid" type="button" id="retry">Try again</button>
+          </footer>
+        </section>
+      </main>
+
+      <aside class="aside" aria-hidden="true">
+        <div class="tile">
+          <svg viewBox="0 0 64 64"><path fill="#fff" d="M25.01 1.19A30.86 30.86 0 1 0 62.81 38.99Z" /><path fill="#8c8c8c" d="M25.01 1.19A30.86 30.86 0 0 0 62.81 38.99Z" /></svg>
+          <span class="badge"><svg class="i"><use href="#i-check" /></svg></span>
+        </div>
+        <ul class="points">
+          <li>
+            <span class="chip"><svg class="i"><use href="#i-hard-drive" /></svg></span>
+            <span><strong>Runs on your PC</strong>Designs stay in a folder you own.</span>
+          </li>
+          <li>
+            <span class="chip"><svg class="i"><use href="#i-bot" /></svg></span>
+            <span><strong>Works with your agents</strong>Claude Code, Cursor, Codex and more.</span>
+          </li>
+          <li>
+            <span class="chip"><svg class="i"><use href="#i-github" /></svg></span>
+            <span><strong>Free and open source</strong>MIT licensed, no account needed.</span>
+          </li>
+        </ul>
+      </aside>
+    </div>
+
+    <!-- Terms and privacy -->
+    <div class="sheet-backdrop" id="legal" hidden>
+      <div class="sheet" role="dialog" aria-modal="true" aria-label="Terms of Use and Privacy Policy">
+        <div class="tabs" role="tablist">
+          <button type="button" role="tab" data-tab="terms">Terms of Use</button>
+          <button type="button" role="tab" data-tab="privacy">Privacy Policy</button>
+        </div>
+        <div class="sheet-body" id="legal-body"></div>
+        <footer class="sheet-actions">
+          <span class="meta">Last updated October 29, 2026</span>
+          <button class="btn btn-solid btn-sm" type="button" id="legal-done">Done</button>
+        </footer>
+      </div>
+    </div>
+
+    <template id="terms">
+      <h2>Terms of Use</h2>
+      <p>OpenPaper is free, open-source software. By installing it you agree to these terms.</p>
+      <h3>1. The license</h3>
+      <p>OpenPaper is released under the <a href="https://github.com/arshit09/OpenPaper/blob/main/LICENSE" target="_blank">MIT License</a>. You may use, copy, change and share it under that license.</p>
+      <h3>2. No warranty</h3>
+      <p>OpenPaper is provided "as is", without warranty of any kind. To the extent the law allows, its authors aren't liable for any claim, damage or loss that comes from using it. Keep backups of work that matters to you.</p>
+      <h3>3. Your work is yours</h3>
+      <p>You own the designs you make. They are saved as files on your computer, and the authors of OpenPaper never receive them.</p>
+      <h3>4. Services you connect</h3>
+      <p>Some features use services you choose to connect, such as Anthropic, OpenAI, Google, Figma or Hugging Face. Their own terms apply when you use them, and any charges from them are yours.</p>
+      <h3>5. Using it responsibly</h3>
+      <p>Only use fonts, images and other content you have the right to use, and don't use OpenPaper to break the law or infringe anyone's rights.</p>
+      <h3>6. An independent project</h3>
+      <p>OpenPaper isn't affiliated with or endorsed by Paper, Figma, Anthropic, OpenAI or Google. Their names are trademarks of their owners and are used only to describe compatibility.</p>
+      <h3>7. Downloads and changes</h3>
+      <p>This installer downloads OpenPaper from the project's <a href="https://github.com/arshit09/OpenPaper/releases" target="_blank">GitHub releases</a>. These terms may change in later versions; each version comes with the terms that apply to it.</p>
+    </template>
+
+    <template id="privacy">
+      <h2>Privacy Policy</h2>
+      <p>Your files, your machine. OpenPaper has no accounts, no cloud sync, and no analytics or telemetry.</p>
+      <h3>What stays on your computer</h3>
+      <p>Designs, images and settings live in one folder you control, <code>%USERPROFILE%\.openpaper</code>, and exports go to <code>Downloads\OpenPaper</code>. The local server only listens on 127.0.0.1 and refuses requests from other websites. API keys you add are stored in <code>config.json</code>, readable only by you, and never sent to the editor.</p>
+      <h3>What goes online, and when</h3>
+      <ul>
+        <li><strong>Google Fonts</strong>, for the Google fonts your designs use.</li>
+        <li><strong>Anthropic</strong>, when you use the built-in design agent, with your key or your own Claude Code sign-in.</li>
+        <li><strong>OpenAI or Gemini</strong>, when an agent generates an image with your key.</li>
+        <li><strong>Figma</strong>, when you paste from Figma with a token set, to fetch its images.</li>
+        <li><strong>Hugging Face</strong>, once, when you turn on voice input, to download the speech model. Your speech is transcribed on your computer.</li>
+        <li><strong>Image hosts</strong>, when a design uses an image by its web address; it's downloaded once into your media folder.</li>
+        <li><strong>Your live sites</strong>, through a local proxy, when you open one.</li>
+      </ul>
+      <h3>Agents</h3>
+      <p>External agents such as Claude Code talk to OpenPaper on your machine. What they send to their own model provider is governed by that agent and its provider.</p>
+      <h3>This installer</h3>
+      <p>It downloads OpenPaper from GitHub, which sees your IP address as with any download (<a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement" target="_blank">GitHub's privacy statement</a> applies). It sends nothing else anywhere.</p>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,36 @@
+[package]
+name = "openpaper-setup"
+description = "OpenPaper Setup"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "openpaper-setup"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { workspace = true }
+
+[dependencies]
+openpaper-common = { workspace = true }
+tauri = { workspace = true }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["native-tls"] }
+sha2 = "0.10"
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+mslnk = "0.1"
+winreg = "0.56"
+dirs = "6"
+
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.39"
+windows-core = "0.62"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

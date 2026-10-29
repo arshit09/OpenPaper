@@ -1,0 +1,158 @@
+/* The splash shown while the local server starts. Website palette: Ink, Fold, Paper. */
+@font-face {
+  font-family: 'Inter';
+  font-weight: 400 700;
+  font-display: block;
+  src: url(fonts/inter-latin.woff2) format('woff2');
+}
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: italic;
+  font-display: block;
+  src: url(fonts/instrument-serif-italic-latin.woff2) format('woff2');
+}
+:root {
+  --bg: #ffffff;
+  --text: #111111;
+  --text-2: #5c5c5c;
+  --track: #eeeeee;
+  --fold: #8c8c8c;
+  --solid: #111111;
+  --solid-text: #ffffff;
+  --bevel: inset 0 4px 4px -2px rgba(255, 255, 255, 0.22), inset 0 -4px 4px -2px rgba(0, 0, 0, 0.35);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111111;
+    --text: #f2f2f2;
+    --text-2: #a8a8a8;
+    --track: #222222;
+    --solid: #ffffff;
+    --solid-text: #111111;
+    --bevel: inset 0 4px 4px -2px rgba(255, 255, 255, 0.6), inset 0 -4px 4px -2px rgba(0, 0, 0, 0.18);
+    color-scheme: dark;
+  }
+}
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+.splash {
+  height: 100%;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 28px;
+  text-align: center;
+}
+.mark {
+  width: 56px;
+  height: 56px;
+}
+.mark .front {
+  fill: var(--text);
+}
+.mark .fold {
+  fill: var(--fold);
+}
+.loading {
+  position: relative;
+  width: 120px;
+  height: 3px;
+  border-radius: 99px;
+  background: var(--track);
+  overflow: hidden;
+  opacity: 0;
+  animation: appear 0.3s 0.5s ease forwards;
+}
+.loading span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  border-radius: inherit;
+  background: var(--text);
+  animation: slide 1.1s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+@keyframes appear {
+  to {
+    opacity: 1;
+  }
+}
+@keyframes slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+.failed .loading {
+  display: none;
+}
+.error {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  max-width: 440px;
+}
+.error[hidden] {
+  display: none;
+}
+h1 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.1;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+}
+h1 em {
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-style: italic;
+  font-weight: 400;
+  font-size: 1.1em;
+  letter-spacing: -0.02em;
+  color: var(--fold);
+}
+.message {
+  margin: 0 0 6px;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.55;
+  user-select: text;
+  overflow-wrap: anywhere;
+}
+.btn {
+  height: 40px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--solid);
+  color: var(--solid-text);
+  box-shadow: var(--bevel);
+  font: 500 14px/1 'Inter', 'Segoe UI', sans-serif;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+}
+.btn:hover {
+  opacity: 0.88;
+}
+.btn:active {
+  transform: translateY(1px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading span {
+    animation: none;
+    width: 100%;
+    opacity: 0.4;
+  }
+}

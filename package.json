@@ -15,6 +15,7 @@
     "dev:editor": "npm run dev --workspace @openpaper/editor",
     "build": "npm run build --workspace @openpaper/editor && npm run build --workspace openpaper",
     "start": "node packages/server/dist/cli.js start",
+    "package:windows": "node apps/desktop/scripts/package.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p packages/core && tsc -p packages/server && tsc -p apps/editor"
