@@ -26,6 +26,8 @@
         if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
       } catch {}
       document.documentElement.classList.add('js');
+      // Windows visitors get the app download where others see "Get started".
+      if (/Windows/.test(navigator.userAgentData?.platform || navigator.userAgent)) document.documentElement.classList.add('os-windows');
     </script>
   </head>
   <body data-nav="home">
@@ -158,7 +160,8 @@
           <a class="icon-btn hide-sm" href="https://github.com/arshit09/OpenPaper" aria-label="OpenPaper on GitHub">
             <svg class="i"><use href="#i-github" /></svg>
           </a>
-          <a class="btn btn-solid btn-sm" href="install.html">Get started</a>
+          <a class="btn btn-solid btn-sm os-other-only" href="install.html">Get started</a>
+          <a class="btn btn-solid btn-sm os-windows-only" href="https://github.com/arshit09/OpenPaper/releases/latest/download/OpenPaper-Setup.exe"><svg class="i"><use href="#i-download" /></svg>Download</a>
           <button class="icon-btn menu-toggle" type="button" aria-expanded="false" aria-controls="mobile-menu" aria-label="Open menu">
             <span class="burger" aria-hidden="true"><i></i><i></i></span>
           </button>
@@ -181,7 +184,8 @@
           <h1 class="display reveal">The design canvas your agents <em class="s">draw on.</em></h1>
           <p class="lede reveal">Open source. Real HTML and CSS. Any AI agent designs with you, live.</p>
           <div class="cta-row reveal">
-            <a class="btn btn-solid" href="install.html">Get started</a>
+            <a class="btn btn-solid os-other-only" href="install.html">Get started</a>
+            <a class="btn btn-solid os-windows-only" href="https://github.com/arshit09/OpenPaper/releases/latest/download/OpenPaper-Setup.exe"><svg class="i"><use href="#i-download" /></svg>Download for Windows</a>
             <a class="btn btn-ghost" href="explore.html">Explore features <svg class="i"><use href="#i-arrow-right" /></svg></a>
           </div>
           <ul class="meta-row reveal" aria-label="Highlights">
@@ -438,8 +442,10 @@
             <h2 class="h2">Up and running in <em class="s">minutes.</em></h2>
             <p class="body">On Windows, download the app. On macOS and Linux, run three commands with Node.js 20.19+ and any Chromium browser.</p>
             <div class="start-links">
-              <a class="btn btn-solid" href="https://github.com/arshit09/OpenPaper/releases/latest/download/OpenPaper-Setup.exe"><svg class="i"><use href="#i-download" /></svg>Download for Windows</a>
-              <a class="btn btn-ghost" href="install.html">Install guide</a>
+              <a class="btn btn-solid os-windows-only" href="https://github.com/arshit09/OpenPaper/releases/latest/download/OpenPaper-Setup.exe"><svg class="i"><use href="#i-download" /></svg>Download for Windows</a>
+              <a class="btn btn-ghost os-windows-only" href="install.html">Install guide</a>
+              <a class="btn btn-solid os-other-only" href="install.html">Get started</a>
+              <a class="btn btn-ghost os-other-only" href="agents.html#connect">Connect an agent</a>
             </div>
           </div>
           <div class="term reveal">

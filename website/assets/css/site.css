@@ -338,6 +338,22 @@ em.s {
   background: var(--bg-2);
   border-color: var(--text-3);
 }
+/* Buttons by platform: each page's head script marks Windows visitors with html.os-windows. */
+.os-windows-only {
+  display: none;
+}
+.os-windows .os-windows-only {
+  display: inline-flex;
+}
+.os-windows .os-other-only {
+  display: none;
+}
+@media (max-width: 640px) {
+  /* Room for the menu button: the header's Download goes text-only on phones. */
+  .nav-actions .os-windows-only .i {
+    display: none;
+  }
+}
 .icon-btn {
   display: inline-grid;
   place-items: center;
