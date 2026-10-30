@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { getState, replayAnimations, setAnimationsPaused, setState, type EditorState, type Tool } from '../state/store.ts';
-import { redo, undo } from '../sync/session.ts';
+import { redo, refuseReadOnly, undo } from '../sync/session.ts';
 import { isTyping, zoomStep, zoomTo, zoomToFit } from './canvas/Canvas.tsx';
 import { cancelGesture, endZoomMode, gestureKind, refreshGesture, resetModes, setModes, setSpaceHeld, startKeyPan } from './canvas/interactions.ts';
 import { isMacPlatform, matchBinding, type Modifier } from './hotkeys.ts';
@@ -49,6 +49,10 @@ const arrow = (e: KeyboardEvent, step: number) => ({
 });
 const DIGITS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
 const up = (e: KeyboardEvent) => (e.code === 'Period' ? 1 : -1);
+
+/** Tool, edit and arrange shortcuts that only look, copy or move the view: they still work on an older version. */
+const READ_ONLY_SAFE = new Set(['tool-move', 'tool-hand', 'copy', 'copy-styles', 'copy-png', 'copy-tailwind', 'copy-react', 'copy-link', 'export', 'save']);
+const changesDesign = (sc: Shortcut) => (sc.group === 'Tools' || sc.group === 'Edit' || sc.group === 'Arrange' || sc.group === 'Text') && !READ_ONLY_SAFE.has(sc.id);
 
 /** Codes of keys currently down (arrow panning reads them). */
 const pressed = new Set<string>();
@@ -361,6 +365,11 @@ export function useShortcuts() {
         if (!sc.run || !sc.keys || (dialog && !sc.global)) continue;
         if (!sc.keys.some((k) => matchBinding(k, e, MAC, sc.tolerate))) continue;
         if (sc.when && !sc.when(s)) continue;
+        if (s.preview && changesDesign(sc)) {
+          e.preventDefault();
+          refuseReadOnly();
+          return;
+        }
         if (e.repeat && !sc.repeat) {
           if (!sc.native) e.preventDefault();
           return;

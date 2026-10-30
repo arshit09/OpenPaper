@@ -18,6 +18,7 @@ import {
   Keyboard,
   CirclePause,
   CirclePlay,
+  GitBranch,
 } from 'lucide-react';
 import { useEditor, setAnimationsPaused, setState, type Tool } from '../state/store.ts';
 import { command, redo, undo } from '../sync/session.ts';
@@ -46,6 +47,10 @@ export function TopBar() {
   const zoom = useEditor((s) => (s.pageId && s.cameras[s.pageId]?.zoom) || 1);
   const connection = useEditor((s) => s.connection);
   const paused = useEditor((s) => s.animationsPaused);
+  // An older version on screen can be looked through, not changed.
+  const readOnly = useEditor((s) => !!s.preview);
+  const vcs = useEditor((s) => (s.vcs?.tracked ? s.vcs : null));
+  const vcsChanges = vcs?.changes?.length ?? 0;
   const [editingName, setEditingName] = useState(false);
   const imageInput = useRef<HTMLInputElement>(null);
 
@@ -72,8 +77,19 @@ export function TopBar() {
             }}
           />
         ) : (
-          <button className="op-btn op-filename" onDoubleClick={() => setEditingName(true)} title={`${doc.name}\nDouble-click to rename`}>
+          <button className="op-btn op-filename" onDoubleClick={() => !readOnly && setEditingName(true)} title={readOnly ? doc.name : `${doc.name}\nDouble-click to rename`}>
             <span>{doc.name}</span>
+          </button>
+        )}
+        {vcs && (
+          <button
+            className="op-btn op-branch-chip"
+            title={`On branch ${vcs.branch ?? '(no branch)'}${vcsChanges ? `, ${vcsChanges} change${vcsChanges === 1 ? '' : 's'} not committed` : ''}\nOpen version control`}
+            onClick={() => setState({ rightTab: 'version', panelsCollapsed: false })}
+          >
+            <GitBranch size={13} />
+            <span>{vcs.branch ?? 'detached'}</span>
+            {vcsChanges > 0 && <span className="op-branch-dot" aria-label="Changes not committed" />}
           </button>
         )}
         {connection !== 'open' && (
@@ -89,16 +105,17 @@ export function TopBar() {
             key={t.id}
             className={`op-icon-btn${tool === t.id ? ' active' : ''}`}
             title={`${t.label} (${t.key})`}
+            disabled={readOnly && t.id !== 'select' && t.id !== 'hand'}
             onClick={() => setState({ tool: t.id })}
           >
             <t.icon size={16} />
           </button>
         ))}
-        <button className={`op-icon-btn${showShaders ? ' active' : ''}`} title="Shaders (S)" onClick={() => setState({ showShaders: !showShaders })}>
+        <button className={`op-icon-btn${showShaders ? ' active' : ''}`} title="Shaders (S)" disabled={readOnly} onClick={() => setState({ showShaders: !showShaders })}>
           <Blend size={16} />
         </button>
         {/* A button, not a <label> around the input: labels can't take keyboard focus. */}
-        <button className="op-icon-btn" title={`Image (${bindingLabel('Mod+Shift+K', MAC)})`} onClick={() => imageInput.current?.click()}>
+        <button className="op-icon-btn" title={`Image (${bindingLabel('Mod+Shift+K', MAC)})`} disabled={readOnly} onClick={() => imageInput.current?.click()}>
           <ImagePlus size={16} />
         </button>
         <input
@@ -134,10 +151,10 @@ export function TopBar() {
             )}
           </div>
         )}
-        <button className="op-icon-btn op-topbar-optional" title={`Undo (${bindingLabel('Mod+Z', MAC)})`} onClick={() => void undo()}>
+        <button className="op-icon-btn op-topbar-optional" title={`Undo (${bindingLabel('Mod+Z', MAC)})`} disabled={readOnly} onClick={() => void undo()}>
           <Undo2 size={16} />
         </button>
-        <button className="op-icon-btn op-topbar-optional" title={`Redo (${bindingLabel('Mod+Shift+Z', MAC)})`} onClick={() => void redo()}>
+        <button className="op-icon-btn op-topbar-optional" title={`Redo (${bindingLabel('Mod+Shift+Z', MAC)})`} disabled={readOnly} onClick={() => void redo()}>
           <Redo2 size={16} />
         </button>
         <button className="op-btn op-topbar-optional" title={`Zoom (${bindingLabel('Shift+1', MAC)} fit, ${bindingLabel('Shift+0', MAC)} 100%)`} onClick={() => zoomToFit()} onContextMenu={(e) => (e.preventDefault(), zoomBy(1))}>
@@ -151,7 +168,7 @@ export function TopBar() {
         >
           {paused ? <CirclePlay size={16} /> : <CirclePause size={16} />}
         </button>
-        <button className="op-icon-btn" title="Export" onClick={() => setState({ showExport: true })}>
+        <button className="op-icon-btn" title={readOnly ? 'Export works on the current version: go back to it first' : 'Export'} disabled={readOnly} onClick={() => setState({ showExport: true })}>
           <Download size={16} />
         </button>
         <button className="op-icon-btn op-topbar-optional" title={`Keyboard shortcuts (${bindingLabel('Mod+/', MAC)})`} onClick={() => setState({ showShortcuts: true })}>

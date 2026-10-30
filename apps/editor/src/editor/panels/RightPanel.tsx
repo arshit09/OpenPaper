@@ -1,22 +1,24 @@
 import { useEffect, useState } from 'react';
-import { Check, Copy, CheckCircle2, RotateCcw, Bot, Plug, Undo2 } from 'lucide-react';
+import { Check, Copy, CheckCircle2, RotateCcw, Bot, Plug, Undo2, GitBranch } from 'lucide-react';
 import { displayName } from '@openpaper/core';
 import { useEditor, setState, getState, toast } from '../../state/store.ts';
 import { client, command } from '../../sync/session.ts';
 import { copySelectionAsHtml } from '../clipboard.ts';
 import { Inspector } from './Inspector.tsx';
+import { VersionPanel } from './VersionPanel.tsx';
 
 function CodePanel() {
   const selection = useEditor((s) => s.selection);
   const doc = useEditor((s) => s.doc);
   const version = useEditor((s) => s.version);
+  const previewing = useEditor((s) => !!s.preview);
   const [format, setFormat] = useState<'tailwind' | 'inline-styles'>('tailwind');
   const [code, setCode] = useState('');
   const [copied, setCopied] = useState(false);
   const id = selection[0];
 
   useEffect(() => {
-    if (!doc || !id) {
+    if (!doc || !id || previewing) {
       setCode('');
       return;
     }
@@ -27,8 +29,10 @@ function CodePanel() {
         .catch((e: Error) => setCode(`// ${e.message}`));
     }, 120);
     return () => clearTimeout(timer);
-  }, [doc?.id, id, format, version]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [doc?.id, id, format, version, previewing]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The server writes code for the current version, not an older one on screen.
+  if (previewing) return <div className="op-empty">Code is shown for the current version. Go back to it to see a layer’s code.</div>;
   if (!id) return <div className="op-empty">Select a layer to see its code.</div>;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, minHeight: 0, flex: 1 }}>
@@ -289,12 +293,23 @@ function AgentsPanel() {
 export function RightPanel() {
   const tab = useEditor((s) => s.rightTab);
   const agents = useEditor((s) => s.agents.length);
-  const tabs: Array<{ id: typeof tab; label: string }> = [
+  const changes = useEditor((s) => (s.vcs?.tracked ? (s.vcs.changes?.length ?? 0) : 0));
+  // Version control is an icon: five words don't fit the panel's width (its name is its tooltip and the panel's title).
+  const tabs: Array<{ id: typeof tab; label: string; icon?: typeof GitBranch }> = [
     { id: 'design', label: 'Design' },
     { id: 'code', label: 'Code' },
     { id: 'comments', label: 'Comments' },
     { id: 'agents', label: 'Agents' },
+    { id: 'version', label: 'Version control', icon: GitBranch },
   ];
+  const tabTitle = (id: typeof tab) =>
+    id === 'agents' && agents > 0
+      ? `${agents} agent${agents === 1 ? '' : 's'} connected`
+      : id === 'version'
+        ? changes > 0
+          ? `Version control: ${changes} change${changes === 1 ? '' : 's'} not committed`
+          : 'Version control: keep versions of this design with Git'
+        : undefined;
   return (
     <div className="op-panel right">
       <div className="op-tabs" role="tablist">
@@ -303,12 +318,14 @@ export function RightPanel() {
             key={t.id}
             role="tab"
             aria-selected={tab === t.id}
-            className={`op-tab${tab === t.id ? ' active' : ''}`}
-            title={t.id === 'agents' && agents > 0 ? `${agents} agent${agents === 1 ? '' : 's'} connected` : undefined}
+            className={`op-tab${tab === t.id ? ' active' : ''}${t.icon ? ' op-tab-icon' : ''}`}
+            title={tabTitle(t.id)}
+            aria-label={t.icon ? t.label : undefined}
             onClick={() => setState({ rightTab: t.id })}
           >
-            <span className="op-tab-label">{t.label}</span>
+            {t.icon ? <t.icon size={14} /> : <span className="op-tab-label">{t.label}</span>}
             {t.id === 'agents' && agents > 0 && <span className="op-count">{agents}</span>}
+            {t.id === 'version' && changes > 0 && <span className="op-tab-dot" />}
           </button>
         ))}
       </div>
@@ -317,6 +334,7 @@ export function RightPanel() {
         {tab === 'code' && <CodePanel />}
         {tab === 'comments' && <CommentsPanel />}
         {tab === 'agents' && <AgentsPanel />}
+        {tab === 'version' && <VersionPanel />}
       </div>
     </div>
   );

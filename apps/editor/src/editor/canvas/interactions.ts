@@ -1,5 +1,5 @@
 import { FREEFORM_DISPLAY, parentKindOf, type NewNode, type NodeRecord, type StyleInput } from '@openpaper/core';
-import { camera, getState, setCamera, setState } from '../../state/store.ts';
+import { camera, getState, isReadOnly, setCamera, setState } from '../../state/store.ts';
 import { command } from '../../sync/session.ts';
 import { fitCamera, lockAxis } from './canvas-math.ts';
 import {
@@ -197,7 +197,7 @@ export function startResize(e: PointerEvent, id: string, handle: ResizeHandle) {
   const s = getState();
   const node = s.doc?.nodes[id];
   const el = elementFor(id) as HTMLElement | null;
-  if (!node || !el || node.isLocked) return;
+  if (!node || !el || node.isLocked || isReadOnly()) return;
   const parent = node.parentId ? s.doc!.nodes[node.parentId] : undefined;
   const kind = parentKindOf(parent);
   const box = el.getBoundingClientRect();
@@ -291,14 +291,16 @@ export function onPointerDown(e: PointerEvent) {
   }
   const world = clientToWorld(e.clientX, e.clientY);
 
-  switch (s.tool) {
+  // An older version can be looked through and selected, not drawn on.
+  const tool = isReadOnly() ? 'select' : s.tool;
+  switch (tool) {
     case 'frame':
     case 'rectangle':
     case 'ellipse':
     case 'text': {
       const container = containerAt(e.clientX, e.clientY);
       if (!container) return;
-      gesture = { kind: 'draw', tool: s.tool, start: world, startClient: { x: e.clientX, y: e.clientY }, container, rect: null };
+      gesture = { kind: 'draw', tool, start: world, startClient: { x: e.clientX, y: e.clientY }, container, rect: null };
       return;
     }
     case 'pencil': {
@@ -364,6 +366,7 @@ export function onPointerMove(e: PointerLike) {
     }
     case 'press': {
       if (Math.hypot(e.clientX - gesture.startX, e.clientY - gesture.startY) < DRAG_THRESHOLD) return;
+      if (gesture.targetId && isReadOnly()) return;
       if (gesture.targetId) startMove(gesture);
       else {
         const start = clientToWorld(gesture.startX, gesture.startY);
@@ -497,12 +500,13 @@ export function onDoubleClick(e: MouseEvent) {
   const target = drillTarget(e.clientX, e.clientY);
   if (!target) return;
   const node = s.doc.nodes[target];
-  if (node?.component === 'Text' && s.selection[0] === target) {
+  const editText = node?.component === 'Text' && !isReadOnly();
+  if (editText && s.selection[0] === target) {
     setState({ editingTextId: target });
     return;
   }
   setState({ selection: [target] });
-  if (node?.component === 'Text') setState({ editingTextId: target });
+  if (editText) setState({ editingTextId: target });
 }
 
 export function onWheel(e: WheelEvent) {

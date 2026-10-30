@@ -12,6 +12,8 @@ import { ShaderPicker } from './shaders/ShaderPicker.tsx';
 import { FigmaTokenDialog } from './figma/FigmaTokenDialog.tsx';
 import { persistShaderFrames } from './shaders/ShaderInspector.tsx';
 import { ShortcutsDialog } from './ShortcutsDialog.tsx';
+import { VersionBanner } from './VersionBanner.tsx';
+import { refreshVcs } from '../sync/session.ts';
 
 function AgentOpenedBanner() {
   const opened = useEditor((s) => s.agentOpened);
@@ -44,7 +46,9 @@ export function EditorView() {
   const docId = useEditor((s) => s.doc?.id);
   const docName = useEditor((s) => s.doc?.name);
   const showExport = useEditor((s) => s.showExport);
-  const viewClass = useEditor((s) => `${s.uiHidden ? ' op-ui-hidden' : ''}${s.panelsCollapsed ? ' op-panels-collapsed' : ''}`);
+  const previewing = useEditor((s) => !!s.preview);
+  const vcsEpoch = useEditor((s) => s.vcsEpoch);
+  const viewClass = useEditor((s) => `${s.uiHidden ? ' op-ui-hidden' : ''}${s.panelsCollapsed ? ' op-panels-collapsed' : ''}${s.preview ? ' op-readonly' : ''}`);
   useShortcuts();
   useClipboard();
 
@@ -57,6 +61,14 @@ export function EditorView() {
       persistShaderFrames();
     };
   }, [docId]);
+
+  // Version control: edits reach the design's folder a moment after they're made, so the count of
+  // changes on the tab follows the server's word that something changed.
+  useEffect(() => {
+    if (!docId) return;
+    const timer = setTimeout(() => void refreshVcs().catch(() => {}), vcsEpoch ? 300 : 0);
+    return () => clearTimeout(timer);
+  }, [docId, vcsEpoch]);
 
   useEffect(() => {
     if (docName !== undefined) document.title = `${docName} — OpenPaper`;
@@ -79,8 +91,10 @@ export function EditorView() {
         <div style={{ position: 'relative', minWidth: 0, minHeight: 0, display: 'grid' }}>
           <Canvas />
           <AgentOpenedBanner />
+          <VersionBanner />
           <ShaderPicker />
-          <AgentDock />
+          {/* The agent works on the current version, not an older one on screen. */}
+          {!previewing && <AgentDock />}
         </div>
         <RightPanel />
       </div>

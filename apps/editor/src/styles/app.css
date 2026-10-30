@@ -914,6 +914,430 @@ textarea.op-input {
   line-height: 17px;
 }
 
+/* ---------- Version control (right panel) ---------- */
+/* Its tab is an icon (a dot for changes not committed): a fifth word wouldn't fit the row. Spacing is a touch
+   tighter in this row so the labels stay whole beside it, even with the Agents count showing. */
+.op-panel.right .op-tabs {
+  gap: 1px;
+  padding-inline: 4px;
+}
+.op-panel.right .op-tab {
+  padding: 0 5px;
+}
+.op-panel.right .op-tab.op-tab-icon {
+  position: relative;
+  flex-shrink: 0;
+  padding: 0 5px;
+}
+/* Changes not committed yet. */
+.op-tab-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--op-text);
+  box-shadow: 0 0 0 1.5px var(--op-panel);
+}
+.op-vc-title {
+  padding: 12px 12px 0;
+  font-weight: 650;
+  font-size: 12.5px;
+}
+.op-vc {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px;
+}
+/* Beside the file name: the branch the design is on, and a dot while there are changes to commit. */
+.op-branch-chip {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 170px;
+  height: 24px;
+  padding: 0 8px;
+  gap: 5px;
+  border-radius: 12px;
+  background: var(--op-panel-2);
+  color: var(--op-text-2);
+  font-size: 11.5px;
+}
+.op-branch-chip > svg {
+  flex-shrink: 0;
+}
+.op-branch-chip > span:first-of-type {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.op-branch-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--op-text);
+}
+.op-vc code {
+  font-family: var(--op-mono);
+  font-size: 10.5px;
+  overflow-wrap: anywhere;
+}
+.op-vc-intro {
+  display: flex;
+  gap: 10px;
+  line-height: 1.45;
+}
+.op-vc-intro > svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.op-vc-intro p {
+  margin: 3px 0 0;
+  color: var(--op-text-2);
+}
+.op-vc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.op-vc-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 18px;
+  font-weight: 600;
+  font-size: 11.5px;
+}
+.op-vc-note {
+  margin: 0;
+  color: var(--op-text-3);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.op-vc-note.bad {
+  color: var(--op-danger);
+}
+.op-vc-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--op-text);
+  font-size: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.op-vc-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--op-radius-sm);
+  background: var(--op-panel-2);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.op-vc-alert.error {
+  color: var(--op-danger);
+  background: color-mix(in srgb, var(--op-danger) 9%, transparent);
+}
+.op-vc-alert .op-icon-btn {
+  color: inherit;
+  font-size: 15px;
+  margin: -3px -5px -3px 0;
+}
+.op-vc-alert a {
+  color: inherit;
+}
+.op-vc-avatar {
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.op-vc-search {
+  position: relative;
+  display: block;
+}
+.op-vc-search > svg {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--op-text-3);
+  pointer-events: none;
+}
+.op-vc-search .op-input {
+  padding-left: 27px;
+}
+/* A short, bordered list to pick from (repositories, folders). */
+.op-vc-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 198px;
+  padding: 3px;
+  border: 1px solid var(--op-border);
+  border-radius: var(--op-radius-sm);
+}
+.op-vc-list.short {
+  max-height: 140px;
+}
+.op-vc-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  width: 100%;
+  height: 28px;
+  padding: 0 7px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--op-text);
+  text-align: left;
+  cursor: pointer;
+}
+.op-vc-row > svg {
+  flex-shrink: 0;
+  color: var(--op-text-2);
+}
+.op-vc-row:hover:not(:disabled) {
+  background: var(--op-hover);
+}
+.op-vc-row.selected,
+.op-vc-row.selected:hover {
+  background: var(--op-accent-soft);
+}
+.op-vc-row:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.op-vc-row.muted {
+  color: var(--op-text-3);
+  cursor: default;
+}
+.op-vc-row .meta {
+  display: inline-flex;
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--op-text-3);
+  font-size: 11px;
+}
+.op-vc-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  color: var(--op-text-3);
+}
+.op-vc-crumbs button {
+  max-width: 100%;
+  padding: 1px 3px;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  color: var(--op-text-2);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.op-vc-crumbs button:hover {
+  background: var(--op-hover);
+  color: var(--op-text);
+}
+.op-vc-crumbs button.here {
+  color: var(--op-text);
+  font-weight: 600;
+}
+.op-vc-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--op-text-2);
+  white-space: nowrap;
+}
+.op-vc-path {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: var(--op-radius-sm);
+  background: var(--op-panel-2);
+  font-family: var(--op-mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.op-vc-path > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--op-text-3);
+}
+.op-vc-segmented {
+  display: flex;
+}
+.op-vc-segmented .op-tab {
+  flex: 1 1 0;
+}
+.op-vc-wide {
+  width: 100%;
+  height: 30px;
+}
+.op-vc-wide > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.op-vc-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.op-vc-head-icon {
+  flex-shrink: 0;
+}
+.op-vc-head-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.op-vc-repo {
+  font-weight: 600;
+  color: var(--op-text);
+  text-decoration: none;
+}
+a.op-vc-repo:hover {
+  text-decoration: underline;
+}
+.op-vc-sync {
+  flex-wrap: wrap;
+}
+.op-vc-changes {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.op-vc-changes li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 22px;
+  min-width: 0;
+}
+.op-vc-kind {
+  width: 11px;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--op-text-2);
+}
+.op-vc-kind.added {
+  color: var(--op-success);
+}
+.op-vc-kind.deleted {
+  color: var(--op-danger);
+}
+.op-menu-item.danger {
+  color: var(--op-danger);
+}
+/* History: commits on a line, newest first; the one on the canvas is highlighted. */
+.op-vc-timeline {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.op-vc-timeline::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 14px;
+  bottom: 14px;
+  width: 1px;
+  background: var(--op-border-strong);
+}
+.op-vc-commit {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 4px 6px 6px;
+  border: none;
+  border-radius: var(--op-radius-sm);
+  background: transparent;
+  color: var(--op-text);
+  text-align: left;
+  cursor: pointer;
+}
+.op-vc-commit:hover {
+  background: var(--op-hover);
+}
+.op-vc-commit.viewing,
+.op-vc-commit.viewing:hover {
+  background: var(--op-accent-soft);
+}
+.op-vc-commit:focus-visible {
+  outline: 2px solid var(--op-accent);
+  outline-offset: -2px;
+}
+.op-vc-dot {
+  width: 9px;
+  height: 9px;
+  margin-top: 4px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--op-text);
+  /* Cuts the line behind the dot. */
+  box-shadow: 0 0 0 3px var(--op-panel);
+}
+.op-vc-commit.local .op-vc-dot {
+  background: var(--op-panel);
+  border: 1.5px solid var(--op-text);
+}
+.op-vc-commit.now .op-vc-dot {
+  background: var(--op-panel);
+  border: 1.5px dashed var(--op-text-2);
+}
+.op-vc-commit-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 1px;
+  min-width: 0;
+}
+.op-vc-subject {
+  font-weight: 500;
+}
+.op-vc-commit-action {
+  opacity: 0;
+}
+.op-vc-commit:hover .op-vc-commit-action,
+.op-vc-commit:focus-within .op-vc-commit-action,
+.op-vc-commit.viewing .op-vc-commit-action {
+  opacity: 1;
+}
+.op-vc-more {
+  align-self: flex-start;
+  margin-left: 20px;
+  color: var(--op-text-2);
+}
+/* Over the canvas while an older version is shown. */
+.op-version-banner {
+  gap: 6px;
+  padding-left: 12px;
+}
+.op-version-banner-icon {
+  flex-shrink: 0;
+  color: var(--op-text-2);
+}
+
 /* ---------- Built-in agent dock ---------- */
 .op-dock {
   position: absolute;

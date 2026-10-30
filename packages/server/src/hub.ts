@@ -230,6 +230,12 @@ export class LiveDocument {
     return (this.redoStacks.get(actorKey(actor))?.length ?? 0) > 0;
   }
 
+  /** Forget every undo and redo step: the content was replaced from elsewhere (another Git branch, a pull). */
+  clearHistory(): void {
+    this.history.length = 0;
+    this.redoStacks.clear();
+  }
+
   /**
    * Undo the newest change the actor reaches. Records edited by someone else since are left alone,
    * and a change others have since overwritten completely is skipped.

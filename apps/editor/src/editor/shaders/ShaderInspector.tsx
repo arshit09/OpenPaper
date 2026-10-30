@@ -360,7 +360,8 @@ function rememberSpeed(id: string, speed: number): number {
 /** Remember what each animated shader is showing when the editor closes the file (not undoable). */
 export function persistShaderFrames(): void {
   const doc = getState().doc;
-  if (!doc) return;
+  // An older version on screen has nothing to keep.
+  if (!doc || getState().preview) return;
   const frames: Record<string, number> = {};
   for (const n of Object.values(doc.nodes)) {
     if (!shaderDef(n.component)?.animated || !n.props?.speed) continue;

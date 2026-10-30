@@ -11,6 +11,8 @@ import {
   type ResourceInfo,
   type ShaderProps,
   type SpeechStatus,
+  type VcsCommit,
+  type VcsStatus,
 } from '@openpaper/core';
 import type { ConnectionState } from '../sync/client.ts';
 
@@ -23,11 +25,18 @@ export interface Camera {
 }
 
 export type LeftTab = 'layers' | 'tokens';
-export type RightTab = 'design' | 'code' | 'comments' | 'agents';
+export type RightTab = 'design' | 'code' | 'comments' | 'agents' | 'version';
 
 export interface Toast {
   id: number;
   text: string;
+}
+
+/** An older version of the open file, shown read-only in place of the live one. */
+export interface VersionPreview {
+  commit: VcsCommit;
+  /** The live document meanwhile: server patches keep it current for when the preview ends. */
+  live: { doc: PaperDocument; version: number };
 }
 
 /** Live, uncommitted overrides while a gesture is in progress (drag, resize). */
@@ -86,6 +95,12 @@ export interface EditorState {
   animationsPaused: boolean;
   /** Bumped to play every animation again from its start. */
   animationEpoch: number;
+  /** An older version shown read-only (`doc` is that version; nothing can be changed). */
+  preview: VersionPreview | null;
+  /** The open file's version control (null until asked). */
+  vcs: VcsStatus | null;
+  /** Bumped when the server says the open file's version control changed. */
+  vcsEpoch: number;
 }
 
 const MOTION_KEY = 'openpaper.animations';
@@ -136,6 +151,9 @@ export const useEditor = create<EditorState>(() => ({
   commentsHidden: false,
   animationsPaused: initialPaused(),
   animationEpoch: 0,
+  preview: null,
+  vcs: null,
+  vcsEpoch: 0,
 }));
 
 export const getState = useEditor.getState;
@@ -165,10 +183,17 @@ export function setDocument(doc: PaperDocument, version: number) {
   });
 }
 
+/** Showing an older version: nothing may change the document. */
+export function isReadOnly(): boolean {
+  return getState().preview !== null;
+}
+
 /** Apply a server patch to the open document. */
 export function applyServerPatch(fileId: string, version: number, patch: Parameters<typeof applyPatch>[1]) {
   setState((s) => {
     if (!s.doc || s.doc.id !== fileId) return s;
+    // An older version is on screen: the live document underneath takes the change.
+    if (s.preview) return { preview: { ...s.preview, live: { doc: applyPatch(s.preview.live.doc, patch), version } } };
     const doc = applyPatch(s.doc, patch);
     const removed = new Set(patch.nodes?.remove ?? []);
     const selection = removed.size ? s.selection.filter((id) => !removed.has(id) && doc.nodes[id]) : s.selection;

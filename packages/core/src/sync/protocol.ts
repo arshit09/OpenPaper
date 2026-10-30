@@ -86,6 +86,11 @@ export type ServerMessage =
   | { t: 'agent'; fileId: string; event: AgentEvent }
   /** Local speech-to-text engine status (download progress, ready). */
   | { t: 'speech'; status: SpeechStatus }
+  /**
+   * A file's version control changed (an edit reached its folder, a commit, a branch switch): editors
+   * showing it ask for `vcs.status` again. `notice` is said once, e.g. when the folder was changed outside OpenPaper.
+   */
+  | { t: 'vcs'; fileId: string; notice?: string }
   | { t: 'rpc'; id: number; method: string; params?: unknown };
 
 /** Built-in design agent (chat panel). `target` names what the user pointed at when they sent it. */
@@ -188,6 +193,131 @@ export interface SpeechStatus {
   sizeBytes: number;
   downloadedBytes: number;
   error?: string;
+}
+
+// ---- version control: a design kept as a folder in a Git repository ----
+
+/** A GitHub account signed in on this computer, through the GitHub CLI (`gh`) or Git's credential manager. */
+export interface VcsAccount {
+  login: string;
+  name: string | null;
+  avatarUrl: string | null;
+  source: 'gh' | 'git';
+  /** The GitHub CLI's active account. */
+  active: boolean;
+}
+
+/** What version control can use on this computer. */
+export interface VcsSetup {
+  accounts: VcsAccount[];
+  /** Git's version (null: Git isn't installed). */
+  git: string | null;
+  /** The GitHub CLI is installed. */
+  gh: boolean;
+  /** Folder repositories are cloned into unless the user picks another. */
+  defaultRoot: string;
+}
+
+export interface VcsRepo {
+  /** `owner/name`. */
+  fullName: string;
+  owner: string;
+  name: string;
+  private: boolean;
+  description: string | null;
+  defaultBranch: string;
+  pushedAt: string | null;
+  htmlUrl: string;
+  /** No commits yet. */
+  empty: boolean;
+}
+
+/** The folders of a repository's default branch, to choose where a design goes. */
+export interface VcsRepoTree {
+  /** Folder paths ('/'-separated, no leading slash). */
+  dirs: string[];
+  /** Folders that already hold a design (an openpaper.json). */
+  designs: string[];
+  /** GitHub listed only part of a very large repository. */
+  truncated: boolean;
+}
+
+/** What a folder on this computer holds, when choosing where a repository lives. */
+export interface VcsLocalFolder {
+  path: string;
+  /** `repo`: the top of a Git repository; `in-repo`: inside one; `files`: holds other things. */
+  state: 'missing' | 'empty' | 'repo' | 'in-repo' | 'files';
+  repoRoot?: string;
+  /** The repository's `origin`, if it has one. */
+  remoteUrl?: string | null;
+  /** `origin` is the GitHub repository asked about. */
+  matches?: boolean;
+}
+
+/** Where to keep a design that starts being tracked. */
+export type VcsTrackPlan =
+  | {
+      kind: 'github';
+      account: string;
+      /** A repository of the account, or a new one to create. */
+      repo: { fullName: string } | { create: { name: string; private: boolean } };
+      /** The repository's folder on this computer (cloned there when it isn't yet). */
+      local: string;
+      /** The design's folder inside the repository ('' = the repository is the design folder). */
+      path: string;
+    }
+  /** A folder on this computer only: inside a repository it joins it, else it becomes one. */
+  | { kind: 'local'; dir: string };
+
+export interface VcsChange {
+  /** Path inside the design folder. */
+  path: string;
+  kind: 'added' | 'modified' | 'deleted';
+  /** What changed, in the design's terms: `Page “Home”`, `Tokens`, `Image`. */
+  label: string;
+}
+
+export interface VcsStatus {
+  tracked: boolean;
+  /** The design folder. */
+  dir?: string;
+  repoRoot?: string;
+  /** The design folder inside the repository ('' = the repository root). */
+  path?: string;
+  /** Current branch (null: detached HEAD). */
+  branch?: string | null;
+  /** Remote branch it follows, e.g. `origin/main` (null: never pushed). */
+  upstream?: string | null;
+  ahead?: number;
+  behind?: number;
+  remote?: { url: string; fullName: string | null; webUrl: string | null } | null;
+  account?: string | null;
+  changes?: VcsChange[];
+  /** Latest commit (null: none yet). */
+  head?: string | null;
+  /** Something stops version control (the folder is gone, Git isn't installed); shown instead of the controls. */
+  problem?: string;
+}
+
+export interface VcsCommit {
+  hash: string;
+  short: string;
+  subject: string;
+  author: string;
+  /** ISO date. */
+  date: string;
+  /** Already on the remote branch. */
+  pushed: boolean;
+  /** The commit's page on GitHub (null: not on GitHub, or not pushed). */
+  url: string | null;
+}
+
+export interface VcsBranch {
+  name: string;
+  current: boolean;
+  /** On this computer / on the remote. */
+  local: boolean;
+  remote: boolean;
 }
 
 /** Response to `file.open`. */

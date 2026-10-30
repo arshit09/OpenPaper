@@ -245,6 +245,11 @@ export class Transaction implements DocReader {
   setName(name: string): void {
     this.nameValue = name;
   }
+  /** Raise the id counters to at least `counters` (content from elsewhere may already use the ids below them). */
+  raiseCounters(counters: DocCounters): void {
+    this.counters.nodes = Math.max(this.counters.nodes, counters.nodes);
+    this.counters.pages = Math.max(this.counters.pages, counters.pages);
+  }
   getUsers(): Record<string, CommentUser> {
     return this.usersValue ?? this.base.users ?? {};
   }

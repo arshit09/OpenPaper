@@ -17,10 +17,12 @@ import {
   type SpeechStatus,
   type ViewState,
   type AgentTarget,
+  type VcsTrackPlan,
 } from '@openpaper/core';
 import type { AgentService } from './agent/agent.ts';
 import type { SpeechService } from './speech/service.ts';
 import type { ThumbnailService } from './thumbnails.ts';
+import type { VcsService } from './vcs/service.ts';
 import { detectFolderForUrl, inspectFolder, pickFolder } from './sites/folders.ts';
 import type { SiteProxies } from './sites/proxy.ts';
 import { normalizeSiteUrl, type SiteRecord, type SiteStore } from './sites/store.ts';
@@ -47,6 +49,8 @@ export interface SyncOptions {
   sites?: { store: SiteStore; proxies: SiteProxies };
   /** Canvas previews on the home screen's file cards (unset: cards show an icon). */
   thumbnails?: ThumbnailService;
+  /** Version control: designs kept as folders in Git repositories (unset: not available). */
+  vcs?: VcsService;
 }
 
 /** A site as the editor sees it (the proxy port is server bookkeeping). */
@@ -85,7 +89,7 @@ function localUserName(): string {
 }
 
 /** WebSocket endpoint for editors: commands in, patches/presence/activity out. */
-export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings, figmaSettings, speech, sites, thumbnails }: SyncOptions) {
+export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings, figmaSettings, speech, sites, thumbnails, vcs }: SyncOptions) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 * 1024 });
   const userName = localUserName();
 
@@ -106,6 +110,16 @@ export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings
   });
 
   const userActor = (conn: EditorConnection): ActorRef => ({ kind: 'user', id: conn.clientId, name: userName });
+
+  const versionControl = (): VcsService => {
+    if (!vcs) throw new Error('Version control isn’t available on this server.');
+    return vcs;
+  };
+  /** Other editors showing the file catch up after a commit, push, pull or branch switch. */
+  const vcsChanged = <T>(fileId: string, result: T): T => {
+    env.views.broadcast(fileId, { t: 'vcs', fileId });
+    return result;
+  };
 
   async function handleRequest(conn: EditorConnection, method: string, params: any): Promise<unknown> {
     switch (method) {
@@ -177,6 +191,8 @@ export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings
       }
       case 'resource.delete': {
         const id = String(params.resourceId);
+        // Its folder and repository stay where they are.
+        if (vcs?.isTracked(id)) await vcs.untrack(id);
         if (env.hub.isOpen(id)) await env.hub.close(id);
         await env.store.delete(id);
         await thumbnails?.removed(id);
@@ -334,6 +350,67 @@ export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings
       case 'agent.reset':
         agents.chat(String(params.fileId)).reset();
         return null;
+      // ---- version control: a design kept as a folder in a Git repository ----
+      case 'vcs.setup':
+        return versionControl().setup(!!params?.fresh);
+      case 'vcs.repos':
+        return versionControl().github.repos(String(params.account));
+      case 'vcs.tree':
+        return versionControl().github.tree(String(params.account), String(params.fullName), String(params.branch));
+      case 'vcs.inspect':
+        return versionControl().inspectLocal(String(params.path ?? ''), typeof params.fullName === 'string' ? params.fullName : undefined);
+      case 'vcs.pickFolder':
+        return pickFolder({ title: String(params?.title ?? 'Choose a folder'), initial: typeof params?.start === 'string' && params.start ? params.start : undefined });
+      case 'vcs.openFolder': {
+        const fileId = await versionControl().openFolder(String(params.path ?? ''));
+        env.resourcesChanged();
+        return { fileId };
+      }
+      case 'vcs.track': {
+        const fileId = String(params.fileId);
+        return vcsChanged(fileId, await versionControl().track(fileId, params.plan as VcsTrackPlan));
+      }
+      case 'vcs.untrack': {
+        const fileId = String(params.fileId);
+        await versionControl().untrack(fileId);
+        return vcsChanged(fileId, null);
+      }
+      case 'vcs.status':
+        return versionControl().status(String(params.fileId));
+      case 'vcs.reveal':
+        await versionControl().reveal(String(params.fileId));
+        return null;
+      case 'vcs.fetch':
+        return versionControl().fetch(String(params.fileId), !!params.force);
+      case 'vcs.log':
+        return versionControl().log(String(params.fileId), Number(params.skip) || 0);
+      case 'vcs.branches':
+        return versionControl().branches(String(params.fileId));
+      case 'vcs.snapshot':
+        return versionControl().snapshot(String(params.fileId), String(params.commit ?? ''));
+      case 'vcs.commit': {
+        const fileId = String(params.fileId);
+        return vcsChanged(fileId, await versionControl().commit(fileId, String(params.message ?? ''), params.push !== false));
+      }
+      case 'vcs.push': {
+        const fileId = String(params.fileId);
+        return vcsChanged(fileId, await versionControl().push(fileId));
+      }
+      case 'vcs.pull': {
+        const fileId = String(params.fileId);
+        return vcsChanged(fileId, await versionControl().pull(fileId));
+      }
+      case 'vcs.switch': {
+        const fileId = String(params.fileId);
+        return vcsChanged(fileId, await versionControl().switchBranch(fileId, String(params.name ?? ''), !!params.create));
+      }
+      case 'vcs.restore': {
+        // `discard`: back to the last commit, comments included.
+        const fileId = String(params.fileId);
+        const discard = !!params.discard;
+        const restored = await versionControl().restore(fileId, discard ? 'HEAD' : String(params.commit ?? ''), userActor(conn), discard ? { comments: true, label: 'Discard changes' } : {});
+        return vcsChanged(fileId, restored);
+      }
       default:
         throw new Error(`Unknown method "${method}"`);
     }

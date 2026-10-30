@@ -32,6 +32,7 @@ import { SERVER_INSTRUCTIONS } from './tools/guides.ts';
 import { ToolRuntime } from './tools/runtime.ts';
 import { VERSION } from './version.ts';
 import { ViewRegistry } from './views.ts';
+import { VcsService } from './vcs/service.ts';
 
 export interface StartOptions {
   paths: OpenPaperPaths;
@@ -159,6 +160,14 @@ export async function startServer(opts: StartOptions): Promise<RunningServer> {
     agy: { mcpUrl: `${url}${MCP_PATH}`, dir: join(paths.home, 'agy') },
   });
   const speech = new SpeechService({ dir: join(paths.home, 'models'), onStatus: (status) => views.broadcast(null, { t: 'speech', status }) });
+  const vcs = new VcsService({
+    hub,
+    store,
+    mediaDir: paths.assets,
+    file: join(paths.home, 'vcs.json'),
+    changed: (fileId, notice) => views.broadcast(fileId, { t: 'vcs', fileId, ...(notice ? { notice } : {}) }),
+  });
+  await vcs.init();
   sync = createSyncServer({
     env,
     policy,
@@ -169,6 +178,7 @@ export async function startServer(opts: StartOptions): Promise<RunningServer> {
     speech,
     sites: { store: siteStore, proxies: siteProxies },
     thumbnails,
+    vcs,
   });
   tailwind.warmup();
 
@@ -183,6 +193,8 @@ export async function startServer(opts: StartOptions): Promise<RunningServer> {
       presence.close();
       tailwind.close();
       await siteProxies.closeAll();
+      // Tracked designs' folders catch up with the last edits.
+      await vcs.close();
       await hub.flushAll();
       await headless.close();
       await new Promise<void>((r) => server.close(() => r()));

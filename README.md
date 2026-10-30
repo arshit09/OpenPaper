@@ -29,6 +29,7 @@ It speaks the same MCP tool set as [Paper](https://paper.design) — all 37 tool
 - **Shaders**: 30 live GPU effects — mesh and grain gradients, dithering, noise, metaballs, god rays, liquid metal, halftone and other image filters — as layers with presets and full controls (`S`)
 - **Animation**: CSS `@keyframes` animations, video, Lottie and scripted (JavaScript) embeds play on the canvas; pasted pages keep their `<style>` rules and animations. One button in the top bar pauses everything (`Alt+P`)
 - **Paste from Figma**: copy layers in Figma and paste them onto the canvas as editable frames, text, shapes and vectors (auto layout, components, gradients, effects and images included)
+- **Version control**: keep a design as a folder in a Git repository from the right panel (a GitHub repository of yours, a new one, or one on this computer), commit and push, branch off, and open any earlier version on the canvas or in a new tab. Uses the GitHub login already on your computer
 - Copy/paste as clean HTML (paste HTML from any AI chat straight onto the canvas), drag-and-drop images, videos and Lottie files
 - Export PNG / JPG / WebP / SVG / PDF; live JSX & Tailwind code panel
 - Undo/redo covers agent changes too: `Ctrl+Z` steps back through your edits and the agents' edits, newest first, and the Agents panel undoes one agent's last change
@@ -186,6 +187,14 @@ Select layers in Figma, press `Ctrl/⌘ C`, then `Ctrl/⌘ V` in OpenPaper. Fram
 
 Figma's clipboard holds references to images, not the images themselves. To bring images over, add a Figma [personal access token](https://help.figma.com/hc/en-us/articles/8085703771159) (read-only file content) when OpenPaper asks — it is stored only in `~/.openpaper/config.json`, or set `FIGMA_TOKEN`. Without one, image fills paste as grey placeholders. Not supported yet: masks, shader-like Figma effects (noise, glass), and variable-font axes.
 
+## Version control
+
+Open the **Version control** tab (the branch icon at the end of the right panel's tabs) to keep a design in a Git repository. Pick a GitHub account (OpenPaper uses the login already on your computer: the GitHub CLI's accounts, else the one Git's credential manager keeps), then one of your repositories or **New repository**, the folder inside it, and where the copy lives on your computer. OpenPaper clones the repository when it isn't there yet, writes the design's folder and pushes the first commit. **This computer only** keeps the design in a repository of its own, or in one you pick (with any remote and Git's own sign-in).
+
+The design is a folder: `openpaper.json` (name and pages), `pages/<id>.json` (each page's layers, one property per line), `tokens.json`, `comments.json`, `assets/` (the images, videos and Lottie files it uses) and a `README.md`. Edits reach the folder a moment after you make them, so `git status` and other Git tools see them, and a pull or branch switch outside OpenPaper shows up on the canvas.
+
+From the panel you write a message and commit to the current branch or a new one, push, pull (fast-forward only), switch branches (the canvas shows that branch's design) and discard changes. History lists the commits that changed the design: click one to see it on the canvas, read-only, then **Restore** it (one change you can undo) or go back. The arrow beside a commit opens it in a new tab (`#/file/<id>/version/<commit>`). **Open folder** on the home screen opens a design folder from any copy of a repository. Git must be installed; which folder each design is kept in is in `~/.openpaper/vcs.json`.
+
 ## Keyboard shortcuts
 
 OpenPaper uses Paper's shortcuts, plus Figma's where Paper has none. `Ctrl` is `⌘` on macOS and `Alt` is `⌥`. In the editor, `Ctrl+Shift+?` or `Ctrl+/` opens the full, searchable list (it is generated from the same registry as the key handling).
@@ -288,7 +297,7 @@ apps/desktop      Windows app and web installer (Rust + Tauri), and the release 
 
 The server owns every document. Editors and agents send commands; each change becomes a patch broadcast to every open editor, so you see agents work in real time. Agent edits run as their own actor and join the undo timeline, so `Ctrl+Z` reaches them. Rendering rules live in `core`, so headless screenshots, exports and the canvas are identical. See [docs/architecture.md](docs/architecture.md).
 
-**Data:** `~/.openpaper` (override with `OPENPAPER_HOME`) — `files/*.json`, `assets/` (images, content-addressed), `index.json`. Exports go to `~/Downloads/OpenPaper` (`OPENPAPER_EXPORT_DIR`).
+**Data:** `~/.openpaper` (override with `OPENPAPER_HOME`) — `files/*.json`, `assets/` (images, content-addressed), `index.json`, `vcs.json` (the folders of designs under version control). Exports go to `~/Downloads/OpenPaper` (`OPENPAPER_EXPORT_DIR`).
 
 **Image generation:** set `OPENAI_API_KEY` and/or `GEMINI_API_KEY` for the server; agents use `paper-gen://` URLs (see `get_guide({topic: "image-generation"})`).
 

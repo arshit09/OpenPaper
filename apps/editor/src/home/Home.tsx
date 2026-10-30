@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FilePlus2, Folder, FileText, Bot, Trash2, Pencil, AppWindow } from 'lucide-react';
+import { FilePlus2, Folder, FolderOpen, FileText, Bot, Trash2, Pencil, AppWindow } from 'lucide-react';
 import type { ResourceInfo, SiteInfo } from '@openpaper/core';
 import { useEditor, setState, toast } from '../state/store.ts';
 import { client, refreshResources } from '../sync/session.ts';
@@ -44,6 +44,18 @@ export function Home() {
   async function createFile() {
     try {
       const { fileId } = await client.request<{ fileId: string }>('file.create', { parentId: folderId });
+      location.hash = `#/file/${fileId}`;
+    } catch (error) {
+      report(error);
+    }
+  }
+
+  /** Open a design kept as a folder (e.g. in a Git repository someone shared). It stays tracked there. */
+  async function openDesignFolder() {
+    try {
+      const path = await client.request<string | null>('vcs.pickFolder', { title: 'Open a design folder' });
+      if (!path) return;
+      const { fileId } = await client.request<{ fileId: string }>('vcs.openFolder', { path });
       location.hash = `#/file/${fileId}`;
     } catch (error) {
       report(error);
@@ -103,6 +115,9 @@ export function Home() {
         </button>
         <button className="op-btn outline" title="Open the site you're building and edit it with the agent" onClick={() => setSiteDialog({ site: null })}>
           <AppWindow size={15} /> Open live site
+        </button>
+        <button className="op-btn outline" title="Open a design folder, e.g. from a Git repository" onClick={() => void openDesignFolder()}>
+          <FolderOpen size={15} /> Open folder
         </button>
         <button className="op-btn primary" onClick={createFile}>
           <FilePlus2 size={15} /> New file
