@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>Version control · OpenPaper</title>
+    <meta name="description" content="Keep a design as a folder in a Git repository: commit and push from the right panel, branch off to try ideas, and open any earlier version on the canvas or in a new tab." />
+    <meta property="og:title" content="Version control · OpenPaper" />
+    <meta property="og:description" content="Keep a design as a folder in a Git repository: commit and push from the right panel, branch off to try ideas, and open any earlier version on the canvas or in a new tab." />
+    <meta property="og:image" content="assets/brand/openpaper-app-icon-1024.png" />
+    <meta name="theme-color" content="#ffffff" />
+    <link rel="icon" href="assets/brand/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/svg+xml" href="assets/brand/favicon.svg" />
+    <link rel="apple-touch-icon" href="assets/brand/apple-touch-icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fragment+Mono&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&display=swap" />
+    <link rel="stylesheet" href="assets/css/site.css" />
+    <link rel="stylesheet" href="assets/css/illustrations.css" />
+    <script>
+      try {
+        const t = localStorage.getItem('op-site-theme');
+        if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+      } catch {}
+      document.documentElement.classList.add('js');
+      // Windows visitors get the app download where others see "Get started".
+      if (/Windows/.test(navigator.userAgentData?.platform || navigator.userAgent)) document.documentElement.classList.add('os-windows');
+    </script>
+  </head>
+  <body data-nav="explore">
+    <!-- @icons -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+    <!-- Icons: lucide (ISC), the same set the editor uses, plus the OpenPaper mark. -->
+    <symbol id="i-mouse-pointer-2" viewBox="0 0 24 24"><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/></symbol>
+    <symbol id="i-hand" viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></symbol>
+    <symbol id="i-frame" viewBox="0 0 24 24"><line x1="22" x2="2" y1="6" y2="6"/><line x1="22" x2="2" y1="18" y2="18"/><line x1="6" x2="6" y1="2" y2="22"/><line x1="18" x2="18" y1="2" y2="22"/></symbol>
+    <symbol id="i-square" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/></symbol>
+    <symbol id="i-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></symbol>
+    <symbol id="i-type" viewBox="0 0 24 24"><path d="M12 4v16"/><path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2"/><path d="M9 20h6"/></symbol>
+    <symbol id="i-pen-line" viewBox="0 0 24 24"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></symbol>
+    <symbol id="i-message-circle" viewBox="0 0 24 24"><path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719"/></symbol>
+    <symbol id="i-blend" viewBox="0 0 24 24"><circle cx="15" cy="9" r="7"/><circle cx="9" cy="15" r="7"/></symbol>
+    <symbol id="i-image-plus" viewBox="0 0 24 24"><path d="M16 5h6"/><path d="M19 2v6"/><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/><circle cx="9" cy="9" r="2"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></symbol>
+    <symbol id="i-plug" viewBox="0 0 24 24"><path d="M12 22v-5"/><path d="M15 8V2"/><path d="M17 8a1 1 0 0 1 1 1v4a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1z"/><path d="M9 8V2"/></symbol>
+    <symbol id="i-undo-2" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></symbol>
+    <symbol id="i-redo-2" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13"/></symbol>
+    <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+    <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></symbol>
+    <symbol id="i-code-xml" viewBox="0 0 24 24"><path d="m18 16 4-4-4-4"/><path d="m6 8-4 4 4 4"/><path d="m14.5 4-5 16"/></symbol>
+    <symbol id="i-keyboard" viewBox="0 0 24 24"><path d="M10 8h.01"/><path d="M12 12h.01"/><path d="M14 8h.01"/><path d="M16 12h.01"/><path d="M18 8h.01"/><path d="M6 8h.01"/><path d="M7 16h10"/><path d="M8 12h.01"/><rect width="20" height="16" x="2" y="4" rx="2"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></symbol>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+    <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
+    <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><path d="M12 19h8"/><path d="m4 17 6-6-6-6"/></symbol>
+    <symbol id="i-hard-drive" viewBox="0 0 24 24"><path d="M10 16h.01"/><path d="M2.212 11.577a2 2 0 0 0-.212.896V18a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-5.527a2 2 0 0 0-.212-.896L18.55 5.11A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><path d="M21.946 12.013H2.054"/><path d="M6 16h.01"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+    <symbol id="i-shield-check" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-file-code" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M10 12.5 8 15l2 2.5"/><path d="m14 12.5 2 2.5-2 2.5"/></symbol>
+    <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/></symbol>
+    <symbol id="i-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></symbol>
+    <symbol id="i-clipboard-paste" viewBox="0 0 24 24"><path d="M11 14h10"/><path d="M16 4h2a2 2 0 0 1 2 2v1.344"/><path d="m17 18 4-4-4-4"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113"/><rect x="8" y="2" width="8" height="4" rx="1"/></symbol>
+    <symbol id="i-message-square-text" viewBox="0 0 24 24"><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"/><path d="M7 11h10"/><path d="M7 15h6"/><path d="M7 7h8"/></symbol>
+    <symbol id="i-image-down" viewBox="0 0 24 24"><path d="M10.3 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10l-3.1-3.1a2 2 0 0 0-2.814.014L6 21"/><path d="m14 19 3 3v-5.5"/><path d="m17 22 3-3"/><circle cx="9" cy="9" r="2"/></symbol>
+    <symbol id="i-sliders-horizontal" viewBox="0 0 24 24"><path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/></symbol>
+    <symbol id="i-hash" viewBox="0 0 24 24"><line x1="4" x2="20" y1="9" y2="9"/><line x1="4" x2="20" y1="15" y2="15"/><line x1="10" x2="8" y1="3" y2="21"/><line x1="16" x2="14" y1="3" y2="21"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"/></symbol>
+    <symbol id="i-book-open" viewBox="0 0 24 24"><path d="M12 5v16"/><path d="M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-wand-sparkles" viewBox="0 0 24 24"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/></symbol>
+    <symbol id="i-folder-open" viewBox="0 0 24 24"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+    <symbol id="i-wifi-off" viewBox="0 0 24 24"><path d="M12 20h.01"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/><path d="M5 12.859a10 10 0 0 1 5.17-2.69"/><path d="M19 12.859a10 10 0 0 0-2.007-1.523"/><path d="M2 8.82a15 15 0 0 1 4.177-2.643"/><path d="M22 8.82a15 15 0 0 0-11.288-3.764"/><path d="m2 2 20 20"/></symbol>
+    <symbol id="i-scale-3d" viewBox="0 0 24 24"><path d="M5 7v11a1 1 0 0 0 1 1h11"/><path d="M5.293 18.707 11 13"/><circle cx="19" cy="19" r="2"/><circle cx="5" cy="5" r="2"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><path d="M16 3.128a4 4 0 0 1 0 7.744"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><circle cx="9" cy="7" r="4"/></symbol>
+    <symbol id="i-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></symbol>
+    <symbol id="i-laptop" viewBox="0 0 24 24"><path d="M18 5a2 2 0 0 1 2 2v8.526a2 2 0 0 0 .212.897l1.068 2.127a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45l1.068-2.127A2 2 0 0 0 4 15.526V7a2 2 0 0 1 2-2z"/><path d="M20.054 15.987H3.946"/></symbol>
+    <symbol id="i-cloud-off" viewBox="0 0 24 24"><path d="M10.94 5.274A7 7 0 0 1 15.71 10h1.79a4.5 4.5 0 0 1 4.222 6.057"/><path d="M18.796 18.81A4.5 4.5 0 0 1 17.5 19H9A7 7 0 0 1 5.79 5.78"/><path d="m2 2 20 20"/></symbol>
+    <symbol id="i-key-round" viewBox="0 0 24 24"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"/><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"/><circle cx="12" cy="13" r="3"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></symbol>
+    <symbol id="i-layout-grid" viewBox="0 0 24 24"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></symbol>
+    <symbol id="i-braces" viewBox="0 0 24 24"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/></symbol>
+    <symbol id="i-component" viewBox="0 0 24 24"><path d="M15.536 11.293a1 1 0 0 0 0 1.414l2.376 2.377a1 1 0 0 0 1.414 0l2.377-2.377a1 1 0 0 0 0-1.414l-2.377-2.377a1 1 0 0 0-1.414 0z"/><path d="M2.297 11.293a1 1 0 0 0 0 1.414l2.377 2.377a1 1 0 0 0 1.414 0l2.377-2.377a1 1 0 0 0 0-1.414L6.088 8.916a1 1 0 0 0-1.414 0z"/><path d="M8.916 17.912a1 1 0 0 0 0 1.415l2.377 2.376a1 1 0 0 0 1.414 0l2.377-2.376a1 1 0 0 0 0-1.415l-2.377-2.376a1 1 0 0 0-1.414 0z"/><path d="M8.916 4.674a1 1 0 0 0 0 1.414l2.377 2.376a1 1 0 0 0 1.414 0l2.377-2.376a1 1 0 0 0 0-1.414l-2.377-2.377a1 1 0 0 0-1.414 0z"/></symbol>
+    <symbol id="i-pipette" viewBox="0 0 24 24"><path d="m12 9-8.414 8.414A2 2 0 0 0 3 18.828v1.344a2 2 0 0 1-.586 1.414A2 2 0 0 1 3.828 21h1.344a2 2 0 0 0 1.414-.586L15 12"/><path d="m18 9 .4.4a1 1 0 1 1-3 3l-3.8-3.8a1 1 0 1 1 3-3l.4.4 3.4-3.4a1 1 0 1 1 3 3z"/><path d="m2 22 .414-.414"/></symbol>
+    <symbol id="i-ruler" viewBox="0 0 24 24"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/></symbol>
+    <symbol id="i-command" viewBox="0 0 24 24"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/></symbol>
+    <symbol id="i-external-link" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+    <symbol id="i-rows-3" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M21 9H3"/><path d="M21 15H3"/></symbol>
+    <symbol id="i-columns-3" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/></symbol>
+    <symbol id="i-zap" viewBox="0 0 24 24"><path d="M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z"/></symbol>
+    <symbol id="i-list-checks" viewBox="0 0 24 24"><path d="M13 5h8"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-monitor" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></symbol>
+    <symbol id="i-rotate-ccw" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
+    <symbol id="i-file-image" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><circle cx="10" cy="12" r="2"/><path d="m20 17-1.296-1.296a2.41 2.41 0 0 0-3.408 0L9 22"/></symbol>
+    <symbol id="i-file-text" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></symbol>
+    <symbol id="i-droplet" viewBox="0 0 24 24"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></symbol>
+    <symbol id="i-move" viewBox="0 0 24 24"><path d="M12 2v20"/><path d="m15 19-3 3-3-3"/><path d="m19 9 3 3-3 3"/><path d="M2 12h20"/><path d="m5 9-3 3 3 3"/><path d="m9 5 3-3 3 3"/></symbol>
+    <symbol id="i-square-dashed" viewBox="0 0 24 24"><path d="M5 3a2 2 0 0 0-2 2"/><path d="M19 3a2 2 0 0 1 2 2"/><path d="M21 19a2 2 0 0 1-2 2"/><path d="M5 21a2 2 0 0 1-2-2"/><path d="M9 3h1"/><path d="M9 21h1"/><path d="M14 3h1"/><path d="M14 21h1"/><path d="M3 9v1"/><path d="M21 9v1"/><path d="M3 14v1"/><path d="M21 14v1"/></symbol>
+    <symbol id="i-scan-eye" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="1"/><path d="M18.944 12.33a1 1 0 0 0 0-.66 7.5 7.5 0 0 0-13.888 0 1 1 0 0 0 0 .66 7.5 7.5 0 0 0 13.888 0"/></symbol>
+    <symbol id="i-text-cursor-input" viewBox="0 0 24 24"><path d="M12 20h-1a2 2 0 0 1-2-2 2 2 0 0 1-2 2H6"/><path d="M13 8h7a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-7"/><path d="M5 16H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h1"/><path d="M6 4h1a2 2 0 0 1 2 2 2 2 0 0 1 2-2h1"/><path d="M9 6v12"/></symbol>
+    <symbol id="i-gauge" viewBox="0 0 24 24"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></symbol>
+    <symbol id="i-cpu" viewBox="0 0 24 24"><path d="M12 20v2"/><path d="M12 2v2"/><path d="M17 20v2"/><path d="M17 2v2"/><path d="M2 12h2"/><path d="M2 17h2"/><path d="M2 7h2"/><path d="M20 12h2"/><path d="M20 17h2"/><path d="M20 7h2"/><path d="M7 20v2"/><path d="M7 2v2"/><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></symbol>
+    <symbol id="i-workflow" viewBox="0 0 24 24"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/></symbol>
+    <symbol id="i-circle-question-mark" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></symbol>
+    <symbol id="i-git-branch" viewBox="0 0 24 24"><path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol>
+    <symbol id="i-folder-git-2" viewBox="0 0 24 24"><path d="M18 19a5 5 0 0 1-5-5v8"/><path d="M9 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v5"/><circle cx="13" cy="12" r="2"/><circle cx="20" cy="19" r="2"/></symbol>
+    <symbol id="i-git-commit-horizontal" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><line x1="3" x2="9" y1="12" y2="12"/><line x1="15" x2="21" y1="12" y2="12"/></symbol>
+    <symbol id="i-git-merge" viewBox="0 0 24 24"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></symbol>
+    <symbol id="i-github" viewBox="0 0 16 16"> <path fill="currentColor" stroke="none" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z" /> </symbol>
+    <symbol id="logo-mark" viewBox="0 0 216 216"> <path fill="currentColor" d="M83.55 0.18A108 108 0 1 0 215.82 132.45Z" /> <path fill="#8c8c8c" d="M83.55 0.18A108 108 0 0 0 215.82 132.45Z" /> </symbol>
+    <symbol id="logo-full" viewBox="0 0 1198 216"> <path fill="currentColor" d="M83.55 0.18A108 108 0 1 0 215.82 132.45Z" /> <path fill="#8c8c8c" d="M83.55 0.18A108 108 0 0 0 215.82 132.45Z" /> <path fill="currentColor" d="M354.88 112A49.44 49.44 0 1 1 256 112A49.44 49.44 0 1 1 354.88 112ZM337.6 112A32.16 32.16 0 1 0 273.28 112A32.16 32.16 0 1 0 337.6 112ZM465.28 112A49.44 49.44 0 1 1 366.4 112A49.44 49.44 0 1 1 465.28 112ZM448 112A32.16 32.16 0 1 0 383.68 112A32.16 32.16 0 1 0 448 112ZM366.4 64H383.68V202.24H366.4ZM560.1 145.08A49.44 49.44 0 1 1 572.8 112L555.52 112A32.16 32.16 0 1 0 547.26 133.52ZM482.56 104.4H572.13V119.6H482.56ZM583.36 64H600.64V160H583.36ZM583.36 109.6A47.04 47.04 0 0 1 677.44 109.6L660.16 109.6A29.76 29.76 0 0 0 600.64 109.6ZM660.16 109.6H677.44V160H660.16ZM790.72 112A49.44 49.44 0 1 1 691.84 112A49.44 49.44 0 1 1 790.72 112ZM773.44 112A32.16 32.16 0 1 0 709.12 112A32.16 32.16 0 1 0 773.44 112ZM691.84 64H709.12V202.24H691.84ZM898.24 112A49.44 49.44 0 1 1 799.36 112A49.44 49.44 0 1 1 898.24 112ZM880.96 112A32.16 32.16 0 1 0 816.64 112A32.16 32.16 0 1 0 880.96 112ZM880.96 64H898.24V160H880.96ZM1011.52 112A49.44 49.44 0 1 1 912.64 112A49.44 49.44 0 1 1 1011.52 112ZM994.24 112A32.16 32.16 0 1 0 929.92 112A32.16 32.16 0 1 0 994.24 112ZM912.64 64H929.92V202.24H912.64ZM1106.34 145.08A49.44 49.44 0 1 1 1119.04 112L1101.76 112A32.16 32.16 0 1 0 1093.5 133.52ZM1028.8 104.4H1118.37V119.6H1028.8ZM1129.6 64H1146.88V160H1129.6ZM1129.6 107.68A45.12 45.12 0 0 1 1197.28 68.61L1188.64 83.57A27.84 27.84 0 0 0 1146.88 107.68Z" /> </symbol>
+    <!-- The design agent (the editor's AgentMark): the peeled disc with two eyes cut through the sheet. -->
+    <symbol id="agent-mark" viewBox="0 0 24 24"> <path fill="currentColor" stroke="none" fill-rule="evenodd" d="M9.62 1.52A10.5 10.5 0 1 0 22.48 14.38A10.5 10.5 0 0 1 9.62 1.52ZM7.6 12.6a1.2 1.2 0 0 1 1.2 1.2v1.6a1.2 1.2 0 0 1-2.4 0v-1.6a1.2 1.2 0 0 1 1.2-1.2ZM12.2 12.6a1.2 1.2 0 0 1 1.2 1.2v1.6a1.2 1.2 0 0 1-2.4 0v-1.6a1.2 1.2 0 0 1 1.2-1.2Z" /> <path fill="#8c8c8c" stroke="none" d="M9.62 1.52A10.5 10.5 0 0 0 22.48 14.38Z" /> </symbol>
+    <symbol id="agent-cursor" viewBox="0 0 20 22"> <path d="M3 2.5v15.2l4.1-4 2.8 6.5 2.7-1.2-2.8-6.4h5.8z" fill="currentColor" stroke="#fff" stroke-width="1.3" stroke-linejoin="round" /> </symbol>
+    <!-- Agent logos, one colour, from theSVG (thesvg.org). Trademarks of their owners, shown to identify compatible tools. -->
+    <symbol id="b-claude-code" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z"/></symbol>
+    <symbol id="b-claude" viewBox="0 0 24 24"><path d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></symbol>
+    <symbol id="b-cursor" viewBox="0 0 24 24"><path d="M11.503.131 1.891 5.678a.84.84 0 0 0-.42.726v11.188c0 .3.162.575.42.724l9.609 5.55a1 1 0 0 0 .998 0l9.61-5.55a.84.84 0 0 0 .42-.724V6.404a.84.84 0 0 0-.42-.726L12.497.131a1.01 1.01 0 0 0-.996 0M2.657 6.338h18.55c.263 0 .43.287.297.515L12.23 22.918c-.062.107-.229.064-.229-.06V12.335a.59.59 0 0 0-.295-.51l-9.11-5.257c-.109-.063-.064-.23.061-.23"/></symbol>
+    <symbol id="b-codex" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M8.086.457a6.105 6.105 0 013.046-.415c1.333.153 2.521.72 3.564 1.7a.117.117 0 00.107.029c1.408-.346 2.762-.224 4.061.366l.063.03.154.076c1.357.703 2.33 1.77 2.918 3.198.278.679.418 1.388.421 2.126a5.655 5.655 0 01-.18 1.631.167.167 0 00.04.155 5.982 5.982 0 011.578 2.891c.385 1.901-.01 3.615-1.183 5.14l-.182.22a6.063 6.063 0 01-2.934 1.851.162.162 0 00-.108.102c-.255.736-.511 1.364-.987 1.992-1.199 1.582-2.962 2.462-4.948 2.451-1.583-.008-2.986-.587-4.21-1.736a.145.145 0 00-.14-.032c-.518.167-1.04.191-1.604.185a5.924 5.924 0 01-2.595-.622 6.058 6.058 0 01-2.146-1.781c-.203-.269-.404-.522-.551-.821a7.74 7.74 0 01-.495-1.283 6.11 6.11 0 01-.017-3.064.166.166 0 00.008-.074.115.115 0 00-.037-.064 5.958 5.958 0 01-1.38-2.202 5.196 5.196 0 01-.333-1.589 6.915 6.915 0 01.188-2.132c.45-1.484 1.309-2.648 2.577-3.493.282-.188.55-.334.802-.438.286-.12.573-.22.861-.304a.129.129 0 00.087-.087A6.016 6.016 0 015.635 2.31C6.315 1.464 7.132.846 8.086.457zm-.804 7.85a.848.848 0 00-1.473.842l1.694 2.965-1.688 2.848a.849.849 0 001.46.864l1.94-3.272a.849.849 0 00.007-.854l-1.94-3.393zm5.446 6.24a.849.849 0 000 1.695h4.848a.849.849 0 000-1.696h-4.848z"/></symbol>
+    <symbol id="b-windsurf" viewBox="0 0 24 24"><path d="M23.55 5.067c-1.2038-.002-2.1806.973-2.1806 2.1765v4.8676c0 .972-.8035 1.7594-1.7597 1.7594-.568 0-1.1352-.286-1.4718-.7659l-4.9713-7.1003c-.4125-.5896-1.0837-.941-1.8103-.941-1.1334 0-2.1533.9635-2.1533 2.153v4.8957c0 .972-.7969 1.7594-1.7596 1.7594-.57 0-1.1363-.286-1.4728-.7658L.4076 5.1598C.2822 4.9798 0 5.0688 0 5.2882v4.2452c0 .2147.0656.4228.1884.599l5.4748 7.8183c.3234.462.8006.8052 1.3509.9298 1.3771.313 2.6446-.747 2.6446-2.0977v-4.893c0-.972.7875-1.7593 1.7596-1.7593h.003a1.798 1.798 0 0 1 1.4718.7658l4.9723 7.0994c.4135.5905 1.05.941 1.8093.941 1.1587 0 2.1515-.9645 2.1515-2.153v-4.8948c0-.972.7875-1.7594 1.7596-1.7594h.194a.22.22 0 0 0 .2204-.2202v-4.622a.22.22 0 0 0-.2203-.2203Z"/></symbol>
+    <symbol id="b-opencode" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M16 6H8v12h8V6zm4 16H4V2h16v20z"/></symbol>
+    <symbol id="b-copilot" viewBox="0 0 24 24"><path d="M23.922 16.997C23.061 18.492 18.063 22.02 12 22.02 5.937 22.02.939 18.492.078 16.997A.641.641 0 0 1 0 16.741v-2.869a.883.883 0 0 1 .053-.22c.372-.935 1.347-2.292 2.605-2.656.167-.429.414-1.055.644-1.517a10.098 10.098 0 0 1-.052-1.086c0-1.331.282-2.499 1.132-3.368.397-.406.89-.717 1.474-.952C7.255 2.937 9.248 1.98 11.978 1.98c2.731 0 4.767.957 6.166 2.093.584.235 1.077.546 1.474.952.85.869 1.132 2.037 1.132 3.368 0 .368-.014.733-.052 1.086.23.462.477 1.088.644 1.517 1.258.364 2.233 1.721 2.605 2.656a.841.841 0 0 1 .053.22v2.869a.641.641 0 0 1-.078.256Zm-11.75-5.992h-.344a4.359 4.359 0 0 1-.355.508c-.77.947-1.918 1.492-3.508 1.492-1.725 0-2.989-.359-3.782-1.259a2.137 2.137 0 0 1-.085-.104L4 11.746v6.585c1.435.779 4.514 2.179 8 2.179 3.486 0 6.565-1.4 8-2.179v-6.585l-.098-.104s-.033.045-.085.104c-.793.9-2.057 1.259-3.782 1.259-1.59 0-2.738-.545-3.508-1.492a4.359 4.359 0 0 1-.355-.508Zm2.328 3.25c.549 0 1 .451 1 1v2c0 .549-.451 1-1 1-.549 0-1-.451-1-1v-2c0-.549.451-1 1-1Zm-5 0c.549 0 1 .451 1 1v2c0 .549-.451 1-1 1-.549 0-1-.451-1-1v-2c0-.549.451-1 1-1Zm3.313-6.185c.136 1.057.403 1.913.878 2.497.442.544 1.134.938 2.344.938 1.573 0 2.292-.337 2.657-.751.384-.435.558-1.15.558-2.361 0-1.14-.243-1.847-.705-2.319-.477-.488-1.319-.862-2.824-1.025-1.487-.161-2.192.138-2.533.529-.269.307-.437.808-.438 1.578v.021c0 .265.021.562.063.893Zm-1.626 0c.042-.331.063-.628.063-.894v-.02c-.001-.77-.169-1.271-.438-1.578-.341-.391-1.046-.69-2.533-.529-1.505.163-2.347.537-2.824 1.025-.462.472-.705 1.179-.705 2.319 0 1.211.175 1.926.558 2.361.365.414 1.084.751 2.657.751 1.21 0 1.902-.394 2.344-.938.475-.584.742-1.44.878-2.497Z"/></symbol>
+    <symbol id="b-vscode" viewBox="0 0 100 100"><path fill-rule="evenodd" d="M70.912 99.317a6.223 6.223 0 0 0 4.96-.19l20.589-9.907A6.25 6.25 0 0 0 100 83.587V16.413a6.25 6.25 0 0 0-3.54-5.632L75.874.874a6.226 6.226 0 0 0-7.104 1.21L29.355 38.04 12.187 25.01a4.162 4.162 0 0 0-5.318.236l-5.506 5.009a4.168 4.168 0 0 0-.004 6.162L16.247 50 1.36 63.583a4.168 4.168 0 0 0 .004 6.162l5.506 5.01a4.162 4.162 0 0 0 5.318.236l17.168-13.032L68.77 97.917a6.217 6.217 0 0 0 2.143 1.4ZM75.015 27.3 45.11 50l29.906 22.701V27.3Z"/></symbol>
+    <symbol id="b-antigravity" viewBox="0 0 16 15"><path fill-rule="evenodd" d="M14.0777 13.984C14.945 14.6345 16.2458 14.2008 15.0533 13.0084C11.476 9.53949 12.2349 0 7.79033 0C3.34579 0 4.10461 9.53949 0.527295 13.0084C-0.773543 14.3092 0.635692 14.6345 1.50293 13.984C4.86344 11.7076 4.64663 7.69664 7.79033 7.69664C10.934 7.69664 10.7172 11.7076 14.0777 13.984Z"/></symbol>
+    <symbol id="b-gemini-cli" viewBox="0 0 256 256"><path fill-rule="evenodd" d="M45.8.09h164.1c25.35 0 45.83 20.72 45.83 46.3v163.1c0 25.58-21 46.33-46.48 46.33H46.05c-25.48 0-45.99-21.16-45.99-46.3V46.62C.06 20.85 20.81.1 45.82.1zM46.82 14.06h161.9c18.49 0 32.5 15.43 32.5 33.06v161.8c0 18.33-14.53 32.49-32.56 32.49H46.96c-18.03 0-32.86-13.85-32.86-32.27V46.74c0-17.66 14.43-32.61 32.76-32.61zm76.93 62.08 102.2 49.64v38.76l-102.4 49.43v-28.46l82.28-40.62-82.06-39.3V62.08z"/></symbol>
+    </svg>
+    <!-- /@icons -->
+
+    <!-- @header -->
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="nav" id="top">
+      <div class="wrap nav-inner">
+        <a class="brand" href="index.html" aria-label="OpenPaper home">
+          <svg class="brand-logo" viewBox="0 0 1198 216" role="img" aria-label="OpenPaper"><use href="#logo-full" /></svg>
+        </a>
+        <nav class="nav-links" aria-label="Primary">
+          <a href="explore.html" data-nav="explore" aria-current="page">Explore</a>
+          <a href="agents.html" data-nav="agents">Agents</a>
+          <a href="install.html" data-nav="install">Install</a>
+          <a href="faq.html" data-nav="faq">FAQ</a>
+        </nav>
+        <div class="nav-actions">
+          <button class="icon-btn theme-toggle" type="button" aria-label="Switch to dark theme">
+            <svg class="i i-moon"><use href="#i-moon" /></svg>
+            <svg class="i i-sun"><use href="#i-sun" /></svg>
+          </button>
+          <a class="icon-btn hide-sm" href="https://github.com/arshit09/OpenPaper" aria-label="OpenPaper on GitHub">
+            <svg class="i"><use href="#i-github" /></svg>
+          </a>
+          <a class="btn btn-solid btn-sm os-other-only" href="install.html">Get started</a>
+          <a class="btn btn-solid btn-sm os-windows-only" href="https://github.com/arshit09/OpenPaper/releases/latest/download/OpenPaper-Setup.exe"><svg class="i"><use href="#i-download" /></svg>Download</a>
+          <button class="icon-btn menu-toggle" type="button" aria-expanded="false" aria-controls="mobile-menu" aria-label="Open menu">
+            <span class="burger" aria-hidden="true"><i></i><i></i></span>
+          </button>
+        </div>
+      </div>
+      <nav class="mobile-menu" id="mobile-menu" aria-label="Mobile" hidden>
+        <a href="explore.html" data-nav="explore" aria-current="page">Explore</a>
+        <a href="agents.html" data-nav="agents">Agents</a>
+        <a href="install.html" data-nav="install">Install</a>
+        <a href="faq.html" data-nav="faq">FAQ</a>
+        <a href="https://github.com/arshit09/OpenPaper">GitHub</a>
+      </nav>
+    </header>
+    <!-- /@header -->
+
+    <main id="main">
+      <section class="page-hero">
+        <div class="wrap page-hero-grid">
+          <div>
+            <nav class="crumbs reveal" aria-label="Breadcrumb"><a href="explore.html">Explore</a><svg class="i"><use href="#i-chevron-right" /></svg>Version control</nav>
+            <h1 class="h1 reveal">Every version, <em class="s">one click away.</em></h1>
+            <p class="lede reveal">Keep a design as a folder in a Git repository. Commit and push from the right panel, branch off to try an idea, and open any earlier version on the canvas or in a new tab.</p>
+          </div>
+          <div class="ill ill-versions reveal" aria-hidden="true">
+            <div class="ivc-panel">
+              <div class="ivc-branch"><svg class="i"><use href="#i-git-branch" /></svg>main</div>
+              <div class="ivc-log">
+                <p class="ivc-new"><b></b>Bigger headline</p>
+                <p><b></b>Blue button</p>
+                <p class="ivc-old"><b></b>First layout</p>
+              </div>
+              <div class="ivc-commit">Commit &amp; push</div>
+            </div>
+            <div class="ivc-frame"><span class="ivc-tag">Read-only</span><i class="ivc-h"></i><i></i><i style="width: 64%"></i><i class="ivc-btn"></i></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="block">
+        <div class="wrap">
+          <div class="block-head reveal">
+            <h2 class="h3">Git, without leaving the canvas.</h2>
+          </div>
+          <div class="facts reveal">
+            <div class="fact"><span class="icon-chip"><svg class="i"><use href="#i-folder-git-2" /></svg></span><h4>A folder per design</h4><p>One file per page, the images it uses, and a list of pages. Diffs stay readable.</p></div>
+            <div class="fact"><span class="icon-chip"><svg class="i"><use href="#i-github" /></svg></span><h4>Your GitHub login</h4><p>Uses the sign-in already on your computer, for a new repository or one you have.</p></div>
+            <div class="fact"><span class="icon-chip"><svg class="i"><use href="#i-git-commit-horizontal" /></svg></span><h4>Commit &amp; push</h4><p>Write what changed, then commit to your branch or a new one, and push.</p></div>
+            <div class="fact"><span class="icon-chip"><svg class="i"><use href="#i-git-branch" /></svg></span><h4>Branches</h4><p>Switch branches and the canvas shows that branch's version of the design.</p></div>
+            <div class="fact"><span class="icon-chip"><svg class="i"><use href="#i-history" /></svg></span><h4>History</h4><p>Open any commit on the canvas, read-only, or in a new tab. Restore it in one step.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="block block-alt">
+        <div class="wrap">
+          <div class="row">
+            <div class="row-visual reveal">
+              <div class="ill ill-vsetup" aria-hidden="true">
+                <div class="ivs-card">
+                  <p class="ivs-label">Account</p>
+                  <div class="ivs-field"><span class="ivs-av"></span>you</div>
+                  <p class="ivs-label">Repository</p>
+                  <div class="ivs-list">
+                    <span><svg class="i"><use href="#i-plus" /></svg>New repository</span>
+                    <span class="on"><svg class="i"><use href="#i-lock" /></svg>design-system</span>
+                    <span><svg class="i"><use href="#i-globe" /></svg>website</span>
+                  </div>
+                  <p class="ivs-label">Folder in the repository</p>
+                  <div class="ivs-field"><svg class="i"><use href="#i-folder" /></svg>designs / Landing page</div>
+                  <div class="ivs-go">Start tracking</div>
+                </div>
+              </div>
+            </div>
+            <div class="row-copy reveal">
+              <h2 class="h3">Set it up in the right panel.</h2>
+              <p>Open the <b>Version control</b> tab, the branch icon at the end of the right panel's tabs. Pick your GitHub account, then a repository or <b>New repository</b>, the folder inside it, and where the copy lives on your computer.</p>
+              <ul class="icon-list">
+                <li><span class="icon-chip"><svg class="i"><use href="#i-download" /></svg></span><span><b>Downloaded for you</b>OpenPaper clones the repository when it isn't on your computer yet, writes the design's folder and pushes the first commit.</span></li>
+                <li><span class="icon-chip"><svg class="i"><use href="#i-laptop" /></svg></span><span><b>No GitHub?</b>Choose <i>This computer only</i>: the design gets a repository of its own, or joins one you pick.</span></li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="row flip">
+            <div class="row-visual reveal">
+              <div class="ill ill-vbanner" aria-hidden="true">
+                <div class="ivb-bar"><svg class="i"><use href="#i-history" /></svg><b>First layout</b><small>read-only</small><span class="ivb-restore"><svg class="i"><use href="#i-rotate-ccw" /></svg>Restore</span><svg class="i"><use href="#i-external-link" /></svg></div>
+                <div class="ivb-frame"><i></i><i></i><i style="width: 60%"></i><i class="b"></i></div>
+              </div>
+            </div>
+            <div class="row-copy reveal">
+              <h2 class="h3">Go back to any version.</h2>
+              <p>History lists the commits that changed the design. Click one and the canvas shows that version, read-only, with <b>Restore</b> and <b>Back to current</b> above it. The arrow beside each commit opens it in a new tab, to compare side by side.</p>
+              <ul class="icon-list">
+                <li><span class="icon-chip"><svg class="i"><use href="#i-undo-2" /></svg></span><span><b>Restore is one step</b>It replaces the design with that version as a single change, so <kbd>Ctrl</kbd><kbd>Z</kbd> brings back what was there.</span></li>
+                <li><span class="icon-chip"><svg class="i"><use href="#i-git-branch" /></svg></span><span><b>Try ideas on a branch</b>Pick <i>New branch</i> under the message and the commit starts one, taking your changes along.</span></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="block">
+        <div class="wrap">
+          <div class="row" style="align-items: start">
+            <div class="reveal">
+              <h2 class="h3">A plain Git repository.</h2>
+              <p class="body" style="margin-top: 12px">Edits reach the design's folder a moment after you make them, so <code>git status</code>, VS Code and GitHub Desktop see them too. Pull or switch branches outside OpenPaper and the canvas follows. On another computer, <b>Open folder</b> on the home screen opens the design from any copy of the repository.</p>
+            </div>
+            <div class="term reveal">
+              <div class="term-bar"><i></i><i></i><i></i><span class="term-title">designs/Landing page</span></div>
+              <div class="term-panel">
+    <pre><code>openpaper.json    <span class="c"># name and pages, in order</span>
+pages/
+  p-1-0.json      <span class="c"># one page's layers</span>
+tokens.json       <span class="c"># design tokens and animations</span>
+comments.json     <span class="c"># comment threads</span>
+assets/           <span class="c"># images, videos, Lottie files</span>
+README.md</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="block block-alt">
+        <div class="wrap">
+          <div class="block-head reveal">
+            <h2 class="h3">Not yet supported.</h2>
+          </div>
+          <div class="facts reveal">
+            <div class="fact muted"><span class="icon-chip"><svg class="i"><use href="#i-git-merge" /></svg></span><h4>Merging two versions of a design</h4><p>Pull takes new commits when yours aren't in the way; otherwise push to a new branch.</p></div>
+            <div class="fact muted"><span class="icon-chip"><svg class="i"><use href="#i-server" /></svg></span><h4>Accounts on GitHub Enterprise, GitLab and others</h4><p>Their repositories still work through Git's own sign-in, from <i>This computer only</i>.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="wrap">
+        <nav class="pager" aria-label="More topics">
+          <a class="prev" href="figma.html"><small><svg class="i"><use href="#i-arrow-left" /></svg> Previous</small><b>Paste from Figma</b></a>
+          <a class="next" href="shortcuts.html"><small>Next <svg class="i"><use href="#i-arrow-right" /></svg></small><b>Shortcuts</b></a>
+        </nav>
+        <div class="cta-strip reveal">
+          <div>
+            <h2>Keep every version.</h2>
+            <p>Open the Version control tab and pick a repository.</p>
+          </div>
+          <div class="cta-row">
+            <a class="btn btn-solid os-other-only" href="install.html">Get started</a>
+            <a class="btn btn-solid os-windows-only" href="https://github.com/arshit09/OpenPaper/releases/latest/download/OpenPaper-Setup.exe"><svg class="i"><use href="#i-download" /></svg>Download for Windows</a>
+            <a class="btn btn-ghost" href="explore.html">Explore more</a>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- @footer -->
+    <footer class="footer">
+      <div class="wrap footer-grid">
+        <div class="footer-brand">
+          <svg class="brand-logo" viewBox="0 0 1198 216" role="img" aria-label="OpenPaper"><use href="#logo-full" /></svg>
+          <p>The open-source design canvas your agents draw on.</p>
+        </div>
+        <nav aria-label="Design">
+          <h3>Design</h3>
+          <a href="canvas.html">Canvas &amp; tools</a>
+          <a href="code.html">Design to code</a>
+          <a href="shaders.html">Shaders</a>
+          <a href="figma.html">Paste from Figma</a>
+          <a href="versions.html">Version control</a>
+          <a href="shortcuts.html">Shortcuts</a>
+        </nav>
+        <nav aria-label="AI">
+          <h3>AI</h3>
+          <a href="agents.html">Agents</a>
+          <a href="mcp.html">MCP server</a>
+        </nav>
+        <nav aria-label="Start">
+          <h3>Start</h3>
+          <a href="install.html">Install</a>
+          <a href="privacy.html">Privacy &amp; data</a>
+          <a href="terms.html">Terms of Use</a>
+          <a href="faq.html">FAQ</a>
+          <a href="explore.html">Explore all</a>
+        </nav>
+        <nav aria-label="Project">
+          <h3>Project</h3>
+          <a href="https://github.com/arshit09/OpenPaper">GitHub</a>
+          <a href="https://github.com/arshit09/OpenPaper/issues">Issues</a>
+          <a href="https://github.com/arshit09/OpenPaper/blob/main/CONTRIBUTING.md">Contributing</a>
+          <a href="https://github.com/arshit09/OpenPaper/blob/main/LICENSE">MIT License</a>
+        </nav>
+      </div>
+      <div class="wrap footer-base">
+        <p>© <span data-year>2026</span> OpenPaper contributors.</p>
+        <p>Not affiliated with Paper (Lost Coast Labs, Inc.). Shaders powered by Paper Shaders (Apache-2.0).</p>
+      </div>
+    </footer>
+    <!-- /@footer -->
+    <script src="assets/js/site.js" defer></script>
+  </body>
+</html>

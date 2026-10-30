@@ -21,6 +21,7 @@ The details live on topic pages, reached from `explore.html`.
 | `code.html` | Code tab demo, copy as React or Tailwind, agents writing components, pasting HTML |
 | `shaders.html` | Effect picker demo and the full library of 30 shaders |
 | `figma.html` | What comes across, where it lands, image tokens, what isn't supported |
+| `versions.html` | Version control: setting it up, commit and push, branches, history, the design's folder |
 | `shortcuts.html` | Every shortcut, searchable, with a Windows/macOS toggle |
 | `agents.html` | Built-in agent, connecting agents, live presence, screenshots, prompts |
 | `mcp.html` | Transports, every MCP tool, Paper compatibility |

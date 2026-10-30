@@ -691,10 +691,11 @@ em.s {
 .m-right {
   border-left: 1px solid var(--m-border);
 }
+/* Spaced as tightly as the editor's, so five tabs and the Agents count fit the column. */
 .m-tabs {
   display: flex;
-  gap: 2px;
-  padding: 6px;
+  gap: 0;
+  padding: 6px 4px;
   border-bottom: 1px solid var(--m-border);
 }
 .m-tab {
@@ -702,7 +703,7 @@ em.s {
   align-items: center;
   gap: 4px;
   height: 26px;
-  padding: 0 8px;
+  padding: 0 5px;
   border-radius: 5px;
   color: var(--m-text-2);
   font-weight: 500;
@@ -711,6 +712,14 @@ em.s {
 .m-tab.on {
   background: var(--m-panel-2);
   color: var(--m-text);
+}
+/* Version control is an icon tab, as in the editor. */
+.m-tab-icon {
+  padding: 0 5px;
+}
+.m-tab-icon .i {
+  width: 14px;
+  height: 14px;
 }
 .m-count {
   display: grid;
