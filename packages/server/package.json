@@ -1,6 +1,6 @@
 {
   "name": "openpaper",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "OpenPaper local server: file storage, live sync, Paper-compatible MCP server (HTTP + stdio) and headless rendering.",
   "license": "MIT",
   "type": "module",
