@@ -10,8 +10,9 @@
   --line: #e6e6e6;
   --line-2: #d4d4d4;
   --text: #111111;
-  --text-2: #5c5c5c;
-  --text-3: #767676;
+  --text-2: #525252;
+  /* Holds 4.5:1 on all three light surfaces, --bg-3 included. */
+  --text-3: #696969;
   --accent: var(--fold);
   --solid: #111111;
   --solid-text: #ffffff;
@@ -26,8 +27,8 @@
   --m-canvas: #eeeeee;
   --m-border: #e6e6e6;
   --m-text: #1a1a1a;
-  --m-text-2: #5c5c5c;
-  --m-text-3: #8f8f8f;
+  --m-text-2: #525252;
+  --m-text-3: #6b6b6b;
   --m-active: #e8e8e8;
   --m-agent: #111111;
   --m-agent-text: #ffffff;
@@ -64,8 +65,8 @@
   --m-canvas: #282828;
   --m-border: #333333;
   --m-text: #ededed;
-  --m-text-2: #b0b0b0;
-  --m-text-3: #7d7d7d;
+  --m-text-2: #bdbdbd;
+  --m-text-3: #9c9c9c;
   --m-active: #383838;
   --m-agent: #ffffff;
   --m-agent-text: #111111;
@@ -1760,7 +1761,7 @@ em.s {
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: var(--fold);
+  background: #6b6b6b;
   color: #fff;
   font-size: 10px;
   font-weight: 650;
