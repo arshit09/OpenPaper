@@ -9,8 +9,8 @@
   --op-border: #e6e6e6;
   --op-border-strong: #d4d4d4;
   --op-text: #1a1a1a;
-  --op-text-2: #5c5c5c;
-  --op-text-3: #8f8f8f;
+  --op-text-2: #525252;
+  --op-text-3: #6b6b6b;
   --op-hover: #f1f1f1;
   --op-active: #e8e8e8;
   /* The chrome's accent is the brand's ink. Blue is kept for --op-selection, on the canvas, where it has to
@@ -50,8 +50,8 @@
     --op-border: #333333;
     --op-border-strong: #444444;
     --op-text: #ededed;
-    --op-text-2: #b0b0b0;
-    --op-text-3: #7d7d7d;
+    --op-text-2: #bdbdbd;
+    --op-text-3: #9c9c9c;
     --op-hover: #2e2e2e;
     --op-active: #383838;
     --op-accent: #ededed;
@@ -76,8 +76,8 @@
   --op-border: #333333;
   --op-border-strong: #444444;
   --op-text: #ededed;
-  --op-text-2: #b0b0b0;
-  --op-text-3: #7d7d7d;
+  --op-text-2: #bdbdbd;
+  --op-text-3: #9c9c9c;
   --op-hover: #2e2e2e;
   --op-active: #383838;
   --op-accent: #ededed;
