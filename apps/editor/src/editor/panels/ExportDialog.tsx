@@ -69,7 +69,11 @@ export function ExportDialog() {
         </header>
         <div className="body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div className="op-label">
-            {selection.length ? `${selection.length} selected layer(s)` : `All ${targets.length} top-level layer(s) on this page`}
+            {selection.length
+              ? `${selection.length} selected layer${selection.length === 1 ? '' : 's'}`
+              : targets.length === 1
+                ? 'The 1 top-level layer on this page'
+                : `All ${targets.length} top-level layers on this page`}
           </div>
           <div className="op-grid-2">
             <label className="op-field">
