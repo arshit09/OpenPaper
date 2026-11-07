@@ -227,7 +227,8 @@ select {
 .op-shader-tile:focus-visible,
 .op-file-card:focus-visible {
   outline: 2px solid var(--op-accent);
-  outline-offset: 1px;
+  /* Clear of the button: the ring and an ink button are the same colour. */
+  outline-offset: 2px;
 }
 
 .op-truncate {
