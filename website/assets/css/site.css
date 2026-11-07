@@ -198,7 +198,7 @@ kbd {
   border-bottom-width: 2px;
   background: var(--bg);
   color: var(--text);
-  font-size: 0.74em;
+  font-size: max(0.74em, 12px);
   line-height: 1;
   vertical-align: 0.12em;
 }
@@ -1539,7 +1539,7 @@ em.s {
   text-wrap: pretty;
 }
 .card kbd {
-  font-size: 0.72em;
+  font-size: max(0.72em, 12px);
 }
 /* Agent dock demo */
 .dock-demo {
@@ -2117,7 +2117,7 @@ em.s {
 }
 .step p {
   color: var(--text-2);
-  font-size: 14.5px;
+  font-size: 15px;
   line-height: 1.55;
 }
 .code-line {
@@ -2188,7 +2188,7 @@ details[open] .plus::after {
   max-width: 640px;
   padding: 0 0 24px;
   color: var(--text-2);
-  font-size: 15.5px;
+  font-size: 16px;
   line-height: 1.65;
 }
 /* ---------- Footer ---------- */
@@ -2644,7 +2644,7 @@ a:hover .link-arrow .i {
   align-items: flex-start;
   gap: 12px;
   color: var(--text-2);
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.5;
 }
 .icon-list li b {
@@ -2684,8 +2684,8 @@ a:hover .link-arrow .i {
 }
 .fact p {
   margin-top: -6px;
-  color: var(--text-3);
-  font-size: 13.5px;
+  color: var(--text-2);
+  font-size: 14.5px;
   line-height: 1.5;
 }
 .fact.muted {
@@ -2711,7 +2711,7 @@ a:hover .link-arrow .i {
   border: 1px solid var(--line);
   background: var(--bg-2);
   color: var(--text-2);
-  font-size: 14.5px;
+  font-size: 15px;
   line-height: 1.55;
 }
 .callout .i {
@@ -2844,7 +2844,7 @@ a:hover .link-arrow .i {
 .xcard p {
   margin-top: 4px;
   color: var(--text-2);
-  font-size: 14.5px;
+  font-size: 15px;
   line-height: 1.5;
 }
 .xcard .ill,
@@ -3054,7 +3054,7 @@ a:hover .link-arrow .i {
 }
 .ref dd {
   color: var(--text-2);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.5;
 }
 .ref-ext dt::after {
@@ -3209,7 +3209,7 @@ a:hover .link-arrow .i {
   font-size: 12.5px;
 }
 .kb-row kbd {
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .kb-empty {
   padding: 40px 0;
