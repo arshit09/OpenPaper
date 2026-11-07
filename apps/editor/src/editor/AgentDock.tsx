@@ -209,7 +209,7 @@ const ItemView = memo(function ItemView({ item }: { item: AgentChatItem }) {
               padding: '8px 11px',
               borderRadius: '12px 12px 4px 12px',
               background: 'var(--op-accent)',
-              color: '#fff',
+              color: 'var(--op-accent-text)',
               whiteSpace: 'pre-wrap',
               overflowWrap: 'anywhere',
               lineHeight: 1.45,

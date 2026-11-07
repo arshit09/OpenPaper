@@ -13,8 +13,12 @@
   --op-text-3: #8f8f8f;
   --op-hover: #f1f1f1;
   --op-active: #e8e8e8;
-  --op-accent: #0d99ff;
-  --op-accent-soft: rgba(13, 153, 255, 0.12);
+  /* The chrome's accent is the brand's ink. Blue is kept for --op-selection, on the canvas, where it has to
+     stand out from whatever the user is designing. */
+  --op-accent: #1a1a1a;
+  --op-accent-hover: #333333;
+  --op-accent-press: #000000;
+  --op-accent-soft: rgba(0, 0, 0, 0.09);
   --op-accent-text: #ffffff;
   --op-danger: #e5484d;
   --op-success: #30a46c;
@@ -50,7 +54,11 @@
     --op-text-3: #7d7d7d;
     --op-hover: #2e2e2e;
     --op-active: #383838;
-    --op-accent-soft: rgba(13, 153, 255, 0.2);
+    --op-accent: #ededed;
+    --op-accent-hover: #ffffff;
+    --op-accent-press: #d6d6d6;
+    --op-accent-soft: rgba(255, 255, 255, 0.14);
+    --op-accent-text: #141414;
     --op-shadow: 0 8px 28px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.4);
     --op-toast-bg: #333333;
     --op-toast-border: #444444;
@@ -72,7 +80,11 @@
   --op-text-3: #7d7d7d;
   --op-hover: #2e2e2e;
   --op-active: #383838;
-  --op-accent-soft: rgba(13, 153, 255, 0.2);
+  --op-accent: #ededed;
+  --op-accent-hover: #ffffff;
+  --op-accent-press: #d6d6d6;
+  --op-accent-soft: rgba(255, 255, 255, 0.14);
+  --op-accent-text: #141414;
   --op-shadow: 0 8px 28px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.4);
   --op-toast-bg: #333333;
   --op-toast-border: #444444;
@@ -151,12 +163,10 @@ select {
   color: var(--op-accent-text);
 }
 .op-btn.primary:hover:not(:disabled) {
-  background: var(--op-accent);
-  filter: brightness(1.06);
+  background: var(--op-accent-hover);
 }
 .op-btn.primary:active:not(:disabled) {
-  background: var(--op-accent);
-  filter: brightness(0.94);
+  background: var(--op-accent-press);
 }
 .op-btn.outline {
   border-color: var(--op-border-strong);
@@ -1531,10 +1541,11 @@ a.op-vc-repo:hover {
 }
 .op-md a {
   color: var(--op-accent);
-  text-decoration: none;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .op-md a:hover {
-  text-decoration: underline;
+  text-decoration-thickness: 2px;
 }
 .op-md code {
   padding: 0 4px;

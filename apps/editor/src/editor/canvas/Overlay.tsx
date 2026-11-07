@@ -305,7 +305,7 @@ export const Overlay = memo(function Overlay() {
               height: 28,
               borderRadius: '14px 14px 14px 2px',
               border: '2px solid #fff',
-              background: getState().focusedThreadId === t.id ? 'var(--op-accent)' : '#1a1a1a',
+              background: getState().focusedThreadId === t.id ? 'var(--op-selection)' : '#1a1a1a',
               color: '#fff',
               fontSize: 11,
               fontWeight: 700,
