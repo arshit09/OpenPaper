@@ -3568,6 +3568,13 @@ a:hover .link-arrow .i {
 .strip + .section {
   padding-top: 72px;
 }
+/* ---------- Narrow phones ---------- */
+/* The header's button repeats the hero's, directly below it, and it's what would push the bar off the screen. */
+@media (max-width: 400px) {
+  .nav-actions .btn {
+    display: none;
+  }
+}
 /* ---------- Touch ---------- */
 /* The mouse layout stays compact; a finger gets the full 44px. */
 @media (pointer: coarse) {
