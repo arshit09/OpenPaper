@@ -2502,13 +2502,17 @@ a:hover .link-arrow .i {
   color: var(--text-2);
   font-size: 17px;
 }
+/* A wrapping row, so a short last row centres under the others like the rest of this section. */
 .topics {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  --cols: 6;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 10px;
   margin: 40px 0 36px;
 }
 .topic {
+  flex: 0 0 calc((100% - (var(--cols) - 1) * 10px) / var(--cols));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -3315,6 +3319,9 @@ a:hover .link-arrow .i {
   .kb-grid {
     grid-template-columns: minmax(0, 1fr);
   }
+  .topics {
+    --cols: 4;
+  }
 }
 @media (max-width: 820px) {
   .cta-strip {
@@ -3350,7 +3357,7 @@ a:hover .link-arrow .i {
     flex: none;
   }
   .topics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    --cols: 2;
   }
   .ref dl div {
     grid-template-columns: minmax(0, 1fr);
