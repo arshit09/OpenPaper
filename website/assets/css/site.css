@@ -2483,10 +2483,6 @@ a:hover .link-arrow .i {
   margin-top: 28px;
 }
 .explore-cta {
-  padding: 56px;
-  border-radius: 32px;
-  border: 1px solid var(--line);
-  background: var(--bg-2);
   text-align: center;
 }
 .explore-cta .h2 {
@@ -2524,10 +2520,10 @@ a:hover .link-arrow .i {
   --peel: 28px;
 }
 .topic .icon-chip {
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
-  background: var(--bg-2);
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
 }
 .topic .icon-chip .i {
   width: 22px;
@@ -3356,10 +3352,6 @@ a:hover .link-arrow .i {
   }
   .topics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .explore-cta {
-    padding: 36px 18px;
-    border-radius: 24px;
   }
   .ref dl div {
     grid-template-columns: minmax(0, 1fr);
