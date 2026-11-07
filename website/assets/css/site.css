@@ -2655,7 +2655,8 @@ a:hover .link-arrow .i {
 }
 .facts {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  /* auto-fit, so three or four cards share the row instead of leaving empty tracks. */
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 12px;
 }
 .fact {
@@ -3539,6 +3540,9 @@ a:hover .link-arrow .i {
   }
   .fact {
     padding: 16px;
+  }
+  .fact:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
   }
 }
 /* Agent logos in the "Works with" strip: one colour, like the names beside them. */
