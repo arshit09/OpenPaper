@@ -24,6 +24,9 @@
   --op-success: #30a46c;
   --op-agent: #8b5cf6;
   --op-selection: #0d99ff;
+  /* The same blue, dark enough to carry text: the size badge's fill and a selected artboard's name. */
+  --op-selection-strong: #0668b5;
+  --op-selection-text: #0668b5;
   --op-shadow: 0 6px 24px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
   --op-toast-bg: #1a1a1a;
   --op-toast-border: transparent;
@@ -59,6 +62,7 @@
     --op-accent-press: #d6d6d6;
     --op-accent-soft: rgba(255, 255, 255, 0.14);
     --op-accent-text: #141414;
+    --op-selection-text: #5cbaff;
     --op-shadow: 0 8px 28px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.4);
     --op-toast-bg: #333333;
     --op-toast-border: #444444;
@@ -85,6 +89,7 @@
   --op-accent-press: #d6d6d6;
   --op-accent-soft: rgba(255, 255, 255, 0.14);
   --op-accent-text: #141414;
+  --op-selection-text: #5cbaff;
   --op-shadow: 0 8px 28px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.4);
   --op-toast-bg: #333333;
   --op-toast-border: #444444;
