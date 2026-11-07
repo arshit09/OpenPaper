@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, Copy, CheckCircle2, RotateCcw, Bot, Plug, Undo2, GitBranch } from 'lucide-react';
+import { Check, Copy, CheckCircle2, RotateCcw, Bot, MessageCircle, Plug, Undo2, GitBranch } from 'lucide-react';
 import { displayName } from '@openpaper/core';
 import { useEditor, setState, getState, toast } from '../../state/store.ts';
 import { client, command } from '../../sync/session.ts';
@@ -96,6 +96,8 @@ function CommentsPanel() {
   const threads = Object.values(doc.comments)
     .filter((t) => !t.deletedAt && (showResolved || t.status === 'open'))
     .sort((a, b) => b.updatedAt - a.updatedAt);
+  const hasResolved = Object.values(doc.comments).some((t) => !t.deletedAt && t.status !== 'open');
+  const empty = !threads.length && !composer;
   const userName = (id: string) => doc.users?.[id]?.displayName ?? (id === 'local-user' ? 'You' : id);
 
   const submit = async () => {
@@ -122,12 +124,16 @@ function CommentsPanel() {
 
   return (
     <div className="op-scroll" style={{ flex: 1, padding: 10 }}>
-      <p className="op-label" style={{ margin: '0 2px 8px', lineHeight: 1.5 }}>
-        Press C and click the canvas to comment. Agents can read and resolve threads.
-      </p>
-      <label className="op-row" style={{ marginBottom: 10, cursor: 'pointer', width: 'fit-content' }}>
-        <input type="checkbox" checked={showResolved} onChange={(e) => setShowResolved(e.target.checked)} /> Show resolved
-      </label>
+      {!empty && (
+        <p className="op-label" style={{ margin: '0 2px 8px', lineHeight: 1.5 }}>
+          Press C and click the canvas to comment. Agents can read and resolve threads.
+        </p>
+      )}
+      {(hasResolved || !empty) && (
+        <label className="op-row" style={{ marginBottom: 10, cursor: 'pointer', width: 'fit-content' }}>
+          <input type="checkbox" checked={showResolved} onChange={(e) => setShowResolved(e.target.checked)} /> Show resolved
+        </label>
+      )}
       {composer && (
         <div className="op-card focused" style={{ marginBottom: 10 }}>
           <div className="op-label op-truncate" style={{ marginBottom: 6 }}>
@@ -152,7 +158,19 @@ function CommentsPanel() {
           </div>
         </div>
       )}
-      {!threads.length && !composer && <div className="op-empty">No comments yet.</div>}
+      {empty && (
+        <div className="op-card dashed" style={{ padding: 12, lineHeight: 1.5 }}>
+          <div className="op-row" style={{ marginBottom: 6 }}>
+            <MessageCircle size={16} style={{ flexShrink: 0 }} /> <b>No comments yet</b>
+          </div>
+          <div className="op-label" style={{ marginBottom: 10 }}>
+            Pin a note to any layer. Agents can read threads and resolve them.
+          </div>
+          <button className="op-btn primary" title="Comment (C)" onClick={() => setState({ tool: 'comment' })}>
+            <MessageCircle size={13} /> Add a comment
+          </button>
+        </div>
+      )}
       {threads.map((t) => {
         const msgs = t.messages.filter((m) => !m.deletedAt);
         const node = doc.nodes[t.nodeId];
