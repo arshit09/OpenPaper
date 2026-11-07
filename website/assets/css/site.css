@@ -262,6 +262,15 @@ em.s {
   margin-inline: auto;
   max-width: 720px;
 }
+/* Read by screen readers, not shown: a heading the outline needs and the design doesn't. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 /* ---------- Buttons ---------- */
 .btn {
   display: inline-flex;
@@ -2667,7 +2676,7 @@ a:hover .link-arrow .i {
   border: 1px solid var(--line);
   background: var(--bg);
 }
-.fact h4 {
+.fact h3 {
   margin: 0;
   font-size: 15px;
   font-weight: 600;
@@ -2683,7 +2692,7 @@ a:hover .link-arrow .i {
   background: transparent;
   border-style: dashed;
 }
-.fact.muted h4 {
+.fact.muted h3 {
   color: var(--text-2);
 }
 .panel {
@@ -3162,7 +3171,7 @@ a:hover .link-arrow .i {
 .kb-group[hidden] {
   display: none;
 }
-.kb-group h3 {
+.kb-group h2 {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -3170,7 +3179,7 @@ a:hover .link-arrow .i {
   font-size: 15px;
   font-weight: 600;
 }
-.kb-group h3 .i {
+.kb-group h2 .i {
   color: var(--text-3);
 }
 .kb-row {
