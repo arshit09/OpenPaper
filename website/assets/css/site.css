@@ -2551,7 +2551,9 @@ a:hover .link-arrow .i {
   justify-content: flex-start;
   margin-top: 32px;
 }
+/* The .center helper caps width for text; here it would cut the hero's full-bleed rule short. */
 .page-hero.center {
+  max-width: none;
   text-align: center;
 }
 .page-hero.center .lede {
