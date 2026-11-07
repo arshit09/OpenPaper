@@ -3559,6 +3559,39 @@ a:hover .link-arrow .i {
 .strip + .section {
   padding-top: 72px;
 }
+/* ---------- Touch ---------- */
+/* The mouse layout stays compact; a finger gets the full 44px. */
+@media (pointer: coarse) {
+  .icon-btn,
+  .copy {
+    width: 44px;
+    height: 44px;
+  }
+  .btn-sm,
+  .cd-tab,
+  .ct,
+  .fx-picker button,
+  .seg-toggle button {
+    height: 44px;
+  }
+  .brand {
+    align-items: center;
+    min-height: 44px;
+  }
+  .footer nav {
+    gap: 0;
+  }
+  .footer nav a {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+  }
+  .crumbs a {
+    display: inline-block;
+    padding-block: 14px;
+    margin-block: -14px;
+  }
+}
 @media (max-width: 640px) {
   .facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
