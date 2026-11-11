@@ -1,6 +1,6 @@
 /** Editor operations behind keyboard shortcuts. Every document change is an editor command. */
 import { FREEFORM_DISPLAY, parentKindOf, pxValue, type NodeRecord, type StyleInput } from '@openpaper/core';
-import { camera, getState, setCamera, setState } from '../state/store.ts';
+import { camera, getState, setCamera, setState, showPage } from '../state/store.ts';
 import { client, command } from '../sync/session.ts';
 import { chainOf, elementFor, rectsIntersect, unionRects, viewportRect, worldRectOf, type Rect } from './canvas/geometry.ts';
 import { fitRect } from './canvas/interactions.ts';
@@ -146,8 +146,7 @@ export function goToPage(direction: 1 | -1) {
   const pages = s.doc?.pageList.filter((p) => p.type === 'page') ?? [];
   if (pages.length < 2) return;
   const i = pages.findIndex((p) => p.id === s.pageId);
-  const next = pages[(i + direction + pages.length) % pages.length]!;
-  setState({ pageId: next.id, selection: [], hoverId: null });
+  showPage(pages[(i + direction + pages.length) % pages.length]!.id);
 }
 
 // ---- selection -----------------------------------------------------------------

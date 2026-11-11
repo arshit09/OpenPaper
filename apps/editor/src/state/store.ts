@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import {
   applyPatch,
+  pageIdOfNode,
+  readerOf,
   type ActivityEntry,
   type AgentChatItem,
   type AgentConfigInfo,
@@ -9,6 +11,7 @@ import {
   type NodeRecord,
   type PaperDocument,
   type ResourceInfo,
+  type SavedPageView,
   type ShaderProps,
   type SpeechStatus,
   type VcsCommit,
@@ -54,6 +57,11 @@ export interface EditorState {
   editingTextId: string | null;
   tool: Tool;
   cameras: Record<string, Camera>;
+  /**
+   * How the open file's other pages were left: the layers selected on each (put back when the page is
+   * shown again) and, for pages not shown yet in this tab, the camera the server remembered.
+   */
+  pageViews: Record<string, SavedPageView>;
   transient: TransientStyles;
 
   agents: AgentPresence[];
@@ -127,6 +135,7 @@ export const useEditor = create<EditorState>(() => ({
   editingTextId: null,
   tool: 'select',
   cameras: {},
+  pageViews: {},
   transient: {},
   agents: [],
   activity: [],
@@ -174,12 +183,41 @@ export function setCamera(next: Camera, pageId = getState().pageId) {
   setState((s) => ({ cameras: { ...s.cameras, [pageId]: { ...next, zoom } } }));
 }
 
-export function setDocument(doc: PaperDocument, version: number) {
+/** The ids among `ids` that are layers on that page (ones since deleted or moved to another page drop out). */
+export function selectionOnPage(doc: PaperDocument, pageId: string | null, ids: readonly string[] | undefined): string[] {
+  if (!pageId || !ids?.length) return [];
+  const reader = readerOf(doc);
+  return ids.filter((id) => doc.nodes[id] && doc.nodes[id].component !== 'PageRoot' && pageIdOfNode(reader, id) === pageId);
+}
+
+/** Show another page of the open file, with the layers that were selected on it when it was left. */
+export function showPage(pageId: string) {
   setState((s) => {
-    const pageId =
-      s.pageId && doc.pages[s.pageId] ? s.pageId : (doc.pageList.find((p) => p.type === 'page')?.id ?? null);
-    const selection = s.doc?.id === doc.id ? s.selection.filter((id) => doc.nodes[id]) : [];
-    return { doc, version, pageId, selection, transient: {}, editingTextId: null };
+    if (pageId === s.pageId) return {};
+    const pageViews = s.pageId ? { ...s.pageViews, [s.pageId]: { ...s.pageViews[s.pageId], selection: s.selection } } : s.pageViews;
+    const selection = s.doc ? selectionOnPage(s.doc, pageId, pageViews[pageId]?.selection) : [];
+    return { pageId, pageViews, selection, hoverId: null };
+  });
+}
+
+/**
+ * Show `doc`. `opened`: the file is being opened, on this page (else its first) with these pages'
+ * remembered views: the page's selection comes back now, and its camera when the canvas first shows it.
+ */
+export function setDocument(doc: PaperDocument, version: number, opened?: { pageId: string | null; pageViews: Record<string, SavedPageView> }) {
+  setState((s) => {
+    const wanted = opened ? opened.pageId : s.pageId;
+    const pageId = wanted && doc.pages[wanted] ? wanted : (doc.pageList.find((p) => p.type === 'page')?.id ?? null);
+    if (!opened) {
+      const selection = s.doc?.id === doc.id ? s.selection.filter((id) => doc.nodes[id]) : [];
+      return { doc, version, pageId, selection, transient: {}, editingTextId: null };
+    }
+    // A remembered camera wins over one from an earlier visit in this tab: it is that visit's last
+    // report, or newer from another editor.
+    const cameras = { ...s.cameras };
+    for (const [id, page] of Object.entries(opened.pageViews)) if (page.viewport) delete cameras[id];
+    const selection = selectionOnPage(doc, pageId, opened.pageViews[pageId ?? '']?.selection);
+    return { doc, version, pageId, selection, pageViews: opened.pageViews, cameras, hoverId: null, transient: {}, editingTextId: null };
   });
 }
 

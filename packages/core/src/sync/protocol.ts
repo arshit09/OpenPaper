@@ -58,13 +58,36 @@ export interface ResourceInfo {
   thumbnail?: { url: string; background: string | null };
 }
 
+/** A canvas camera as an editor reports it: the world's offset in screen pixels, the zoom and the canvas size. */
+export interface Viewport {
+  x: number;
+  y: number;
+  zoom: number;
+  width: number;
+  height: number;
+}
+
 export interface ViewState {
   fileId: string | null;
   pageId: string | null;
   selection: string[];
   /** Whether the editor tab currently has focus / is visible. */
   focused: boolean;
-  viewport?: { x: number; y: number; zoom: number; width: number; height: number };
+  viewport?: Viewport;
+  /** An older version is on screen, read-only: this view isn't remembered as where the user left the file. */
+  previewing?: boolean;
+}
+
+/** How a page was left: its camera and the layers selected on it. */
+export interface SavedPageView {
+  viewport?: Viewport;
+  selection: string[];
+}
+
+/** Where the user left a file: the page on screen, and each page's camera and selection. */
+export interface SavedView {
+  pageId: string;
+  pages: Record<string, SavedPageView>;
 }
 
 export type ClientMessage =
@@ -326,6 +349,8 @@ export interface OpenFileResult {
   version: number;
   agents: AgentPresence[];
   activity: ActivityEntry[];
+  /** Where the user left this file last time (any editor), so opening it continues there. */
+  view?: SavedView;
 }
 
 /** Server → editor RPCs (the editor implements these). */

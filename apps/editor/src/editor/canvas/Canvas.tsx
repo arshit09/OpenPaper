@@ -8,7 +8,7 @@ import { TextEditor } from './TextEditor.tsx';
 import { DragGhost } from './DragGhost.tsx';
 import { MeasureOverlay } from './MeasureOverlay.tsx';
 import { ZoomOverlay } from './ZoomOverlay.tsx';
-import { setViewportElement, unionRects, watchLayout, worldRectOf, viewportRect } from './geometry.ts';
+import { rectsIntersect, setViewportElement, unionRects, watchLayout, worldRectOf, viewportRect } from './geometry.ts';
 import {
   cancelGesture,
   fitRect,
@@ -23,7 +23,7 @@ import {
   subscribeModes,
   zoomAt,
 } from './interactions.ts';
-import { nextZoomLevel } from './canvas-math.ts';
+import { cameraForViewport, nextZoomLevel, visibleWorld } from './canvas-math.ts';
 import { useDocumentFonts } from './fonts.ts';
 import { restartAnimations } from './motion.ts';
 
@@ -55,6 +55,25 @@ export function zoomToFit(ids?: string[], padding = 80) {
     return;
   }
   fitRect(rect, padding);
+}
+
+/**
+ * Put back the camera a page was left with: this tab's, else the one the server remembered (kept
+ * centred on a canvas of another size). Not when it would show none of the page's layers (they moved,
+ * or the page was empty then): the caller fits them instead.
+ */
+function restoreCamera(pageId: string): boolean {
+  const s = getState();
+  const vr = viewportRect();
+  const saved = s.pageViews[pageId]?.viewport;
+  const cam = s.cameras[pageId] ?? (saved ? cameraForViewport(saved, vr) : null);
+  const page = s.doc?.pages[pageId];
+  if (!cam || !page) return false;
+  const rects = (s.doc!.nodes[page.rootId]?.children ?? []).map((id) => worldRectOf(id)).filter((r): r is NonNullable<typeof r> => !!r);
+  const shown = visibleWorld(cam, vr);
+  if (rects.length && !rects.some((r) => rectsIntersect(r, shown))) return false;
+  if (cam !== s.cameras[pageId]) setCamera(cam, pageId);
+  return true;
 }
 
 export function zoomBy(factor: number) {
@@ -143,16 +162,21 @@ export function Canvas() {
     };
   }, []);
 
-  // First visit to a page: fit its content as soon as it is in the DOM, before the browser paints,
-  // so opening a file never flashes it at 100% first (a heavy page took ~400 ms to paint that way).
+  // A page shown for the first time on this canvas, or without a camera: back to where it was left,
+  // else fit its content. An empty page is fitted again when it gets its first layers. A layout
+  // effect: it runs once the layers are in the DOM and before the browser paints, so opening a file
+  // never flashes a wrong view first (a heavy page took ~400 ms to paint at 100%).
   const hadContent = useRef<Record<string, boolean>>({});
+  const hasContent = (rootChildren?.length ?? 0) > 0;
+  const hasCamera = !!cam;
   useLayoutEffect(() => {
     if (!pageId) return;
-    const has = (rootChildren?.length ?? 0) > 0;
-    const known = getState().cameras[pageId];
-    if (!known || (has && !hadContent.current[pageId])) zoomToFit();
-    hadContent.current[pageId] = has;
-  }, [pageId, (rootChildren?.length ?? 0) > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+    const before = hadContent.current[pageId];
+    if (before === undefined || !getState().cameras[pageId]) {
+      if (!restoreCamera(pageId)) zoomToFit();
+    } else if (hasContent && !before) zoomToFit();
+    hadContent.current[pageId] = hasContent;
+  }, [pageId, hasContent, hasCamera]);
 
   // Panning reports the viewport a few times a second, not every frame.
   useEffect(() => {

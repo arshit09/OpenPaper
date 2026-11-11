@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Eye, EyeOff, Lock, Unlock, Frame as FrameIcon, Type, Square, Shapes, Plus, FileText, Copy, Trash2, Minus, Blend, Film, Sparkles, CodeXml } from 'lucide-react';
 import { displayName, isAncestorOf, readerOf, type NodeRecord } from '@openpaper/core';
-import { useEditor, setState, getState } from '../../state/store.ts';
+import { useEditor, setState, getState, showPage } from '../../state/store.ts';
 import { command } from '../../sync/session.ts';
 import { TokensPanel } from './TokensPanel.tsx';
 import { fullName } from './Inspector.tsx';
@@ -43,7 +43,7 @@ function PagesSection() {
           title="Add page"
           onClick={async () => {
             const r = await command<{ pageId?: string }>({ type: 'createPage' });
-            if (r.pageId) setState({ pageId: r.pageId, selection: [] });
+            if (r.pageId) showPage(r.pageId);
           }}
         >
           <Plus size={14} />
@@ -71,7 +71,7 @@ function PagesSection() {
                 key={item.id}
                 className={`op-tree-row${item.id === pageId ? ' selected' : ''}`}
                 style={{ paddingLeft: 10 }}
-                onClick={() => setState({ pageId: item.id, selection: [], hoverId: null })}
+                onClick={() => showPage(item.id)}
                 onDoubleClick={() => setRenaming(item.id)}
               >
                 <FileText size={13} style={{ color: 'var(--op-text-3)', flexShrink: 0 }} />

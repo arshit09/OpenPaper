@@ -23,6 +23,7 @@ import type { AgentService } from './agent/agent.ts';
 import type { SpeechService } from './speech/service.ts';
 import type { ThumbnailService } from './thumbnails.ts';
 import type { VcsService } from './vcs/service.ts';
+import type { ViewMemory } from './view-memory.ts';
 import { detectFolderForUrl, inspectFolder, pickFolder } from './sites/folders.ts';
 import type { SiteProxies } from './sites/proxy.ts';
 import { normalizeSiteUrl, type SiteRecord, type SiteStore } from './sites/store.ts';
@@ -51,6 +52,8 @@ export interface SyncOptions {
   thumbnails?: ThumbnailService;
   /** Version control: designs kept as folders in Git repositories (unset: not available). */
   vcs?: VcsService;
+  /** Where the user left each file, so opening it continues there (unset: files open fitted). */
+  viewMemory?: ViewMemory;
 }
 
 /** A site as the editor sees it (the proxy port is server bookkeeping). */
@@ -89,7 +92,7 @@ function localUserName(): string {
 }
 
 /** WebSocket endpoint for editors: commands in, patches/presence/activity out. */
-export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings, figmaSettings, speech, sites, thumbnails, vcs }: SyncOptions) {
+export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings, figmaSettings, speech, sites, thumbnails, vcs, viewMemory }: SyncOptions) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 * 1024 });
   const userName = localUserName();
 
@@ -136,11 +139,13 @@ export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings
       case 'file.open': {
         const live = await env.hub.get(String(params.fileId));
         conn.subscriptions.add(live.id);
+        const view = viewMemory?.get(live.id);
         const result: OpenFileResult = {
           doc: live.doc,
           version: live.version,
           agents: env.presence.presenceFor(live.id),
           activity: env.presence.activityFor(live.id),
+          ...(view ? { view } : {}),
         };
         return result;
       }
@@ -169,7 +174,13 @@ export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings
         const view = params as ViewState;
         const before = conn.view;
         conn.view = { ...view, selection: Array.isArray(view.selection) ? view.selection.slice(0, 1000) : [] };
-        if (typeof view.fileId === 'string' && typeof view.pageId === 'string') thumbnails?.viewing(view.fileId, view.pageId);
+        if (typeof view.fileId === 'string' && typeof view.pageId === 'string') {
+          thumbnails?.viewing(view.fileId, view.pageId);
+          const doc = env.hub.peek(view.fileId)?.doc;
+          if (env.store.has(view.fileId) && (!doc || doc.pages[view.pageId])) {
+            viewMemory?.record(conn.view, doc ? (pageId) => !!doc.pages[pageId] : undefined);
+          }
+        }
         // Leaving a file (for home, a site or another file) or switching away from the window
         // catches its preview up in the background.
         if (before.fileId && (before.fileId !== view.fileId || (before.focused && !view.focused))) thumbnails?.left(before.fileId);
@@ -196,6 +207,7 @@ export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings
         if (env.hub.isOpen(id)) await env.hub.close(id);
         await env.store.delete(id);
         await thumbnails?.removed(id);
+        viewMemory?.forget(id);
         env.resourcesChanged();
         return null;
       }

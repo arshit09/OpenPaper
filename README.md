@@ -297,7 +297,7 @@ apps/desktop      Windows app and web installer (Rust + Tauri), and the release 
 
 The server owns every document. Editors and agents send commands; each change becomes a patch broadcast to every open editor, so you see agents work in real time. Agent edits run as their own actor and join the undo timeline, so `Ctrl+Z` reaches them. Rendering rules live in `core`, so headless screenshots, exports and the canvas are identical. See [docs/architecture.md](docs/architecture.md).
 
-**Data:** `~/.openpaper` (override with `OPENPAPER_HOME`) — `files/*.json`, `assets/` (images, content-addressed), `index.json`, `vcs.json` (the folders of designs under version control). Exports go to `~/Downloads/OpenPaper` (`OPENPAPER_EXPORT_DIR`).
+**Data:** `~/.openpaper` (override with `OPENPAPER_HOME`) — `files/*.json`, `assets/` (images, content-addressed), `index.json`, `vcs.json` (the folders of designs under version control), `views.json` (where you left each file: its page, and each page's zoom, position and selection, so opening it again continues there). Exports go to `~/Downloads/OpenPaper` (`OPENPAPER_EXPORT_DIR`).
 
 **Image generation:** set `OPENAI_API_KEY` and/or `GEMINI_API_KEY` for the server; agents use `paper-gen://` URLs (see `get_guide({topic: "image-generation"})`).
 

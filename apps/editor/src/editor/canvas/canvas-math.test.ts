@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fitCamera, inferFlex, lockAxis, measureBoxes, nextZoomLevel, opacityFromDigits, readingOrder } from './canvas-math.ts';
+import { cameraForViewport, fitCamera, inferFlex, lockAxis, measureBoxes, nextZoomLevel, opacityFromDigits, readingOrder, visibleWorld } from './canvas-math.ts';
 
 const box = (x: number, y: number, width: number, height: number) => ({ x, y, width, height });
 const values = (m: ReturnType<typeof measureBoxes>) => m.distances.map((d) => `${d.axis}${Math.round(d.value)}`).sort();
@@ -69,6 +69,23 @@ describe('fitCamera', () => {
   it('centers and fits a rect', () => {
     expect(fitCamera(box(0, 0, 400, 200), { width: 1000, height: 600 }, 100, 4)).toEqual({ zoom: 2, x: 100, y: 100 });
     expect(fitCamera(box(0, 0, 10, 10), { width: 1000, height: 600 }, 0, 4).zoom).toBe(4);
+  });
+});
+
+describe('cameraForViewport', () => {
+  it('keeps the remembered middle of the canvas in the middle', () => {
+    const saved = { x: -300, y: 50, zoom: 2, width: 1000, height: 600 };
+    expect(cameraForViewport(saved, { width: 1000, height: 600 })).toEqual({ zoom: 2, x: -300, y: 50 });
+    const cam = cameraForViewport(saved, { width: 1400, height: 400 });
+    expect(cam).toEqual({ zoom: 2, x: -100, y: -50 });
+    // The world point in the middle, (500 + 300) / 2 and (300 - 50) / 2, is in the middle of both canvases.
+    expect([(700 - cam.x) / cam.zoom, (200 - cam.y) / cam.zoom]).toEqual([400, 125]);
+  });
+});
+
+describe('visibleWorld', () => {
+  it('is the canvas in world coordinates', () => {
+    expect(visibleWorld({ x: -200, y: 100, zoom: 2 }, { width: 1000, height: 600 })).toEqual(box(100, -50, 500, 300));
   });
 });
 

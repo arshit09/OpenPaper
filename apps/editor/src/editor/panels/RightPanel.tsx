@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check, Copy, CheckCircle2, RotateCcw, Bot, MessageCircle, Plug, Undo2, GitBranch } from 'lucide-react';
 import { displayName } from '@openpaper/core';
-import { useEditor, setState, getState, toast } from '../../state/store.ts';
+import { useEditor, setState, getState, showPage, toast } from '../../state/store.ts';
 import { client, command } from '../../sync/session.ts';
 import { copySelectionAsHtml } from '../clipboard.ts';
 import { Inspector } from './Inspector.tsx';
@@ -180,7 +180,8 @@ function CommentsPanel() {
             key={t.id}
             className={`op-card interactive${focused === t.id ? ' focused' : ''}`}
             onClick={() => {
-              setState({ focusedThreadId: t.id, ...(t.pageId !== pageId ? { pageId: t.pageId } : {}) });
+              showPage(t.pageId);
+              setState({ focusedThreadId: t.id });
               if (node && node.component !== 'PageRoot') setState({ selection: [node.id] });
             }}
             style={{ opacity: t.status === 'resolved' ? 0.6 : 1 }}

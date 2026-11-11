@@ -26,6 +26,7 @@ import { FileStore } from './storage.ts';
 import { createSyncServer } from './sync.ts';
 import { TailwindService } from './tailwind.ts';
 import { ThumbnailService } from './thumbnails.ts';
+import { ViewMemory } from './view-memory.ts';
 import type { ToolEnv } from './tools/context.ts';
 import { mcpToolList } from './tools/definitions.ts';
 import { SERVER_INSTRUCTIONS } from './tools/guides.ts';
@@ -168,6 +169,8 @@ export async function startServer(opts: StartOptions): Promise<RunningServer> {
     changed: (fileId, notice) => views.broadcast(fileId, { t: 'vcs', fileId, ...(notice ? { notice } : {}) }),
   });
   await vcs.init();
+  const viewMemory = new ViewMemory(join(paths.home, 'views.json'));
+  await viewMemory.init((fileId) => store.has(fileId));
   sync = createSyncServer({
     env,
     policy,
@@ -179,6 +182,7 @@ export async function startServer(opts: StartOptions): Promise<RunningServer> {
     sites: { store: siteStore, proxies: siteProxies },
     thumbnails,
     vcs,
+    viewMemory,
   });
   tailwind.warmup();
 
@@ -195,6 +199,7 @@ export async function startServer(opts: StartOptions): Promise<RunningServer> {
       await siteProxies.closeAll();
       // Tracked designs' folders catch up with the last edits.
       await vcs.close();
+      await viewMemory.close();
       await hub.flushAll();
       await headless.close();
       await new Promise<void>((r) => server.close(() => r()));

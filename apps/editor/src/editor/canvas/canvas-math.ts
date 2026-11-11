@@ -124,6 +124,19 @@ export function fitCamera(rect: Box, view: { width: number; height: number }, pa
   return { zoom, x: view.width / 2 - (rect.x + rect.width / 2) * zoom, y: view.height / 2 - (rect.y + rect.height / 2) * zoom };
 }
 
+/**
+ * Camera that shows a remembered view on a canvas of another size: the same zoom, with the world
+ * point that was in the middle of the old canvas in the middle of this one.
+ */
+export function cameraForViewport(saved: { x: number; y: number; zoom: number; width: number; height: number }, view: { width: number; height: number }) {
+  return { zoom: saved.zoom, x: saved.x + (view.width - saved.width) / 2, y: saved.y + (view.height - saved.height) / 2 };
+}
+
+/** The part of the world a camera shows on a canvas of this size. */
+export function visibleWorld(cam: { x: number; y: number; zoom: number }, view: { width: number; height: number }): Box {
+  return { x: -cam.x / cam.zoom, y: -cam.y / cam.zoom, width: view.width / cam.zoom, height: view.height / cam.zoom };
+}
+
 /** Flex layout that keeps freely placed boxes in place: the axis they spread along, their order and typical gap. */
 export function inferFlex(boxes: Box[]): { direction: 'row' | 'column'; gap: number; order: number[] } {
   const order = boxes.map((_, i) => i);

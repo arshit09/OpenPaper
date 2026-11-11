@@ -12,7 +12,17 @@ import type {
   VcsStatus,
   ViewState,
 } from '@openpaper/core';
-import { applyServerPatch, getState, isReadOnly, setDocument, setState, toast, useEditor } from '../state/store.ts';
+import {
+  applyServerPatch,
+  getState,
+  isReadOnly,
+  setDocument,
+  setState,
+  showPage,
+  toast,
+  useEditor,
+  type EditorState,
+} from '../state/store.ts';
 import { applyLive, flushLive, noteAgentReads, planLive } from '../editor/canvas/live.ts';
 import { SyncClient } from './client.ts';
 
@@ -181,9 +191,15 @@ export async function openFile(fileId: string, opts: { keepView?: boolean; pageI
     return;
   }
   if (getState().doc?.id !== fileId) setState({ preview: null, vcs: null });
-  if (!opts.keepView) setState({ selection: [], pageId: opts.pageId ?? null, hoverId: null });
-  else if (opts.pageId) setState({ pageId: opts.pageId });
-  setDocument(result.doc, result.version);
+  if (opts.keepView) {
+    if (opts.pageId) setState({ pageId: opts.pageId });
+    setDocument(result.doc, result.version);
+  } else {
+    // Continue where the user left the file, in this editor or another: a page asked for (a link,
+    // an agent) wins over the one it was left on.
+    const pageId = [opts.pageId, result.view?.pageId].find((id) => id && result.doc.pages[id]) ?? null;
+    setDocument(result.doc, result.version, { pageId, pageViews: result.view?.pages ?? {} });
+  }
   setState({ agents: result.agents, activity: result.activity });
   pushView();
   openChat(fileId);
@@ -254,6 +270,7 @@ export function closeFile(): void {
     doc: null,
     pageId: null,
     selection: [],
+    pageViews: {},
     agents: [],
     activity: [],
     preview: null,
@@ -270,7 +287,7 @@ export async function navigateTo(fileId: string, pageId?: string, nodeId?: strin
   // An older version's address (#/file/<id>/version/<commit>) stays as it is.
   if (location.hash !== hash && !location.hash.startsWith(`#/file/${fileId}/version/`)) history.replaceState(null, '', hash);
   if (getState().doc?.id !== fileId) await openFile(fileId, { pageId });
-  else if (pageId && getState().doc?.pages[pageId]) setState({ pageId });
+  else if (pageId && getState().doc?.pages[pageId]) showPage(pageId);
   if (nodeId && getState().doc?.nodes[nodeId]) setState({ selection: [nodeId] });
 }
 
@@ -393,6 +410,28 @@ let lastView = '';
 /** The server keeps this many selected ids per view; sending more is wasted. */
 const MAX_VIEW_SELECTION = 1000;
 
+/** What the server is told about a state of the editor. */
+function viewOf(s: EditorState): ViewState {
+  const cam = s.pageId ? s.cameras[s.pageId] : undefined;
+  const vp = document.querySelector('.op-canvas')?.getBoundingClientRect();
+  return {
+    fileId: s.doc?.id ?? null,
+    pageId: s.pageId,
+    // An older version's layers aren't what agents should act on.
+    selection: s.preview ? [] : s.selection.length > MAX_VIEW_SELECTION ? s.selection.slice(0, MAX_VIEW_SELECTION) : s.selection,
+    focused: document.visibilityState === 'visible' && document.hasFocus(),
+    ...(cam && vp?.width && vp.height ? { viewport: { x: cam.x, y: cam.y, zoom: cam.zoom, width: vp.width, height: vp.height } } : {}),
+    ...(s.preview ? { previewing: true } : {}),
+  };
+}
+
+function sendView(view: ViewState): void {
+  const key = JSON.stringify(view);
+  if (key === lastView) return;
+  lastView = key;
+  client.notify('view.update', view);
+}
+
 /**
  * Report the view to the server, throttled: at most once per `delayMs` (camera moves pass a
  * longer delay than selection changes; the sooner one wins).
@@ -406,29 +445,28 @@ export function pushView(delayMs = 60): void {
   viewDue = due;
   viewTimer = setTimeout(() => {
     viewTimer = null;
-    const s = getState();
-    const cam = s.pageId ? s.cameras[s.pageId] : undefined;
-    const vp = document.querySelector('.op-canvas')?.getBoundingClientRect();
-    const view: ViewState = {
-      fileId: s.doc?.id ?? null,
-      pageId: s.pageId,
-      // An older version's layers aren't what agents should act on.
-      selection: s.preview ? [] : s.selection.length > MAX_VIEW_SELECTION ? s.selection.slice(0, MAX_VIEW_SELECTION) : s.selection,
-      focused: document.visibilityState === 'visible' && document.hasFocus(),
-      ...(cam && vp ? { viewport: { x: cam.x, y: cam.y, zoom: cam.zoom, width: vp.width, height: vp.height } } : {}),
-    };
-    const key = JSON.stringify(view);
-    if (key === lastView) return;
-    lastView = key;
-    client.notify('view.update', view);
+    sendView(viewOf(getState()));
   }, delayMs);
+}
+
+/**
+ * Send a report still waiting for its throttle at once, as of `s`: the server remembers where each
+ * page and file was left, so the last camera move before leaving it (or closing the tab) must reach it.
+ */
+function flushView(s: EditorState = getState()): void {
+  if (!viewTimer) return;
+  clearTimeout(viewTimer);
+  viewTimer = null;
+  sendView(viewOf(s));
 }
 
 // Report selection/page changes to the server (MCP tools default to the user's view).
 useEditor.subscribe((s, prev) => {
+  if (s.pageId !== prev.pageId || s.doc?.id !== prev.doc?.id) flushView(prev);
   if (s.selection !== prev.selection || s.pageId !== prev.pageId) pushView();
 });
 
 for (const event of ['focus', 'blur', 'visibilitychange'] as const) {
   (event === 'visibilitychange' ? document : window).addEventListener(event, () => pushView());
 }
+window.addEventListener('pagehide', () => flushView());
