@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useSyncExternalStore, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type CSSProperties } from 'react';
 import { BASE_CSS, keyframesCss, tokenVars } from '@openpaper/core';
 import { camera, getState, setCamera, setState, useEditor } from '../../state/store.ts';
 import { pushView } from '../../sync/session.ts';
@@ -98,7 +98,8 @@ export function Canvas() {
     if (epoch && world.current) restartAnimations(world.current);
   }, [epoch]);
 
-  useEffect(() => {
+  // A layout effect: the first-visit fit below measures this viewport before the first paint.
+  useLayoutEffect(() => {
     const el = ref.current;
     setViewportElement(el);
     if (!el || !world.current) return;
@@ -142,15 +143,14 @@ export function Canvas() {
     };
   }, []);
 
-  // First visit to a page: fit its content once it has rendered.
+  // First visit to a page: fit its content as soon as it is in the DOM, before the browser paints,
+  // so opening a file never flashes it at 100% first (a heavy page took ~400 ms to paint that way).
   const hadContent = useRef<Record<string, boolean>>({});
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!pageId) return;
     const has = (rootChildren?.length ?? 0) > 0;
     const known = getState().cameras[pageId];
-    if (!known || (has && !hadContent.current[pageId])) {
-      requestAnimationFrame(() => requestAnimationFrame(() => zoomToFit()));
-    }
+    if (!known || (has && !hadContent.current[pageId])) zoomToFit();
     hadContent.current[pageId] = has;
   }, [pageId, (rootChildren?.length ?? 0) > 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
