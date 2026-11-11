@@ -1366,7 +1366,7 @@ a.op-vc-repo:hover {
   z-index: 40;
   display: flex;
   flex-direction: column;
-  border-radius: 14px;
+  border-radius: 16px;
   background: var(--op-panel);
   border: 1px solid var(--op-border);
   box-shadow: var(--op-shadow);
@@ -1413,12 +1413,12 @@ a.op-vc-repo:hover {
   padding: 6px 8px 6px 12px;
   border-bottom: 1px solid var(--op-border);
 }
+/* The prompt on top, its tools in a row underneath: add layers, then the model, mic and send on the right. */
 .op-dock-composer {
   display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  padding: 8px;
+  flex-direction: column;
   border-top: 1px solid transparent;
+  cursor: text;
   transition: border-color 0.24s var(--op-ease-out);
 }
 /* Separate the prompt from the conversation above it while the dock is open. */
@@ -1427,30 +1427,124 @@ a.op-vc-repo:hover {
 }
 .op-dock-composer textarea {
   resize: none;
-  min-height: 34px;
-  max-height: 140px;
-  padding: 8px 4px;
+  min-height: 42px;
+  max-height: 160px;
+  padding: 13px 16px 7px;
   background: transparent;
   border: none;
+  border-radius: 0;
   font-size: 13px;
-  line-height: 18px;
+  line-height: 20px;
 }
 .op-dock-composer textarea:hover,
 .op-dock-composer textarea:focus {
   background: transparent;
   border: none;
 }
-.op-dock-composer > button {
-  margin-bottom: 3px;
+.op-dock-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 2px 8px 8px;
 }
-.op-dock-composer > .op-dock-spark {
+.op-dock-tools > button,
+.op-dock-tools > .op-model-picker {
+  cursor: pointer;
+}
+.op-dock-spacer {
+  flex: 1;
+  min-width: 4px;
+  align-self: stretch;
+}
+/* The layers this message is about, tinted with the canvas's selection blue so it reads as those layers. */
+.op-dock-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 200px;
+  height: 26px;
+  padding: 0 2px 0 8px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--op-selection) 14%, transparent);
+  color: var(--op-selection-text);
+  font-weight: 500;
+  cursor: default;
+  animation: op-point-in 0.16s var(--op-ease-out) both;
+}
+.op-dock-chip > button {
+  display: inline-grid;
+  place-items: center;
   flex-shrink: 0;
-  margin: 0 0 9px 4px;
-  color: var(--op-text);
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.75;
+  cursor: pointer;
+  transition:
+    background-color var(--op-fast) ease,
+    opacity var(--op-fast) ease;
 }
-/* The mark and the expand button fold out of the composer while the conversation is open, instead of
-   popping out and jolting the prompt sideways. */
-.op-dock-composer > .op-dock-fold {
+.op-dock-chip > button:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--op-selection) 18%, transparent);
+}
+.op-dock-chip > button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -1px;
+}
+/* Runner, model and effort (ui/RunnerPicker.tsx, variant "model"): plain text with a chevron. */
+.op-model-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 210px;
+  height: 28px;
+  padding: 0 6px 0 8px;
+  border: none;
+  border-radius: var(--op-radius-sm);
+  background: transparent;
+  color: var(--op-text);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color var(--op-fast) ease;
+}
+.op-model-picker:hover,
+.op-model-picker.open {
+  background: var(--op-hover);
+}
+.op-model-picker:focus-visible {
+  outline: 2px solid var(--op-accent);
+  outline-offset: 1px;
+}
+/* Round, like the send key it is: ink when there's something to send, a quiet grey disc when not. */
+.op-icon-btn.op-dock-send {
+  margin-left: 2px;
+  border-radius: 999px;
+  background: var(--op-accent);
+  color: var(--op-accent-text);
+}
+.op-icon-btn.op-dock-send:hover:not(:disabled) {
+  background: var(--op-accent-hover);
+  color: var(--op-accent-text);
+}
+.op-icon-btn.op-dock-send:active:not(:disabled) {
+  background: var(--op-accent-press);
+}
+.op-icon-btn.op-dock-send:disabled {
+  opacity: 1;
+  background: var(--op-active);
+  color: var(--op-text-3);
+}
+/* The expand button folds out of the toolbar while the conversation is open, instead of popping out and
+   jolting the buttons beside it. */
+.op-dock-tools > .op-dock-fold {
   overflow: hidden;
   transition:
     width 0.24s var(--op-ease-out),
@@ -1460,11 +1554,10 @@ a.op-vc-repo:hover {
     background-color var(--op-fast) ease,
     color var(--op-fast) ease;
 }
-.op-dock-body.open + .op-dock-composer > .op-dock-fold {
+.op-dock-body.open + .op-dock-composer .op-dock-fold {
   width: 0;
   /* Swallow the flex gap next to it too. */
-  margin-left: 0;
-  margin-right: -8px;
+  margin-right: -4px;
   opacity: 0;
   transform: scale(0.6);
 }
@@ -1797,6 +1890,45 @@ a.op-vc-repo:hover {
 .op-runner-menu {
   width: 248px;
   animation: op-select-in 0.12s var(--op-ease) both;
+}
+.op-runner-menu.with-models {
+  width: 268px;
+  overflow-y: auto;
+}
+.op-runner-menu.with-models .op-runner-head:not(:first-child) {
+  padding-top: 8px;
+}
+.op-effort {
+  display: flex;
+  gap: 2px;
+  padding: 0 4px 4px;
+}
+.op-effort > button {
+  flex: 1;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--op-border);
+  border-radius: var(--op-radius-sm);
+  background: transparent;
+  color: var(--op-text-2);
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    background-color var(--op-fast) ease,
+    color var(--op-fast) ease;
+}
+.op-effort > button:hover {
+  background: var(--op-hover);
+  color: var(--op-text);
+}
+.op-effort > button[aria-checked='true'] {
+  border-color: var(--op-accent);
+  background: var(--op-accent);
+  color: var(--op-accent-text);
+}
+.op-effort > button:focus-visible {
+  outline: 2px solid var(--op-accent);
+  outline-offset: 1px;
 }
 .op-runner-head {
   padding: 4px 8px 6px;
@@ -2188,7 +2320,10 @@ a.op-vc-repo:hover {
   .op-dock-body,
   .op-dock-body > div,
   .op-dock-composer,
-  .op-dock-composer > .op-dock-fold,
+  .op-dock-tools > .op-dock-fold,
+  .op-dock-chip > button,
+  .op-model-picker,
+  .op-effort > button,
   .op-shader-thumb,
   .op-point-btn,
   .op-voice.recording,
@@ -2199,6 +2334,7 @@ a.op-vc-repo:hover {
   .op-point-prompt,
   .op-point-cluster > .op-runner-chip,
   .op-runner-menu,
+  .op-dock-chip,
   .op-voice-panel {
     animation: none;
   }

@@ -1,26 +1,21 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { Send, Square, ChevronDown, ChevronUp, Settings2, RotateCcw, Check, X, Loader2, Wrench, Crosshair, Info } from 'lucide-react';
-import type { AgentChatItem, AgentConfigInfo, AgentTarget } from '@openpaper/core';
+import { memo, useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import { ArrowUp, Square, ChevronDown, ChevronUp, Settings2, RotateCcw, Check, X, Loader2, Wrench, Crosshair, Info, Plus } from 'lucide-react';
+import { displayName, type AgentChatItem, type AgentConfigInfo, type AgentTarget, type PaperDocument } from '@openpaper/core';
 import { useEditor, setState } from '../state/store.ts';
 import { allowAgy, client, loadAgentConfig, sendToAgent, setAgentConfig } from '../sync/session.ts';
 import { MarkdownView } from '../ui/MarkdownView.tsx';
 import { AgentMark } from '../ui/Logo.tsx';
-import { AGY_NOTE, runnerReady } from '../ui/RunnerPicker.tsx';
-import { RunnerMark } from '../ui/RunnerMark.tsx';
-import { Select } from '../ui/Select.tsx';
+import { AGY_NOTE, RunnerPicker, runnerReady } from '../ui/RunnerPicker.tsx';
 import { VoiceButton, type VoiceHandle, type VoicePhase } from '../ui/VoiceButton.tsx';
 import { bindingLabel } from './hotkeys.ts';
 import { MAC } from './shortcuts.ts';
 
-const RUNNERS = (
-  [
-    { value: 'claude-code', label: 'Claude Code sign-in' },
-    { value: 'codex', label: 'Codex sign-in' },
-    { value: 'agy', label: 'Antigravity (agy)' },
-    { value: 'api', label: 'Anthropic API key' },
-  ] as const
-).map((r) => ({ ...r, icon: <RunnerMark runner={r.value} size={13} /> }));
-const EFFORTS = (['low', 'medium', 'high', 'xhigh', 'max'] as const).map((e) => ({ value: e, label: `Effort: ${e}` }));
+/** Layers the message is about: the ones still in the file, named like the selection's own prompt names them. */
+function layersTarget(doc: PaperDocument | null, ids: readonly string[]): AgentTarget | null {
+  const nodeIds = doc ? ids.filter((id) => doc.nodes[id] && doc.nodes[id]!.component !== 'PageRoot') : [];
+  if (!doc || !nodeIds.length) return null;
+  return { label: nodeIds.length === 1 ? displayName(doc.nodes[nodeIds[0]!]!) : `${nodeIds.length} layers`, nodeIds };
+}
 
 const KEY_SOURCES: Record<NonNullable<AgentConfigInfo['keySource']>, string> = {
   settings: 'API key saved on this computer',
@@ -136,7 +131,7 @@ function AgentSetup({ config, claudeCodeOnly }: { config: AgentConfigInfo; claud
         ) : (
           <>
             Run the built-in design agent on Claude Code with your own Claude sign-in, or with an Anthropic API key. Codex and Antigravity work too:
-            pick them in the settings. Prefer to chat from Claude Code, Cursor or another agent? Use <b>Connect agent</b> instead.
+            pick them in the menu beside the send button. Prefer to chat from Claude Code, Cursor or another agent? Use <b>Connect agent</b> instead.
           </>
         )}
       </div>
@@ -286,10 +281,17 @@ export function AgentDock({
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
   const open = chat.open;
+  const doc = useEditor((s) => s.doc);
+  const selection = useEditor((s) => s.selection);
+  /** Layers added with +: the next message is about them. */
+  const [attached, setAttached] = useState<string[]>([]);
 
   useEffect(() => {
     loadAgentConfig().catch(() => {});
   }, []);
+
+  // Another file's chat starts without them.
+  useEffect(() => setAttached([]), [chat.key]);
 
   // Grow the prompt with its content (up to the CSS max-height, then scroll).
   useLayoutEffect(() => {
@@ -312,6 +314,10 @@ export function AgentDock({
   const cliRunner = config?.runner === 'codex' || config?.runner === 'agy';
 
   const listening = voice === 'recording' || voice === 'transcribing';
+  /** This is the open file's chat (not a live site's), so canvas layers can be added to a message. */
+  const onCanvas = !!doc && doc.id === key;
+  const chip = onCanvas ? layersTarget(doc, attached) : null;
+  const selected = onCanvas ? layersTarget(doc, selection) : null;
 
   // Sending while the mic is on stops it and sends what was said along with anything typed.
   const send = async () => {
@@ -320,16 +326,31 @@ export function AgentDock({
     sendingRef.current = true;
     setSending(true);
     setText('');
+    const about = chip;
+    setAttached([]);
     try {
       const spoken = listening ? await voiceRef.current?.take() : null;
       const value = [typed, spoken].filter(Boolean).join(' ');
-      if (!value) return;
+      if (!value) {
+        if (about?.nodeIds) setAttached(about.nodeIds);
+        return;
+      }
       setOpen(true);
-      await sendToAgent(value, extra?.()).catch(() => setText(value));
+      await sendToAgent(value, { ...extra?.(), ...(about ? { target: about } : {}) }).catch(() => {
+        setText(value);
+        if (about?.nodeIds) setAttached(about.nodeIds);
+      });
     } finally {
       sendingRef.current = false;
       setSending(false);
     }
+  };
+
+  /** Pressing the composer's empty space (not one of its buttons) puts the cursor in the prompt, like a text field. */
+  const focusPrompt = (e: PointerEvent) => {
+    if (e.target !== e.currentTarget) return;
+    e.preventDefault();
+    inputRef.current?.focus();
   };
 
   const usage = chat.usage;
@@ -365,30 +386,7 @@ export function AgentDock({
           </div>
           {showSettings && config && (
             <div className="op-dock-row" style={{ flexWrap: 'wrap', padding: '8px 12px' }}>
-              <Select
-                style={{ width: 'auto' }}
-                title="What runs the agent"
-                value={config.runner}
-                options={RUNNERS}
-                onChange={(runner) => void setAgentConfig({ runner }).catch(() => {})}
-              />
-              <Select
-                style={{ width: 'auto' }}
-                title="Model"
-                value={config.model}
-                options={config.models.map((m) => ({ value: m.id, label: m.label }))}
-                onChange={(model) => void setAgentConfig({ model }).catch(() => {})}
-              />
-              {/* agy's model ids carry their own effort. */}
-              {config.runner !== 'agy' && (
-                <Select
-                  style={{ width: 'auto' }}
-                  title="Effort"
-                  value={config.effort}
-                  options={EFFORTS}
-                  onChange={(effort) => void setAgentConfig({ effort }).catch(() => {})}
-                />
-              )}
+              {/* Runner, model and effort are in the picker beside the send button. */}
               <span className="op-label">{runnerLabel(config)}</span>
               {config.runner === 'agy' && <AgyInfo />}
               {config.runner === 'agy' && config.agy && !config.agy.allowed && (
@@ -410,9 +408,9 @@ export function AgentDock({
                 <div className="op-label" style={{ lineHeight: 1.6 }}>
                   {emptyHint ?? (
                     <>
-                      Ask for a design and watch it appear on the canvas. Try: <i>“Design a sign-up screen for a meditation app”</i>, or select a
-                      layer and use the agent button beside it ({bindingLabel('Mod+K', MAC)}) to change just that. The chip next to that button picks
-                      who answers: Claude Code, Codex or Antigravity, which can also generate images.
+                      Ask for a design and watch it appear on the canvas. Try: <i>“Design a sign-up screen for a meditation app”</i>. To change just one
+                      part, select it and press <b>+</b>, or use the agent button beside it ({bindingLabel('Mod+K', MAC)}). The menu by the send button
+                      picks who answers: Claude Code, Codex or Antigravity, which can also generate images.
                     </>
                   )}
                 </div>
@@ -429,14 +427,22 @@ export function AgentDock({
           )}
         </div>
       </div>
-      <div className="op-dock-composer">
-        <AgentMark size={16} className="op-dock-spark op-dock-fold" />
+      <div className="op-dock-composer" onPointerDown={focusPrompt}>
         <textarea
           ref={inputRef}
           className="op-input"
           rows={1}
+          aria-label="Message the design agent"
           placeholder={
-            voice === 'recording' ? 'Listening… click the mic to stop' : voice === 'transcribing' ? 'Transcribing…' : chat.running ? 'The agent is working…' : placeholder
+            voice === 'recording'
+              ? 'Listening… click the mic to stop'
+              : voice === 'transcribing'
+                ? 'Transcribing…'
+                : chat.running
+                  ? 'The agent is working…'
+                  : chip
+                    ? 'Describe your edit…'
+                    : placeholder
           }
           value={text}
           onFocus={() => !open && (chat.items.length > 0 || needsSetup) && setOpen(true)}
@@ -449,30 +455,68 @@ export function AgentDock({
               void send();
             }
             if (e.key === 'Escape') (e.currentTarget as HTMLTextAreaElement).blur();
+            // Backspace in an empty prompt takes the layers back out, like a chip in a search field.
+            if (e.key === 'Backspace' && !text && chip) setAttached([]);
           }}
         />
-        {chat.items.length > 0 && (
-          <button className="op-icon-btn op-dock-fold" title="Show conversation" inert={open} onClick={() => setOpen(true)}>
-            <ChevronUp size={15} />
-          </button>
-        )}
-        <VoiceButton
-          ref={voiceRef}
-          onPhase={setVoice}
-          onText={(t) => {
-            setText((prev) => (prev.trim() ? `${prev.trimEnd()} ${t}` : t));
-            inputRef.current?.focus();
-          }}
-        />
-        {chat.running ? (
-          <button className="op-icon-btn active" title="Stop" onClick={() => void client.request('agent.stop', { fileId: key })}>
-            <Square size={13} />
-          </button>
-        ) : (
-          <button className="op-icon-btn active" title="Send (Enter)" disabled={(!text.trim() && !listening) || sending} onClick={() => void send()}>
-            {sending ? <Loader2 size={14} className="op-spin" /> : <Send size={14} />}
-          </button>
-        )}
+        <div className="op-dock-tools" onPointerDown={focusPrompt}>
+          {onCanvas && (
+            <button
+              className="op-icon-btn"
+              title={selected ? `Add ${selected.label} to your message` : 'Select layers on the canvas to add them to your message'}
+              aria-label={selected ? `Add ${selected.label} to your message` : 'Add the selected layers to your message'}
+              disabled={!selected}
+              onClick={() => {
+                if (!selected?.nodeIds) return;
+                setAttached(selected.nodeIds);
+                inputRef.current?.focus();
+              }}
+            >
+              <Plus size={16} />
+            </button>
+          )}
+          {chip && (
+            <span className="op-dock-chip" title={`This message is about ${chip.label}`}>
+              <Crosshair size={12} style={{ flexShrink: 0 }} />
+              <span className="op-truncate">{chip.label}</span>
+              <button
+                type="button"
+                title="Remove"
+                aria-label={`Remove ${chip.label}`}
+                onClick={() => {
+                  setAttached([]);
+                  inputRef.current?.focus();
+                }}
+              >
+                <X size={12} />
+              </button>
+            </span>
+          )}
+          <div className="op-dock-spacer" />
+          {config && <RunnerPicker variant="model" claudeCodeOnly={claudeCodeOnly} />}
+          {chat.items.length > 0 && (
+            <button className="op-icon-btn op-dock-fold" title="Show conversation" inert={open} onClick={() => setOpen(true)}>
+              <ChevronUp size={15} />
+            </button>
+          )}
+          <VoiceButton
+            ref={voiceRef}
+            onPhase={setVoice}
+            onText={(t) => {
+              setText((prev) => (prev.trim() ? `${prev.trimEnd()} ${t}` : t));
+              inputRef.current?.focus();
+            }}
+          />
+          {chat.running ? (
+            <button className="op-icon-btn op-dock-send" title="Stop" onClick={() => void client.request('agent.stop', { fileId: key })}>
+              <Square size={11} fill="currentColor" />
+            </button>
+          ) : (
+            <button className="op-icon-btn op-dock-send" title="Send (Enter)" disabled={(!text.trim() && !listening) || sending} onClick={() => void send()}>
+              {sending ? <Loader2 size={14} className="op-spin" /> : <ArrowUp size={16} strokeWidth={2.25} />}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

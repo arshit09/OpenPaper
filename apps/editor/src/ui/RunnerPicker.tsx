@@ -9,6 +9,8 @@ import { RunnerMark } from './RunnerMark.tsx';
 const EDGE = 8;
 const GAP = 4;
 
+const EFFORTS: AgentConfigInfo['effort'][] = ['low', 'medium', 'high', 'xhigh', 'max'];
+
 /** Who answers: full name in menus, short name on the chip and in prompts. */
 export const RUNNER_NAMES: Record<AgentRunner, { name: string; short: string }> = {
   'claude-code': { name: 'Claude Code', short: 'Claude' },
@@ -58,11 +60,26 @@ const HOW_TO: Record<AgentRunner, string> = {
   api: 'Add an Anthropic API key in the agent settings.',
 };
 
+/** The selected model's name, for a trigger. */
+function modelLabel(config: AgentConfigInfo): string {
+  return config.models.find((m) => m.id === config.model)?.label ?? (config.model || 'Default model');
+}
+
 /**
- * A tiny chip that picks which coding agent answers: Claude Code, Codex or Antigravity (and the API key
- * runner when one is set up). It changes the agent's runner for every chat.
+ * Picks which coding agent answers: Claude Code, Codex or Antigravity (and the API key runner when one is
+ * set up). It changes the agent's runner for every chat. The `chip` is the tiny one beside the selection's
+ * agent button; `model` is the agent dock's, whose trigger names the model and whose menu also picks the
+ * model and effort. `claudeCodeOnly` (a live site) leaves the runners out.
  */
-export function RunnerPicker({ className }: { className?: string }) {
+export function RunnerPicker({
+  className,
+  variant = 'chip',
+  claudeCodeOnly,
+}: {
+  className?: string;
+  variant?: 'chip' | 'model';
+  claudeCodeOnly?: boolean;
+}) {
   const config = useEditor((s) => s.agentConfig);
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<CSSProperties>({});
@@ -78,10 +95,17 @@ export function RunnerPicker({ className }: { className?: string }) {
     if (!open || !trigger.current || !menu.current) return;
     const r = trigger.current.getBoundingClientRect();
     const { offsetWidth: width, offsetHeight: height } = menu.current;
-    const left = Math.max(EDGE, Math.min(r.left, window.innerWidth - width - EDGE));
+    // The dock's picker sits at the right of its toolbar: line the menu up with its right edge.
+    const start = variant === 'model' ? r.right - width : r.left;
+    const left = Math.max(EDGE, Math.min(start, window.innerWidth - width - EDGE));
     const below = window.innerHeight - r.bottom - EDGE - GAP;
-    setPos(height <= below || below >= r.top - EDGE ? { top: r.bottom + GAP, left } : { bottom: window.innerHeight - r.top + GAP, left });
-  }, [open, config]);
+    const above = r.top - EDGE - GAP;
+    setPos(
+      height <= below || below >= above
+        ? { top: r.bottom + GAP, left, maxHeight: below }
+        : { bottom: window.innerHeight - r.top + GAP, left, maxHeight: above },
+    );
+  }, [open, config, variant]);
 
   // Close on a press outside, Escape, scrolling, resizing or leaving the window.
   useEffect(() => {
@@ -110,21 +134,29 @@ export function RunnerPicker({ className }: { className?: string }) {
   }, [open]);
 
   if (!config) return null;
-  const runners: AgentRunner[] = ['claude-code', 'codex', 'agy', ...(config.runner === 'api' || config.keySource ? (['api'] as const) : [])];
+  const runners: AgentRunner[] = claudeCodeOnly
+    ? []
+    : ['claude-code', 'codex', 'agy', ...(config.runner === 'api' || config.keySource ? (['api'] as const) : [])];
   const current = RUNNER_NAMES[config.runner];
   const pick = (runner: AgentRunner) => {
     setOpen(false);
     if (runner !== config.runner) void setAgentConfig({ runner }).catch(() => {});
   };
+  const withModels = variant === 'model';
+  const model = modelLabel(config);
 
   return (
     <>
       <button
         ref={trigger}
         type="button"
-        className={`op-runner-chip${open ? ' open' : ''}${className ? ` ${className}` : ''}`}
-        title={`Answered by ${current.name}. Click to pick Claude Code, Codex or Antigravity.`}
-        aria-label={`Agent: ${current.name}`}
+        className={`${withModels ? 'op-model-picker' : 'op-runner-chip'}${open ? ' open' : ''}${className ? ` ${className}` : ''}`}
+        title={
+          withModels
+            ? `${current.name} · ${model} · effort ${config.effort}. Click to change.`
+            : `Answered by ${current.name}. Click to pick Claude Code, Codex or Antigravity.`
+        }
+        aria-label={withModels ? `Agent: ${current.name}, ${model}` : `Agent: ${current.name}`}
         aria-haspopup="menu"
         aria-expanded={open}
         onPointerDown={(e) => e.stopPropagation()}
@@ -133,9 +165,9 @@ export function RunnerPicker({ className }: { className?: string }) {
           setOpen(!open);
         }}
       >
-        <RunnerMark runner={config.runner} size={11} />
-        <span>{current.short}</span>
-        <ChevronDown size={10} />
+        <RunnerMark runner={config.runner} size={withModels ? 13 : 11} />
+        <span className={withModels ? 'op-truncate' : undefined}>{withModels ? model : current.short}</span>
+        <ChevronDown size={withModels ? 13 : 10} className={withModels ? 'op-select-chevron' : undefined} />
       </button>
       {open &&
         createPortal(
@@ -143,12 +175,12 @@ export function RunnerPicker({ className }: { className?: string }) {
             ref={menu}
             role="menu"
             aria-label="Agent"
-            className="op-popover op-runner-menu"
+            className={`op-popover op-runner-menu${withModels ? ' with-models' : ''}`}
             style={pos}
             data-op-overlay-ui
             onPointerDown={(e) => e.stopPropagation()}
           >
-            <div className="op-runner-head">Ask with</div>
+            {runners.length > 0 && <div className="op-runner-head">Ask with</div>}
             {runners.map((runner) => {
               const note = runnerNote(config, runner);
               const selected = runner === config.runner;
@@ -190,6 +222,49 @@ export function RunnerPicker({ className }: { className?: string }) {
                 </div>
               );
             })}
+            {withModels && (
+              <>
+                {runners.length > 0 && <div className="op-menu-sep" />}
+                <div className="op-runner-head">Model</div>
+                {config.models.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={m.id === config.model}
+                    className="op-runner-option"
+                    onClick={() => {
+                      setOpen(false);
+                      if (m.id !== config.model) void setAgentConfig({ model: m.id }).catch(() => {});
+                    }}
+                  >
+                    <span className="op-select-check">{m.id === config.model && <Check size={12} />}</span>
+                    <span className="op-truncate">{m.label}</span>
+                  </button>
+                ))}
+                {/* agy's model ids carry their own effort. */}
+                {config.runner !== 'agy' && (
+                  <>
+                    <div className="op-runner-head">Effort</div>
+                    <div className="op-effort" role="group" aria-label="Effort">
+                      {EFFORTS.map((effort) => (
+                        <button
+                          key={effort}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={effort === config.effort}
+                          onClick={() => {
+                            if (effort !== config.effort) void setAgentConfig({ effort }).catch(() => {});
+                          }}
+                        >
+                          {effort}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
           </div>,
           document.body,
         )}
