@@ -26,6 +26,50 @@ export function Logo({ size = 22, withText = true }: { size?: number; withText?:
   );
 }
 
+/**
+ * The mark as a loader: the corner peels from each side in turn, clockwise from the top right, and
+ * rests on the logo between peels (styles: `.op-lm` in app.css).
+ *
+ * Built from boxes rather than SVG so that every animation is a transform or an opacity, which the
+ * browser runs off the main thread: the mark keeps moving while a heavy file renders behind it.
+ * - The logo's disc is centred at (111.5, 104.5) of its 216 box with the crease 54 from that centre,
+ *   so here the disc fills the box and the crease is a quarter of the size from the middle.
+ * - The rim is the box's round clip alone, so the flat disc is the same pixels from every side.
+ * - Each side's corner has two faces hinged on the crease, and only the one turned towards you
+ *   shows. The front face reaches under the sheet and past the rim, so no seam shows when it lies
+ *   flat. Both shade from fold grey to the sheet colour as the corner turns, so the crease fades.
+ * - Nothing rotates: all four sides are drawn, and the shown side changes while the disc is flat.
+ */
+export function LoadingMark({ size = 48 }: { size?: number }) {
+  const r = size / 2;
+  const crease = size / 4;
+  const pad = Math.max((3 * size) / 216, 1.25); // at least ~1 px of overlap
+  const tall = { top: -size, height: 2 * size } as const;
+  return (
+    <div className="op-lm" style={{ width: size, height: size }} aria-hidden>
+      {[0, 1, 2, 3].map((side) => (
+        // The side's layer itself is never rotated: the round clip is then cut the same way for every side.
+        <div key={side} className={`op-lm-side op-lm-side${side}`}>
+          {/* x runs from the centre towards the corner, y along the crease. */}
+          <div className="op-lm-frame" style={{ transform: `rotate(${side * 90 - 45}deg)` }}>
+            <div className="op-lm-sheet" style={{ left: -size, width: size + crease, ...tall }} />
+            <div className="op-lm-face op-lm-back" style={{ left: crease, width: size, ...tall, transformOrigin: '0 50%' }}>
+              <div className="op-lm-disc" style={{ left: -crease - r, top: size - r, width: 2 * r, height: 2 * r }}>
+                <div className="op-lm-tint" />
+              </div>
+            </div>
+            <div className="op-lm-face op-lm-front" style={{ left: crease - pad, width: size, ...tall, transformOrigin: `${pad}px 50%` }}>
+              <div className="op-lm-disc" style={{ left: -crease - r, top: size - r - pad, width: 2 * (r + pad), height: 2 * (r + pad) }}>
+                <div className="op-lm-tint" />
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // The design agent ("Paper Buddy"): the same peeled disc on a 24px grid, with two eyes cut through the sheet.
 const AGENT_SHEET =
   'M9.62 1.52A10.5 10.5 0 1 0 22.48 14.38A10.5 10.5 0 0 1 9.62 1.52ZM7.6 12.6a1.2 1.2 0 0 1 1.2 1.2v1.6a1.2 1.2 0 0 1-2.4 0v-1.6a1.2 1.2 0 0 1 1.2-1.2ZM12.2 12.6a1.2 1.2 0 0 1 1.2 1.2v1.6a1.2 1.2 0 0 1-2.4 0v-1.6a1.2 1.2 0 0 1 1.2-1.2Z';

@@ -2377,6 +2377,282 @@ textarea.op-input.op-point-input:focus {
   }
 }
 
+/* ---- file loader ---- */
+/* Covers the editor while a file opens (above panels, below dialogs and toasts). */
+.op-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 850;
+  display: grid;
+  place-items: center;
+  background: var(--op-bg);
+  animation: op-fade-in 0.1s linear;
+  transition: opacity 0.2s var(--op-ease);
+}
+.op-loader.leaving {
+  opacity: 0;
+  pointer-events: none;
+}
+/* Quick opens never show the mark: it fades in only after a moment (FileLoader's MARK_DELAY_MS). */
+.op-loader-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  animation: op-fade-in 0.24s var(--op-ease) 0.2s backwards;
+}
+.op-loader.quick .op-loader-body {
+  visibility: hidden;
+}
+/* The mark starts once it has faded in, so it shows the logo at rest before the first peel. */
+.op-loader .op-loader-body .op-lm,
+.op-loader .op-loader-body .op-lm * {
+  animation-delay: 0.45s;
+}
+.op-loader-bar {
+  width: 112px;
+  height: 2px;
+  border-radius: 1px;
+  overflow: hidden;
+  background: var(--op-border);
+}
+.op-loader-fill {
+  height: 100%;
+  background: var(--op-text);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+}
+
+/*
+ * The peeling mark (LoadingMark in ui/Logo.tsx). One peel is 1.5s: rest on the logo, the corner opens
+ * (14–42%), lies flat (42–50%), and the next side folds over (50–80%). The shown side changes at the
+ * middle of the flat moment (46% of a peel), so a lap of four sides is 6s. Only transforms and
+ * opacity animate, so it runs off the main thread. Without animation it is the logo.
+ */
+/* clip-path, not a rounded overflow clip: it cuts the rim once for the whole mark, where a rounded
+   overflow clip is applied to each moving layer in its own space and the edge shifts as sides change. */
+.op-lm {
+  position: relative;
+  flex-shrink: 0;
+  clip-path: circle(50%);
+  isolation: isolate;
+}
+.op-lm-side,
+.op-lm-frame,
+.op-lm-sheet,
+.op-lm-face,
+.op-lm-disc,
+.op-lm-tint {
+  position: absolute;
+}
+.op-lm-side {
+  inset: 0;
+}
+.op-lm-side1,
+.op-lm-side2,
+.op-lm-side3 {
+  opacity: 0;
+}
+.op-lm-frame {
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+}
+.op-lm-sheet {
+  background: var(--op-text);
+}
+.op-lm-face {
+  overflow: hidden;
+  transform: scaleX(-1);
+}
+.op-lm-front {
+  opacity: 0;
+}
+.op-lm-disc,
+.op-lm-tint {
+  border-radius: 50%;
+}
+.op-lm-tint {
+  inset: 0;
+}
+.op-lm-back .op-lm-disc,
+.op-lm-front .op-lm-tint {
+  background: #8c8c8c;
+}
+.op-lm-front .op-lm-disc,
+.op-lm-back .op-lm-tint {
+  background: var(--op-text);
+}
+.op-lm-back .op-lm-tint {
+  opacity: 0;
+}
+
+.op-lm-back {
+  animation:
+    op-lm-flip 1.5s infinite,
+    op-lm-back 1.5s infinite step-end;
+}
+.op-lm-front {
+  animation:
+    op-lm-flip 1.5s infinite,
+    op-lm-front 1.5s infinite step-end;
+}
+/* The face's shade follows the turn: grey folded, the sheet colour flat, half-way when edge-on. */
+.op-lm-back .op-lm-tint {
+  animation: op-lm-tint-in 1.5s infinite;
+}
+.op-lm-front .op-lm-tint {
+  animation: op-lm-tint-out 1.5s infinite;
+}
+.op-lm-side0 {
+  animation: op-lm-side0 6s infinite step-end;
+}
+.op-lm-side1 {
+  animation: op-lm-side1 6s infinite step-end;
+}
+.op-lm-side2 {
+  animation: op-lm-side2 6s infinite step-end;
+}
+.op-lm-side3 {
+  animation: op-lm-side3 6s infinite step-end;
+}
+/* Symmetric easing: the corner is edge-on exactly half-way, where the faces swap. */
+@keyframes op-lm-flip {
+  0%,
+  14% {
+    transform: scaleX(-1);
+    animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
+  }
+  42%,
+  50% {
+    transform: scaleX(1);
+    animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
+  }
+  80%,
+  100% {
+    transform: scaleX(-1);
+  }
+}
+@keyframes op-lm-tint-in {
+  0%,
+  14% {
+    opacity: 0;
+    animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
+  }
+  42%,
+  50% {
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
+  }
+  80%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes op-lm-tint-out {
+  0%,
+  14% {
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
+  }
+  42%,
+  50% {
+    opacity: 0;
+    animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
+  }
+  80%,
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes op-lm-back {
+  0% {
+    opacity: 1;
+  }
+  28% {
+    opacity: 0;
+  }
+  65%,
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes op-lm-front {
+  0% {
+    opacity: 0;
+  }
+  28% {
+    opacity: 1;
+  }
+  65%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes op-lm-side0 {
+  0% {
+    opacity: 1;
+  }
+  11.5% {
+    opacity: 0;
+  }
+  86.5%,
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes op-lm-side1 {
+  0% {
+    opacity: 0;
+  }
+  11.5% {
+    opacity: 1;
+  }
+  36.5%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes op-lm-side2 {
+  0% {
+    opacity: 0;
+  }
+  36.5% {
+    opacity: 1;
+  }
+  61.5%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes op-lm-side3 {
+  0% {
+    opacity: 0;
+  }
+  61.5% {
+    opacity: 1;
+  }
+  86.5%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes op-lm-pulse {
+  to {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* The logo, breathing slowly. */
+  .op-lm {
+    animation: op-lm-pulse 1.2s ease-in-out infinite alternate;
+  }
+  .op-lm * {
+    animation: none !important;
+  }
+}
+
 /* ---- shaders ---- */
 .op-shader-picker {
   position: absolute;

@@ -13,6 +13,7 @@ import { FigmaTokenDialog } from './figma/FigmaTokenDialog.tsx';
 import { persistShaderFrames } from './shaders/ShaderInspector.tsx';
 import { ShortcutsDialog } from './ShortcutsDialog.tsx';
 import { VersionBanner } from './VersionBanner.tsx';
+import { FileLoader } from './FileLoader.tsx';
 import { refreshVcs } from '../sync/session.ts';
 
 function AgentOpenedBanner() {
@@ -77,30 +78,30 @@ export function EditorView() {
     };
   }, [docName]);
 
-  if (!docId) {
-    return (
-      <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: 'var(--op-text-3)' }}>Opening file…</div>
-    );
-  }
-
   return (
-    <div className={`op-app${viewClass}`}>
-      <TopBar />
-      <div className="op-main">
-        <LeftPanel />
-        <div style={{ position: 'relative', minWidth: 0, minHeight: 0, display: 'grid' }}>
-          <Canvas />
-          <AgentOpenedBanner />
-          <VersionBanner />
-          <ShaderPicker />
-          {/* The agent works on the current version, not an older one on screen. */}
-          {!previewing && <AgentDock />}
+    <>
+      {docId ? (
+        <div className={`op-app${viewClass}`}>
+          <TopBar />
+          <div className="op-main">
+            <LeftPanel />
+            <div style={{ position: 'relative', minWidth: 0, minHeight: 0, display: 'grid' }}>
+              <Canvas />
+              <AgentOpenedBanner />
+              <VersionBanner />
+              <ShaderPicker />
+              {/* The agent works on the current version, not an older one on screen. */}
+              {!previewing && <AgentDock />}
+            </div>
+            <RightPanel />
+          </div>
+          {showExport && <ExportDialog />}
+          <FigmaTokenDialog />
+          <ShortcutsDialog />
         </div>
-        <RightPanel />
-      </div>
-      {showExport && <ExportDialog />}
-      <FigmaTokenDialog />
-      <ShortcutsDialog />
-    </div>
+      ) : null}
+      {/* Over the editor while a file opens; in the same place either way, so the mark never restarts. */}
+      <FileLoader />
+    </>
   );
 }

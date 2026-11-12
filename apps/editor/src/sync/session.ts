@@ -181,7 +181,15 @@ export async function refreshResources(): Promise<ResourceInfo[]> {
 }
 
 export async function openFile(fileId: string, opts: { keepView?: boolean; pageId?: string } = {}): Promise<void> {
-  const result = await client.request<OpenFileResult>('file.open', { fileId });
+  // Opening a file (not reopening the one on screen after a reconnect) shows the loader.
+  if (!opts.keepView) setState({ opening: { fileId } });
+  let result: OpenFileResult;
+  try {
+    result = await client.request<OpenFileResult>('file.open', { fileId });
+  } catch (error) {
+    if (getState().opening?.fileId === fileId) setState({ opening: null });
+    throw error;
+  }
   flushLive();
   const preview = getState().preview;
   if (preview?.live.doc.id === fileId) {
@@ -275,6 +283,7 @@ export function closeFile(): void {
     activity: [],
     preview: null,
     vcs: null,
+    opening: null,
     // A live site's chat (opened by its view before this runs) stays.
     agentChat: s.agentChat.key === doc?.id ? { ...s.agentChat, key: null, items: [], running: false, usage: null } : s.agentChat,
   }));

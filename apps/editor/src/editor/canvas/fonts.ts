@@ -4,6 +4,18 @@ import { client } from '../../sync/session.ts';
 
 const loaded = new Set<string>();
 
+/** The font load in progress (scheduled or running), for {@link fontsSettled}. */
+let pending: { promise: Promise<void>; resolve: () => void } | null = null;
+
+/**
+ * Resolves once the open document's font stylesheets have loaded and the faces they declare are
+ * ready (a failed or offline load resolves too). The file loader waits on it before showing frames.
+ */
+export async function fontsSettled(): Promise<void> {
+  if (pending) await pending.promise;
+  await document.fonts.ready;
+}
+
 /** Families referenced by node styles and font tokens. */
 function familiesInDoc(): string[] {
   const doc = useEditor.getState().doc;
@@ -26,14 +38,17 @@ async function loadMissingFonts() {
   for (const f of families) loaded.add(f);
   try {
     const urls = await client.request<string[]>('fonts.css', { families });
+    const sheets: Promise<void>[] = [];
     for (const href of urls) {
       if (document.querySelector(`link[data-op-font="${CSS.escape(href)}"]`)) continue;
       const link = document.createElement('link');
       link.rel = 'stylesheet';
       link.href = href;
       link.dataset.opFont = href;
+      sheets.push(new Promise((resolve) => (link.onload = link.onerror = () => resolve())));
       document.head.appendChild(link);
     }
+    await Promise.all(sheets);
   } catch {
     for (const f of families) loaded.delete(f);
   }
@@ -46,20 +61,33 @@ async function loadMissingFonts() {
 export function useDocumentFonts() {
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const schedule = () => {
+    // Edits are batched; a newly opened file's fonts are asked for at once (the file loader waits on them).
+    const schedule = (delay = 150) => {
       if (timer) clearTimeout(timer);
+      if (!pending) {
+        let resolve!: () => void;
+        const promise = new Promise<void>((r) => (resolve = r));
+        pending = { promise, resolve };
+      }
       timer = setTimeout(() => {
         timer = null;
-        void loadMissingFonts();
-      }, 150);
+        const settling = pending;
+        void loadMissingFonts().finally(() => {
+          // A newer change scheduled another load meanwhile: that one settles it.
+          if (pending === settling && !timer) pending = null;
+          if (!timer) settling?.resolve();
+        });
+      }, delay);
     };
-    if (useEditor.getState().doc) schedule();
+    if (useEditor.getState().doc) schedule(0);
     const unsubscribe = useEditor.subscribe((s, prev) => {
-      if (s.doc && (s.doc.nodes !== prev.doc?.nodes || s.doc.tokens !== prev.doc?.tokens)) schedule();
+      if (s.doc && (s.doc.nodes !== prev.doc?.nodes || s.doc.tokens !== prev.doc?.tokens)) schedule(s.doc.id !== prev.doc?.id ? 0 : 150);
     });
     return () => {
       unsubscribe();
       if (timer) clearTimeout(timer);
+      pending?.resolve();
+      pending = null;
     };
   }, []);
 }

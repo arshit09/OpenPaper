@@ -75,6 +75,8 @@ export interface EditorState {
   focusedThreadId: string | null;
   /** An agent opened another file; the editor offers to switch to it. */
   agentOpened: { fileId: string; pageId: string | null; agentName: string } | null;
+  /** A file being opened: the loader covers the editor until its frames are on screen, then clears it. */
+  opening: { fileId: string } | null;
   /** A comment being written (placed with the comment tool). */
   pendingComment: { nodeId: string | null; world: { x: number; y: number } } | null;
   /** Built-in agent chat for the open file or live site (`key`: file id, or `site:<id>`). */
@@ -146,6 +148,7 @@ export const useEditor = create<EditorState>(() => ({
   toasts: [],
   focusedThreadId: null,
   agentOpened: null,
+  opening: null,
   pendingComment: null,
   agentChat: { key: null, items: [], running: false, usage: null, open: false },
   agentConfig: null,
