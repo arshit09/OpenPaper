@@ -69,6 +69,12 @@ website/
   OpenPaper's palette.
 - The site opens in the light theme whatever the system setting; the toggle switches to dark and remembers the choice. Animations pause off screen and are skipped under
   `prefers-reduced-motion`.
+- **Theme peel:** the light page is a sheet of paper over the dark one. Switching to dark peels it off from the top-right
+  corner along the logo's 45° fold; switching to light lays it back down, the same fold played backwards. It is a view
+  transition: the light page's snapshot (the old one when peeling, the new one when laying) is clipped at the crease, and
+  the folded-back flap (Fold grey) is a fixed `.peel` layer with its own transition name. Both follow one animated length,
+  `--peel-r`, so they stay joined at the crease. Browsers without view transitions, and visitors with reduced motion,
+  switch instantly.
 
 ## Deploying
 

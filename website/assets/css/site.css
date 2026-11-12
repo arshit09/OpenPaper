@@ -423,6 +423,78 @@ em.s {
 :root[data-theme='dark'] .theme-toggle .i-moon {
   display: none;
 }
+/* Theme peel: the light page is a sheet of paper over the dark one. Going dark peels it off from
+   the top-right corner along a 45° crease, like the logo's corner; going light lays it back down,
+   the same fold played backwards (site.js). --peel-r is how far the crease is from the corner along
+   the top edge; the crease is the line y − x = r − 100vw. */
+@property --peel-r {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+:is(.peeling, .laying)::view-transition-group(root),
+:is(.peeling, .laying)::view-transition-old(root),
+:is(.peeling, .laying)::view-transition-new(root),
+:is(.peeling, .laying)::view-transition-group(peel),
+:is(.peeling, .laying)::view-transition-new(peel) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+/* The sheet (the old page when peeling, the new one when laying) keeps the side of the crease away
+   from the corner, and so does the flap: the screen cut by the crease, as five points (where the
+   crease enters and leaves the screen, then the bottom-right, bottom-left and top-left corners, each
+   pulled onto the crease once it has passed them). The points stay on screen: a clip-path with
+   far-off points loses whole tiles. */
+.peeling::view-transition-old(root),
+.laying::view-transition-new(root),
+.peel-fold {
+  clip-path: polygon(
+    max(100vw - var(--peel-r), 0px) max(var(--peel-r) - 100vw, 0px),
+    calc(100vw - max(var(--peel-r) - 100vh, 0px)) min(var(--peel-r), 100vh),
+    calc(100vw - max(var(--peel-r) - 100vh, 0px)) 100vh,
+    0px 100vh,
+    0px max(var(--peel-r) - 100vw, 0px)
+  );
+}
+.peeling::view-transition-old(root),
+.laying::view-transition-new(root) {
+  z-index: 1;
+}
+/* The flap always lies on the light sheet, so it casts one shadow in both directions. */
+.peel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  view-transition-name: peel;
+  filter: drop-shadow(-8px 8px 14px rgba(0, 0, 0, 0.2));
+}
+.peel-fold,
+.peel-back {
+  position: absolute;
+  inset: 0;
+}
+/* The page mirrored in the crease: a 100vh × 100vw box sliding down-left as the crease moves
+   (left 100vw − r, top r − 100vw), clamped to the screen. */
+.peel-back {
+  clip-path: polygon(
+    max(100vw - var(--peel-r), 0px) max(var(--peel-r) - 100vw, 0px),
+    min(100vw + 100vh - var(--peel-r), 100vw) max(var(--peel-r) - 100vw, 0px),
+    min(100vw + 100vh - var(--peel-r), 100vw) min(var(--peel-r), 100vh),
+    max(100vw - var(--peel-r), 0px) min(var(--peel-r), 100vh)
+  );
+  /* The back of the sheet is the logo's Fold grey in both themes, a little darker at the crease and
+     lighter at the lifted tip. 225deg runs from the top-right corner, so a stop at r·√½ sits on the
+     crease and one at r·√2 on the tip. */
+  background: linear-gradient(
+    225deg,
+    #7e7e7e calc(var(--peel-r) * 0.7071),
+    var(--fold) calc(var(--peel-r) * 0.7071 + 48px),
+    #a0a0a0 calc(var(--peel-r) * 1.4142)
+  );
+}
 .menu-toggle {
   display: none;
 }

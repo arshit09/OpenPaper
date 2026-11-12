@@ -14,15 +14,59 @@
     themeBtn?.setAttribute('aria-label', dark ? 'Switch to light theme' : 'Switch to dark theme');
     themeColor?.setAttribute('content', dark ? '#111111' : '#ffffff');
   };
-  themeBtn?.addEventListener('click', () => {
-    const next = currentTheme() === 'dark' ? 'light' : 'dark';
+  const applyTheme = (next) => {
     root.dataset.theme = next;
     try {
       localStorage.setItem('op-site-theme', next);
     } catch {}
     labelTheme();
     window.dispatchEvent(new Event('op-theme'));
-  });
+  };
+  // The light page is a sheet of paper over the dark one. Going dark peels it off from the
+  // top-right corner along a 45° crease, like the logo's folded corner; going light lays it back
+  // down, the same fold played backwards. A view transition holds both pages as images and the
+  // sheet's image is clipped at the crease (site.css); the flap folded back over it is a fixed
+  // layer with its own transition name. Both follow --peel-r, the crease's distance from the
+  // corner, so they never part.
+  let peel = null;
+  const peelTo = (next) => {
+    if (!document.startViewTransition || reduceMotion.matches) return applyTheme(next);
+    const mode = next === 'dark' ? 'peeling' : 'laying';
+    peel?.remove();
+    const flap = document.createElement('div');
+    flap.className = 'peel';
+    flap.setAttribute('aria-hidden', 'true');
+    flap.innerHTML = '<div class="peel-fold"><div class="peel-back"></div></div>';
+    peel = flap;
+    root.classList.remove('peeling', 'laying');
+    root.classList.add(mode);
+    // A click mid-way ends the running transition at once, then folds the sheet the other way.
+    const vt = document.startViewTransition(() => {
+      applyTheme(next);
+      document.body.append(flap);
+    });
+    vt.ready
+      .then(() => {
+        // The crease through the far (bottom-left) corner: no sheet is left on screen, and no
+        // flap to cast a shadow, since the flap is clipped to the sheet's side of the crease.
+        const off = `${innerWidth + innerHeight}px`;
+        const travel = { '--peel-r': mode === 'peeling' ? ['0px', off] : [off, '0px'] };
+        const timing = { duration: 1000, easing: 'cubic-bezier(0.45, 0, 0.55, 1)', fill: 'both' };
+        const sheet = mode === 'peeling' ? '::view-transition-old(root)' : '::view-transition-new(root)';
+        root.animate(travel, { ...timing, pseudoElement: sheet });
+        flap.animate(travel, timing);
+      })
+      .catch(() => {});
+    const done = () => {
+      flap.remove();
+      if (peel === flap) {
+        peel = null;
+        root.classList.remove(mode);
+      }
+    };
+    vt.finished.then(done, done);
+  };
+  themeBtn?.addEventListener('click', () => peelTo(currentTheme() === 'dark' ? 'light' : 'dark'));
   labelTheme();
 
   /* ---------- Navigation ---------- */
