@@ -1878,9 +1878,6 @@ a.op-vc-repo:hover {
   outline: 2px solid var(--op-accent);
   outline-offset: 1px;
 }
-.op-point-row > .op-runner-chip {
-  margin-bottom: 5px;
-}
 .op-runner-mark {
   flex-shrink: 0;
 }
@@ -2008,35 +2005,49 @@ a.op-vc-repo:hover {
   user-select: text;
   animation: op-point-in 0.18s var(--op-ease-out) both;
 }
-.op-point-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 4px;
-  padding: 4px 4px 4px 10px;
+/* The prompt takes the full width on top; the mark, picker, mic and send sit in a row underneath, so a
+   long message wraps and scrolls inside its own box instead of squeezing past the buttons. */
+.op-point-field {
+  padding: 11px 12px 6px;
+  cursor: text;
 }
-.op-point-row textarea {
-  flex: 1;
+textarea.op-input.op-point-input {
+  display: block;
   resize: none;
-  min-height: 30px;
-  max-height: 120px;
-  padding: 6px 2px;
+  min-height: 18px;
+  max-height: 108px;
+  padding: 0;
   background: transparent;
   border: none;
+  border-radius: 0;
   font-size: 13px;
   line-height: 18px;
 }
-.op-point-row textarea:hover,
-.op-point-row textarea:focus {
+textarea.op-input.op-point-input:hover,
+textarea.op-input.op-point-input:focus {
   background: transparent;
   border: none;
 }
-.op-point-row > button {
-  margin-bottom: 1px;
+.op-point-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px 6px 12px;
+  cursor: text;
+}
+.op-point-tools > button,
+.op-point-tools > .op-runner-chip {
+  cursor: pointer;
+}
+.op-point-spacer {
+  flex: 1;
+  align-self: stretch;
 }
 .op-point-mark {
   flex-shrink: 0;
-  margin-bottom: 7px;
   color: var(--op-text);
+  /* Presses fall through to the toolbar, which puts the cursor in the prompt. */
+  pointer-events: none;
 }
 .op-point-status {
   padding: 8px 10px 4px;

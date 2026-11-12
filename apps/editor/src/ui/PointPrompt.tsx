@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
 import { ArrowUp, Loader2, MessageSquare, Square, X } from 'lucide-react';
 import { setState, useEditor } from '../state/store.ts';
 import { client } from '../sync/session.ts';
@@ -181,6 +181,12 @@ export function PointPrompt({
 
   const placeholder =
     voice === 'recording' ? 'Listening… click the mic to stop' : voice === 'transcribing' ? 'Transcribing…' : chat.running && !working ? 'The agent is busy…' : who ? `Ask ${who} about ${named}…` : `Ask AI to change ${named}…`;
+  /** A press on the toolbar's empty space puts the cursor in the prompt, as if the box were all one field. */
+  const focusPrompt = (e: PointerEvent) => {
+    if (e.target !== e.currentTarget) return;
+    e.preventDefault();
+    input.current?.focus();
+  };
   return (
     <div
       ref={root}
@@ -192,12 +198,13 @@ export function PointPrompt({
       onKeyDown={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.stopPropagation()}
     >
-      <div className="op-point-row">
-        <AgentMark size={16} className="op-point-mark" />
+      {/* The padding lives on this wrapper, not the textarea, so a long message scrolls under a clean edge. */}
+      <div className="op-point-field" onPointerDown={focusPrompt}>
         <textarea
           ref={input}
-          className="op-input"
+          className="op-input op-point-input"
           rows={1}
+          aria-label={`Ask ${who ?? 'the agent'} ${who ? 'about' : 'to change'} ${label}`}
           placeholder={placeholder}
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -213,6 +220,10 @@ export function PointPrompt({
             }
           }}
         />
+      </div>
+      <div className="op-point-tools" onPointerDown={focusPrompt}>
+        <AgentMark size={16} className="op-point-mark" />
+        <div className="op-point-spacer" onPointerDown={focusPrompt} />
         {picker && <RunnerPicker />}
         <VoiceButton
           ref={voiceRef}
