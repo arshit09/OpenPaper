@@ -495,25 +495,6 @@ em.s {
   gap: 12px;
   margin-top: 36px;
 }
-.meta-row {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px 22px;
-  margin-top: 24px;
-  color: var(--text-3);
-  font-size: 13.5px;
-}
-.meta-row li {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.meta-row .i {
-  width: 14px;
-  height: 14px;
-  color: var(--text-2);
-}
 .hero-shot {
   margin-top: 72px;
 }
