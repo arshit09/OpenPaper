@@ -12,7 +12,6 @@ import {
   Undo2,
   Redo2,
   Download,
-  Plug,
   ChevronLeft,
   Blend,
   Keyboard,
@@ -174,9 +173,6 @@ export function TopBar() {
         </button>
         <button className="op-icon-btn op-topbar-optional" title={`Keyboard shortcuts (${bindingLabel('Mod+/', MAC)})`} onClick={() => setState({ showShortcuts: true })}>
           <Keyboard size={16} />
-        </button>
-        <button className="op-btn primary" title="Connect agent" onClick={() => setState({ showConnect: true })}>
-          <Plug size={14} /> <span className="op-connect-label">Connect agent</span>
         </button>
       </div>
     </div>

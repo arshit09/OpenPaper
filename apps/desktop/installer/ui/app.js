@@ -205,8 +205,8 @@ async function startInstall() {
     const dir = await invoke('install', { dir: state.dir, desktop, release: state.release, progress: installProgress() });
     state.dir = dir;
     $('#done-lede').textContent = desktop
-      ? "OpenPaper is on your desktop and in the Start menu. Open it, then click Connect agent to hook up Claude Code, Cursor or another agent in one click."
-      : 'OpenPaper is in the Start menu. Open it, then click Connect agent to hook up Claude Code, Cursor or another agent in one click.';
+      ? "OpenPaper is on your desktop and in the Start menu. Open it, then connect Claude Code, Cursor or another agent in Settings, in one click."
+      : 'OpenPaper is in the Start menu. Open it, then connect Claude Code, Cursor or another agent in Settings, in one click.';
     $('#done-eyebrow').textContent = `Version ${state.release.version} installed`;
     showPath($('#done-dir'), dir);
     showPath($('#done-data'), state.info.dataDir);

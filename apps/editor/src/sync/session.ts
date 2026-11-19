@@ -2,6 +2,8 @@ import { flushSync } from 'react-dom';
 import type {
   AgentChatItem,
   AgentConfigInfo,
+  AgentConnectResult,
+  AgentHarnessInfo,
   AgentTarget,
   AgentUsage,
   EditorCommand,
@@ -295,6 +297,29 @@ export async function setAgentConfig(patch: { runner?: AgentConfigInfo['runner']
     setState({ agentConfig: before });
     toast(error instanceof Error ? error.message : String(error));
     throw error;
+  }
+}
+
+/** Which agents have OpenPaper in their config (the settings and the agent pickers share it). */
+export async function loadHarnesses(): Promise<AgentHarnessInfo[]> {
+  const harnesses = await client.request<AgentHarnessInfo[]>('harness.list');
+  setState({ harnesses });
+  return harnesses;
+}
+
+/**
+ * Connect an agent (add OpenPaper to its config) or disconnect it (take it back out). The server keeps the
+ * built-in agent on one that's connected, so both lists come back. Failures are toasted.
+ */
+export async function connectAgent(id: string, connect: boolean): Promise<AgentConnectResult | null> {
+  try {
+    const result = await client.request<AgentConnectResult>(connect ? 'harness.install' : 'harness.uninstall', { harness: id });
+    setState({ harnesses: result.harnesses, agentConfig: result.config });
+    if (!result.ok) toast(result.reason ?? `Couldn't ${connect ? 'connect' : 'disconnect'} that agent`, 4000);
+    return result;
+  } catch (error) {
+    toast(error instanceof Error ? error.message : String(error));
+    return null;
   }
 }
 

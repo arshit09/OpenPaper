@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import type { AgentConfigInfo, AgentRunner } from '@openpaper/core';
 import { writeFileAtomic } from '../fs-utils.ts';
 import { AGENT_MODELS } from './agent.ts';
-import { agyModels, agyStatus, allowAgyDesignTools, type AgyStatus } from './agy.ts';
+import { agyModels, agyStatus, allowAgyDesignTools, disallowAgyDesignTools, type AgyStatus } from './agy.ts';
 import { claudeCodeStatus, type ClaudeCodeStatus } from './claude-code.ts';
 import { codexConfiguredModel, codexModels, codexStatus, type CodexStatus } from './codex.ts';
 
@@ -29,6 +29,8 @@ export interface AgentProbes {
   agyModels(): Promise<ModelList>;
   /** Let agy run OpenPaper's design tools (adds an allow rule to its settings). */
   allowAgy(): Promise<void>;
+  /** Take that allow rule back out. */
+  disallowAgy(): Promise<void>;
 }
 
 const DEFAULT_PROBES: AgentProbes = {
@@ -39,6 +41,7 @@ const DEFAULT_PROBES: AgentProbes = {
   codexDefault: codexConfiguredModel,
   agyModels: () => agyModels(),
   allowAgy: () => allowAgyDesignTools(),
+  disallowAgy: () => disallowAgyDesignTools(),
 };
 
 /** How long what the coding agents reported is reused: asking them starts up to five CLI processes. */
@@ -168,6 +171,12 @@ export class AgentSettings {
   /** Let agy run OpenPaper's design tools: one allow rule in its settings, added when the user asks. */
   async allowAgy(): Promise<void> {
     await this.probes.allowAgy();
+    this.probed.clear();
+  }
+
+  /** Disconnecting Antigravity takes the allow rule back out. */
+  async disallowAgy(): Promise<void> {
+    await this.probes.disallowAgy();
     this.probed.clear();
   }
 }

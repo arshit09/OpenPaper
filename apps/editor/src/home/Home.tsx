@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FilePlus2, Folder, FolderOpen, FileText, Bot, Trash2, Pencil, AppWindow } from 'lucide-react';
+import { FilePlus2, Folder, FolderOpen, FileText, Bot, Trash2, Pencil, AppWindow, Settings } from 'lucide-react';
 import type { ResourceInfo, SiteInfo } from '@openpaper/core';
 import { useEditor, setState, toast } from '../state/store.ts';
-import { client, refreshResources } from '../sync/session.ts';
+import { client, loadHarnesses, refreshResources } from '../sync/session.ts';
 import { AgentMark, Logo } from '../ui/Logo.tsx';
 import { SiteDialog } from '../site/SiteDialog.tsx';
 
@@ -18,6 +18,8 @@ export function Home() {
   const resources = useEditor((s) => s.resources);
   const connection = useEditor((s) => s.connection);
   const agents = useEditor((s) => s.agents);
+  /** Whether any agent is connected: until one is, the empty home screen offers to connect one. */
+  const anyConnected = useEditor((s) => s.harnesses?.some((h) => h.connected) ?? true);
   const [folderId, setFolderId] = useState<string | null>(null);
   const [sites, setSites] = useState<SiteInfo[]>([]);
   /** The live-site dialog: adding one (site null) or editing one. */
@@ -27,6 +29,7 @@ export function Home() {
     if (connection !== 'open') return;
     void refreshResources();
     client.request<SiteInfo[]>('sites.list').then(setSites).catch(() => {});
+    loadHarnesses().catch(() => {});
   }, [connection]);
 
   const items = useMemo(
@@ -110,9 +113,6 @@ export function Home() {
           />
           {connection === 'open' ? 'Local server' : 'Connecting…'}
         </span>
-        <button className="op-btn outline" onClick={() => setState({ showConnect: true })}>
-          <Bot size={15} /> Connect an agent
-        </button>
         <button className="op-btn outline" title="Open the site you're building and edit it with the agent" onClick={() => setSiteDialog({ site: null })}>
           <AppWindow size={15} /> Open live site
         </button>
@@ -121,6 +121,9 @@ export function Home() {
         </button>
         <button className="op-btn primary" onClick={createFile}>
           <FilePlus2 size={15} /> New file
+        </button>
+        <button className="op-icon-btn" title="Settings: connect and disconnect agents" aria-label="Settings" onClick={() => setState({ showSettings: true })}>
+          <Settings size={16} />
         </button>
       </header>
 
@@ -215,9 +218,11 @@ export function Home() {
                 <button className="op-btn primary" onClick={createFile}>
                   <FilePlus2 size={15} /> New file
                 </button>
-                <button className="op-btn outline" onClick={() => setState({ showConnect: true })}>
-                  <Bot size={15} /> Connect an agent
-                </button>
+                {!anyConnected && (
+                  <button className="op-btn outline" onClick={() => setState({ showSettings: true })}>
+                    <Bot size={15} /> Connect an agent
+                  </button>
+                )}
                 <button className="op-btn outline" onClick={() => setSiteDialog({ site: null })}>
                   <AppWindow size={15} /> Open live site
                 </button>
@@ -270,7 +275,7 @@ export function Home() {
               })}
             </div>
           )}
-          {agents.length > 0 && <p className="op-label" style={{ marginTop: 16 }}>{agents.length} agent(s) connected</p>}
+          {agents.length > 0 && <p className="op-label" style={{ marginTop: 16 }}>{agents.length === 1 ? '1 agent is' : `${agents.length} agents are`} working in OpenPaper now</p>}
         </div>
       </main>
       {siteDialog && (

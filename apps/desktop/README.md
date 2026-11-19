@@ -22,7 +22,7 @@ window closes, because agents connected over MCP still use it.
 - Links that leave the editor open in the default browser. The editor gets no native APIs.
 - Browser keys (reload, find, print, zoom, devtools) are off; editing keys work as usual. Dropped files reach the editor.
 - Window size and position are remembered. The window follows the Windows light or dark setting.
-- **Connect agent** in the app writes the bundled `node.exe` and `cli.js` paths into agent configs, so agents work
+- Connecting an agent in **Settings** writes the bundled `node.exe` and `cli.js` paths into agent configs, so agents work
   without Node installed. The install folder stays the same across updates, so those paths stay valid.
 
 **The installer** (`installer/`, `OpenPaper Setup.exe`) has the website's look: the same palette, type and buttons,

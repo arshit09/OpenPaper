@@ -18,6 +18,10 @@ import {
   type ViewState,
   type AgentTarget,
   type VcsTrackPlan,
+  type AgentConnectResult,
+  type AgentHarnessInfo,
+  type AgentRunner,
+  HARNESS_RUNNERS,
 } from '@openpaper/core';
 import type { AgentService } from './agent/agent.ts';
 import type { SpeechService } from './speech/service.ts';
@@ -29,7 +33,7 @@ import type { SiteProxies } from './sites/proxy.ts';
 import { normalizeSiteUrl, type SiteRecord, type SiteStore } from './sites/store.ts';
 import type { AgentSettings, Effort, Runner } from './agent/settings.ts';
 import { executeCommand } from './commands.ts';
-import { HARNESSES, installHarness } from './harness.ts';
+import { HARNESSES, harnessStatus, installHarness, uninstallHarness } from './harness.ts';
 import type { ActorRef } from './hub.ts';
 import { MCP_PATH } from './paths.ts';
 import type { OriginPolicy } from './security.ts';
@@ -123,6 +127,37 @@ export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings
     env.views.broadcast(fileId, { t: 'vcs', fileId });
     return result;
   };
+
+  /** Every connectable agent, whether OpenPaper is in its config, and whether OpenPaper can also run it. */
+  const agentHarnesses = async (): Promise<AgentHarnessInfo[]> =>
+    (await harnessStatus(mcpLaunch())).map((h) => ({ ...h, runner: HARNESS_RUNNERS[h.id] ?? null }));
+
+  /**
+   * Connect (or disconnect) an agent, then keep the built-in agent on one that's connected: connecting one
+   * OpenPaper can run picks it when what answers now isn't connected, and disconnecting the one that answers
+   * moves to another connected one (or the API key). Antigravity's run permission comes and goes with it.
+   */
+  async function connectAgent(id: string, connect: boolean): Promise<AgentConnectResult> {
+    const result = connect ? await installHarness(id, mcpLaunch()) : await uninstallHarness(id, mcpLaunch());
+    const runner = HARNESS_RUNNERS[id];
+    if (result.ok && runner === 'agy') {
+      const agy = (await agentSettings.info()).agy;
+      if (connect && agy && !agy.allowed) await agentSettings.allowAgy();
+      if (!connect) await agentSettings.disallowAgy();
+    }
+    const harnesses = await agentHarnesses();
+    if (result.ok && runner) {
+      const info = await agentSettings.info();
+      const isConnected = (r: AgentRunner) => (r === 'api' ? info.keySource !== null : harnesses.some((h) => h.runner === r && h.connected));
+      if (connect && !isConnected(info.runner)) await agentSettings.update({ runner });
+      else if (!connect && info.runner === runner) {
+        const next = harnesses.find((h) => h.connected && h.runner)?.runner ?? (info.keySource ? 'api' : null);
+        if (next) await agentSettings.update({ runner: next });
+      }
+    }
+    const { harness: _id, ...change } = result;
+    return { ...change, harnesses, config: await agentSettings.info() };
+  }
 
   async function handleRequest(conn: EditorConnection, method: string, params: any): Promise<unknown> {
     switch (method) {
@@ -225,8 +260,11 @@ export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings
           launch: mcpLaunch(),
           harnesses: Object.entries(HARNESSES).map(([id, fn]) => ({ id, label: fn('', mcpLaunch()).label })),
         };
+      case 'harness.list':
+        return agentHarnesses();
       case 'harness.install':
-        return installHarness(String(params.harness), mcpLaunch());
+      case 'harness.uninstall':
+        return connectAgent(String(params?.harness), method === 'harness.install');
       case 'jsx': {
         const live = await env.hub.get(String(params.fileId));
         const format = params.format === 'inline-styles' ? 'inline-styles' : 'tailwind';

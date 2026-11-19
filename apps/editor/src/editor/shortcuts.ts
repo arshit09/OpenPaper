@@ -337,7 +337,7 @@ export const SHORTCUTS: Shortcut[] = [
 
 /** A modal dialog is up (ours, or any other `.op-dialog-backdrop` / aria-modal dialog). */
 function dialogOpen(s: EditorState): boolean {
-  return s.showExport || s.showConnect || !!s.figmaPrompt || s.showShortcuts || !!document.querySelector('.op-dialog-backdrop, [aria-modal="true"]');
+  return s.showExport || s.showSettings || !!s.figmaPrompt || s.showShortcuts || !!document.querySelector('.op-dialog-backdrop, [aria-modal="true"]');
 }
 
 /** Spring-loaded shortcuts waiting for their key to come up (keyed by e.code). */

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
-import { HARNESSES, installHarness, isHarnessId } from './harness.ts';
+import { HARNESSES, installHarness, isHarnessId, uninstallHarness } from './harness.ts';
 import { DEFAULT_PORT, MCP_PATH, resolvePaths } from './paths.ts';
 import { findBrowserExecutable } from './render/browser-path.ts';
 import { ensureServer, findRunningServer, readServerInfo } from './server-info.ts';
@@ -15,6 +15,7 @@ Commands:
   serve                 Run the server in the foreground
   mcp                   MCP stdio relay for agent harnesses (starts the server when needed)
   install <agent...>    Add OpenPaper to an agent's MCP config (or --all)
+  uninstall <agent...>  Take OpenPaper back out of an agent's MCP config (or --all)
   status                Show whether the server is running
   stop                  Stop the running server
   doctor                Check your setup
@@ -26,7 +27,7 @@ Options:
   -v, --version         Print version
   -h, --help            Show help
 
-Agents for install: ${Object.keys(HARNESSES).join(', ')}
+Agents for install and uninstall: ${Object.keys(HARNESSES).join(', ')}
 `;
 
 interface Args {
@@ -97,7 +98,9 @@ async function main() {
       await runStdioRelay({ ensureServer: () => ensureServer(paths, { port }) });
       return;
     }
-    case 'install': {
+    case 'install':
+    case 'uninstall': {
+      const adding = command === 'install';
       const targets = flags.all ? Object.keys(HARNESSES) : positionals;
       if (!targets.length) {
         console.error(`Name at least one agent: ${Object.keys(HARNESSES).join(', ')} (or --all)`);
@@ -111,14 +114,17 @@ async function main() {
           process.exitCode = 1;
           continue;
         }
-        const result = await installHarness(target, launch);
-        if (result.ok) console.log(`✓ ${result.label}: ${result.changed ? 'added to' : 'already in'} ${result.path}`);
+        const result = await (adding ? installHarness : uninstallHarness)(target, launch);
+        if (result.ok) {
+          const done = adding ? (result.changed ? 'added to' : 'already in') : result.changed ? 'removed from' : 'not in';
+          console.log(`✓ ${result.label}: ${done} ${result.path}`);
+        }
         else {
           console.error(`✗ ${target}: ${result.reason}${result.path ? ` (${result.path})` : ''}`);
           process.exitCode = 1;
         }
       }
-      console.log('\nRestart your agent so it picks up the new MCP server.');
+      console.log(adding ? '\nRestart your agent so it picks up the new MCP server.' : '\nRestart your agent so it stops loading OpenPaper.');
       return;
     }
     case 'status': {

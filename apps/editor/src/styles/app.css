@@ -362,12 +362,6 @@ textarea.op-input {
   overflow: hidden;
   padding-block: 2px;
 }
-/* Too narrow for the full cluster: Connect agent collapses to its icon (it keeps its tooltip). */
-@container (max-width: 379px) {
-  .op-connect-label {
-    display: none;
-  }
-}
 /* Narrower still: undo, redo, zoom and the shortcuts list go (each has a key) before anything overlaps. */
 @container (max-width: 217px) {
   .op-topbar-optional {
@@ -792,6 +786,96 @@ textarea.op-input {
   white-space: pre-wrap;
   word-break: break-word;
   overflow: auto;
+}
+
+/* ---------- Settings: connect and disconnect agents (ui/SettingsDialog.tsx) ---------- */
+.op-agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+}
+.op-agent-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--op-border);
+  border-radius: 10px;
+  background: var(--op-panel);
+  transition: border-color var(--op-fast) ease;
+}
+.op-agent-item.connected {
+  border-color: var(--op-border-strong);
+}
+.op-agent-logo {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: var(--op-panel-2);
+  border: 1px solid var(--op-border);
+  color: var(--op-text);
+}
+.op-agent-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.op-agent-name {
+  font-weight: 550;
+}
+.op-agent-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--op-text-3);
+  font-size: 11px;
+}
+.op-agent-item.connected .op-agent-status {
+  color: var(--op-text-2);
+}
+.op-agent-status.error {
+  color: var(--op-danger);
+}
+.op-agent-status > .op-agent-on {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 99px;
+  background: var(--op-success);
+}
+.op-agent-item > .op-btn {
+  flex-shrink: 0;
+  height: 26px;
+}
+.op-btn.op-agent-disconnect {
+  color: var(--op-text-2);
+}
+.op-btn.op-agent-disconnect:hover:not(:disabled) {
+  color: var(--op-danger);
+}
+.op-btn.op-settings-disclosure {
+  height: 26px;
+  margin-left: -6px;
+  padding: 0 6px 0 4px;
+  gap: 4px;
+  color: var(--op-text-2);
+  font-weight: 550;
+}
+.op-btn.op-settings-disclosure:hover {
+  color: var(--op-text);
+}
+.op-settings-chevron {
+  transition: transform var(--op-fast) ease;
+}
+.op-settings-disclosure[aria-expanded='true'] .op-settings-chevron {
+  transform: rotate(90deg);
 }
 
 .op-toast-stack {
@@ -1452,6 +1536,11 @@ a.op-vc-repo:hover {
 .op-dock-tools > .op-model-picker {
   cursor: pointer;
 }
+/* Who answers, beside the model: the model gives way first, then the agent's name. */
+.op-dock-tools > .op-model-picker.op-dock-agent {
+  max-width: 150px;
+  flex-shrink: 0.5;
+}
 .op-dock-spacer {
   flex: 1;
   min-width: 4px;
@@ -1892,7 +1981,7 @@ a.op-vc-repo:hover {
   width: 268px;
   overflow-y: auto;
 }
-.op-runner-menu.with-models .op-runner-head:not(:first-child) {
+.op-runner-menu .op-runner-head:not(:first-child) {
   padding-top: 8px;
 }
 .op-effort {
@@ -1958,6 +2047,21 @@ a.op-vc-repo:hover {
 .op-runner-option:disabled {
   color: var(--op-text-3);
   cursor: default;
+}
+/* Connected agents OpenPaper can't run: listed so they're accounted for, but not something to pick. */
+.op-runner-option.op-runner-elsewhere {
+  color: var(--op-text-2);
+  cursor: default;
+}
+.op-runner-option.op-runner-elsewhere:hover {
+  background: transparent;
+}
+.op-runner-option.op-runner-connect {
+  flex: none;
+  width: 100%;
+}
+.op-runner-option.op-runner-connect > .op-runner-mark {
+  color: var(--op-text-2);
 }
 .op-runner-note {
   margin-left: auto;

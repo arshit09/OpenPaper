@@ -6,6 +6,7 @@ import {
   type ActivityEntry,
   type AgentChatItem,
   type AgentConfigInfo,
+  type AgentHarnessInfo,
   type AgentPresence,
   type AgentUsage,
   type NodeRecord,
@@ -69,7 +70,8 @@ export interface EditorState {
 
   leftTab: LeftTab;
   rightTab: RightTab;
-  showConnect: boolean;
+  /** Settings, where agents are connected and disconnected. */
+  showSettings: boolean;
   showExport: boolean;
   toasts: Toast[];
   focusedThreadId: string | null;
@@ -83,6 +85,8 @@ export interface EditorState {
   agentChat: { key: string | null; items: AgentChatItem[]; running: boolean; usage: AgentUsage | null; open: boolean };
   /** What runs the built-in agent and what's installed (null until first asked). */
   agentConfig: AgentConfigInfo | null;
+  /** Every agent OpenPaper can connect to and whether it is (null until first asked). */
+  harnesses: AgentHarnessInfo[] | null;
   /** The ask-the-agent prompt beside the canvas selection is expanded (Mod+K or its button). */
   selectionPrompt: boolean;
   /** Local speech-to-text engine (null until first asked). */
@@ -143,7 +147,7 @@ export const useEditor = create<EditorState>(() => ({
   activity: [],
   leftTab: 'layers',
   rightTab: 'design',
-  showConnect: false,
+  showSettings: false,
   showExport: false,
   toasts: [],
   focusedThreadId: null,
@@ -152,6 +156,7 @@ export const useEditor = create<EditorState>(() => ({
   pendingComment: null,
   agentChat: { key: null, items: [], running: false, usage: null, open: false },
   agentConfig: null,
+  harnesses: null,
   selectionPrompt: false,
   speech: null,
   showShaders: false,

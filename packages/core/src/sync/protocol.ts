@@ -143,6 +143,36 @@ export interface AgentUsage {
  */
 export type AgentRunner = 'api' | 'claude-code' | 'codex' | 'agy';
 
+/**
+ * A coding agent OpenPaper can connect to: Connect adds OpenPaper's MCP server to its config, so it can
+ * design from its own app. `runner` is set for the ones OpenPaper can also run itself, from the prompt
+ * beside a selection and the agent dock.
+ */
+export interface AgentHarnessInfo {
+  id: string;
+  label: string;
+  connected: boolean;
+  /** The config file that has OpenPaper, or the one Connect would write. */
+  path: string;
+  runner: AgentRunner | null;
+  /** Its config can't be read, so Connect and Disconnect leave it alone. */
+  error?: string;
+}
+
+/** The connectable agents OpenPaper can also run, by their connect id. */
+export const HARNESS_RUNNERS: Readonly<Record<string, AgentRunner>> = { 'claude-code': 'claude-code', codex: 'codex', antigravity: 'agy' };
+
+/** What `harness.install` and `harness.uninstall` answer: the change, then every agent's state and the agent settings. */
+export interface AgentConnectResult {
+  ok: boolean;
+  label?: string;
+  path?: string;
+  changed?: boolean;
+  reason?: string;
+  harnesses: AgentHarnessInfo[];
+  config: AgentConfigInfo;
+}
+
 export interface AgentConfigInfo {
   runner: AgentRunner;
   /** Where the API key comes from (null = not configured). */

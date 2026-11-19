@@ -2,7 +2,7 @@ import { memo, useEffect, useLayoutEffect, useRef, useState, type PointerEvent, 
 import { ArrowUp, Square, ChevronDown, ChevronUp, Settings2, RotateCcw, Check, X, Loader2, Wrench, Crosshair, Info, Plus } from 'lucide-react';
 import { displayName, type AgentChatItem, type AgentConfigInfo, type AgentTarget, type PaperDocument } from '@openpaper/core';
 import { useEditor, setState } from '../state/store.ts';
-import { allowAgy, client, loadAgentConfig, sendToAgent, setAgentConfig } from '../sync/session.ts';
+import { allowAgy, client, connectAgent, loadAgentConfig, loadHarnesses, sendToAgent, setAgentConfig } from '../sync/session.ts';
 import { MarkdownView } from '../ui/MarkdownView.tsx';
 import { AgentMark } from '../ui/Logo.tsx';
 import { AGY_NOTE, RunnerPicker, runnerReady } from '../ui/RunnerPicker.tsx';
@@ -122,6 +122,12 @@ function AgentSetup({ config, claudeCodeOnly }: { config: AgentConfigInfo; claud
   const [key, setKey] = useState('');
   const [busy, run] = useBusy();
   const cc = config.claudeCode;
+  const harnesses = useEditor((s) => s.harnesses);
+  useEffect(() => {
+    if (!harnesses) loadHarnesses().catch(() => {});
+  }, [harnesses]);
+  /** Claude Code isn't connected yet: the button connects it (adds OpenPaper to its settings) on the way. */
+  const unconnected = !claudeCodeOnly && harnesses?.find((h) => h.id === 'claude-code')?.connected === false;
   return (
     <div style={{ padding: '12px 12px 4px', display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ fontWeight: 600 }}>{claudeCodeOnly ? 'Edit your site with Claude Code' : 'Design with Claude, right here'}</div>
@@ -131,7 +137,8 @@ function AgentSetup({ config, claudeCodeOnly }: { config: AgentConfigInfo; claud
         ) : (
           <>
             Run the built-in design agent on Claude Code with your own Claude sign-in, or with an Anthropic API key. Codex and Antigravity work too:
-            pick them in the menu beside the send button. Prefer to chat from Claude Code, Cursor or another agent? Use <b>Connect agent</b> instead.
+            connect them with <b>Connect agent</b> in the agent menu beside the send button. Cursor, VS Code and the others connect there as well,
+            and design from their own app.
           </>
         )}
       </div>
@@ -152,8 +159,17 @@ function AgentSetup({ config, claudeCodeOnly }: { config: AgentConfigInfo; claud
           )}
         </div>
         {cc?.loggedIn ? (
-          <button className="op-btn primary" disabled={busy} onClick={() => void run(() => setAgentConfig({ runner: 'claude-code' }))}>
-            Use Claude Code
+          <button
+            className="op-btn primary"
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                if (unconnected) await connectAgent('claude-code', true);
+                await setAgentConfig({ runner: 'claude-code' });
+              })
+            }
+          >
+            {unconnected ? 'Connect Claude Code' : 'Use Claude Code'}
           </button>
         ) : (
           <button className="op-btn" disabled={busy} onClick={() => void run(() => loadAgentConfig({ fresh: true }))}>
@@ -418,8 +434,8 @@ export function AgentDock({
                   {emptyHint ?? (
                     <>
                       Ask for a design and watch it appear on the canvas. Try: <i>“Design a sign-up screen for a meditation app”</i>. To change just one
-                      part, select it and press <b>+</b>, or use the agent button beside it ({bindingLabel('Mod+K', MAC)}). The menu by the send button
-                      picks who answers: Claude Code, Codex or Antigravity, which can also generate images.
+                      part, select it and press <b>+</b>, or use the agent button beside it ({bindingLabel('Mod+K', MAC)}). The agent menu by the send button
+                      picks who answers from your connected agents: Claude Code, Codex or Antigravity, which can also generate images.
                     </>
                   )}
                 </div>
@@ -502,6 +518,7 @@ export function AgentDock({
             </span>
           )}
           <div className="op-dock-spacer" />
+          {config && !claudeCodeOnly && <RunnerPicker variant="agent" className="op-dock-agent" />}
           {config && <RunnerPicker variant="model" claudeCodeOnly={claudeCodeOnly} />}
           {chat.items.length > 0 && (
             <button className="op-icon-btn op-dock-fold" title="Show conversation" inert={open} onClick={() => setOpen(true)}>

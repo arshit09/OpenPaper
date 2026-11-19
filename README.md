@@ -58,7 +58,7 @@ Download **[OpenPaper-Setup.exe](https://github.com/arshit09/OpenPaper/releases/
 downloads OpenPaper (50 MB), installs it for your account with no admin prompt, and adds it to the Start menu and your desktop. Node.js comes
 with it, and the app runs in its own window.
 
-- **Connect agent** in the app sets up Claude Code, Cursor and the others in one click.
+- **Settings** (the gear on the home screen) connects Claude Code, Cursor and the others in one click, and disconnects them.
 - Closing the window keeps OpenPaper running in the tray for your agents; **Quit OpenPaper** in the tray stops it.
 - To update, run the installer again. To uninstall, open Settings → Apps → OpenPaper (your designs stay unless you choose to delete them).
 - The installer isn't code-signed yet: if Windows shows "Windows protected your PC", click **More info**, then **Run anyway**.
@@ -106,12 +106,17 @@ npm link --workspace openpaper     # then: openpaper start | status | stop | doc
 
 ## Connect your agent
 
-Open **Connect agent** in the editor for one-click setup, or use the CLI:
+Open **Settings** (the gear on the home screen) for one-click setup, or **Connect agent** in the agent menu beside a
+selection's prompt or the dock. Connected agents get a **Disconnect** button there. Or use the CLI:
 
 ```bash
 openpaper install claude-code       # or: cursor, vscode, codex, claude-desktop, windsurf,
                                     #     gemini-cli, antigravity, opencode, copilot-cli, --all
+openpaper uninstall claude-code     # take OpenPaper back out of an agent's config
 ```
+
+Claude Code, Codex and Antigravity can also answer inside OpenPaper: once connected, pick one in the agent menu beside
+a selection's prompt or in the dock at the bottom of the canvas.
 
 Manual setup — any MCP client, stdio:
 

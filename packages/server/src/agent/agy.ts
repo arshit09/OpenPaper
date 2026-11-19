@@ -89,6 +89,20 @@ export async function allowAgyDesignTools(path = agySettingsPath()): Promise<voi
   await writeFileAtomic(path, `${JSON.stringify(settings, null, 2)}\n`);
 }
 
+/** Take OpenPaper's allow rule back out of agy's settings (Disconnect), keeping everything else. */
+export async function disallowAgyDesignTools(path = agySettingsPath()): Promise<void> {
+  let settings: Record<string, any>;
+  try {
+    settings = JSON.parse(await readFile(path, 'utf8'));
+  } catch {
+    return; // No settings, or none we can read: there's no rule of ours to take out.
+  }
+  const allow = settings?.permissions?.allow;
+  if (!Array.isArray(allow) || !allow.includes(AGY_RULE)) return;
+  settings.permissions.allow = allow.filter((rule) => rule !== AGY_RULE);
+  await writeFileAtomic(path, `${JSON.stringify(settings, null, 2)}\n`);
+}
+
 /** Whether agy is installed and allows OpenPaper's design tools. */
 export async function agyStatus(command = defaultCommand(), settingsPath = agySettingsPath()): Promise<AgyStatus | null> {
   if (!command) return null;

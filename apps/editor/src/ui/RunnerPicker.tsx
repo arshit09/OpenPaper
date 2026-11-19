@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, Info } from 'lucide-react';
-import type { AgentConfigInfo, AgentRunner } from '@openpaper/core';
-import { useEditor } from '../state/store.ts';
-import { allowAgy, loadAgentConfig, setAgentConfig } from '../sync/session.ts';
-import { RunnerMark } from './RunnerMark.tsx';
+import { Check, ChevronDown, Info, Loader2, Plus } from 'lucide-react';
+import type { AgentConfigInfo, AgentHarnessInfo, AgentRunner } from '@openpaper/core';
+import { setState, useEditor } from '../state/store.ts';
+import { allowAgy, connectAgent, loadAgentConfig, loadHarnesses, setAgentConfig } from '../sync/session.ts';
+import { AgentLogo, RunnerMark } from './RunnerMark.tsx';
 
 const EDGE = 8;
 const GAP = 4;
@@ -15,7 +15,7 @@ const EFFORTS: AgentConfigInfo['effort'][] = ['low', 'medium', 'high', 'xhigh', 
 export const RUNNER_NAMES: Record<AgentRunner, { name: string; short: string }> = {
   'claude-code': { name: 'Claude Code', short: 'Claude' },
   codex: { name: 'Codex', short: 'Codex' },
-  agy: { name: 'Antigravity (agy)', short: 'agy' },
+  agy: { name: 'Antigravity', short: 'agy' },
   api: { name: 'Claude API key', short: 'Claude' },
 };
 
@@ -65,11 +65,34 @@ function modelLabel(config: AgentConfigInfo): string {
   return config.models.find((m) => m.id === config.model)?.label ?? (config.model || 'Default model');
 }
 
+/** One agent that can answer, in the menu. `harness` is unset for the API key, which isn't connected anywhere. */
+interface Choice {
+  runner: AgentRunner;
+  name: string;
+  harness?: AgentHarnessInfo;
+}
+
 /**
- * Picks which coding agent answers: Claude Code, Codex or Antigravity (and the API key runner when one is
- * set up). It changes the agent's runner for every chat. The `chip` is the tiny one beside the selection's
- * agent button; `model` is the agent dock's, whose trigger names the model and whose menu also picks the
- * model and effort. `claudeCodeOnly` (a live site) leaves the runners out.
+ * Who can answer: the connected agents OpenPaper can run, and the API key when there is one. What answers
+ * now is always listed, connected or not, so the menu never hides it.
+ */
+export function agentChoices(config: AgentConfigInfo, harnesses: AgentHarnessInfo[] | null): Choice[] {
+  const choices: Choice[] = [];
+  for (const h of harnesses ?? []) {
+    if (h.runner && (h.connected || h.runner === config.runner)) choices.push({ runner: h.runner, name: h.label, harness: h });
+  }
+  if (!harnesses && config.runner !== 'api') choices.push({ runner: config.runner, name: RUNNER_NAMES[config.runner].name });
+  if (config.runner === 'api' || config.keySource) choices.push({ runner: 'api', name: RUNNER_NAMES.api.name });
+  return choices;
+}
+
+type Variant = 'chip' | 'agent' | 'model';
+
+/**
+ * Picks who answers and how. `chip` (beside the selection's agent button and in its prompt) and `agent`
+ * (the dock) list the connected agents OpenPaper can run, the connected ones it can't (they design from
+ * their own app), and last, Connect agent, which opens the settings. `model` is the dock's model and
+ * effort. `claudeCodeOnly` (a live site) leaves the agents out.
  */
 export function RunnerPicker({
   className,
@@ -77,26 +100,33 @@ export function RunnerPicker({
   claudeCodeOnly,
 }: {
   className?: string;
-  variant?: 'chip' | 'model';
+  variant?: Variant;
   claudeCodeOnly?: boolean;
 }) {
   const config = useEditor((s) => s.agentConfig);
+  const harnesses = useEditor((s) => s.harnesses);
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<CSSProperties>({});
+  const [connecting, setConnecting] = useState<string | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
+  const withModels = variant === 'model';
+  const withAgents = !withModels && !claudeCodeOnly;
 
   useEffect(() => {
     if (!config) loadAgentConfig().catch(() => {});
   }, [config]);
+  useEffect(() => {
+    if (withAgents && !harnesses) loadHarnesses().catch(() => {});
+  }, [withAgents, harnesses]);
 
-  // Below the chip, or above it when that's where the room is.
+  // Below the trigger, or above it when that's where the room is.
   useLayoutEffect(() => {
     if (!open || !trigger.current || !menu.current) return;
     const r = trigger.current.getBoundingClientRect();
     const { offsetWidth: width, offsetHeight: height } = menu.current;
-    // The dock's picker sits at the right of its toolbar: line the menu up with its right edge.
-    const start = variant === 'model' ? r.right - width : r.left;
+    // The dock's pickers sit at the right of its toolbar: line the menu up with their right edge.
+    const start = variant === 'chip' ? r.left : r.right - width;
     const left = Math.max(EDGE, Math.min(start, window.innerWidth - width - EDGE));
     const below = window.innerHeight - r.bottom - EDGE - GAP;
     const above = r.top - EDGE - GAP;
@@ -105,7 +135,7 @@ export function RunnerPicker({
         ? { top: r.bottom + GAP, left, maxHeight: below }
         : { bottom: window.innerHeight - r.top + GAP, left, maxHeight: above },
     );
-  }, [open, config, variant]);
+  }, [open, config, harnesses, variant]);
 
   // Close on a press outside, Escape, scrolling, resizing or leaving the window.
   useEffect(() => {
@@ -134,97 +164,155 @@ export function RunnerPicker({
   }, [open]);
 
   if (!config) return null;
-  const runners: AgentRunner[] = claudeCodeOnly
-    ? []
-    : ['claude-code', 'codex', 'agy', ...(config.runner === 'api' || config.keySource ? (['api'] as const) : [])];
-  const current = RUNNER_NAMES[config.runner];
+  const choices = withAgents ? agentChoices(config, harnesses) : [];
+  /** Connected, but they design from their own app: OpenPaper can't run them. */
+  const elsewhere = withAgents ? (harnesses ?? []).filter((h) => h.connected && !h.runner) : [];
+  const currentHarness = harnesses?.find((h) => h.runner === config.runner);
+  const current = { ...RUNNER_NAMES[config.runner], ...(currentHarness ? { name: currentHarness.label } : {}) };
   const pick = (runner: AgentRunner) => {
     setOpen(false);
     if (runner !== config.runner) void setAgentConfig({ runner }).catch(() => {});
   };
-  const withModels = variant === 'model';
+  const connect = async (harness: AgentHarnessInfo) => {
+    setConnecting(harness.id);
+    const result = await connectAgent(harness.id, true);
+    setConnecting(null);
+    if (result?.ok && harness.runner) pick(harness.runner);
+  };
+  const openSettings = () => {
+    setOpen(false);
+    setState({ showSettings: true });
+  };
   const model = modelLabel(config);
+
+  const label = variant === 'chip' ? current.short : variant === 'agent' ? current.name : model;
+  const title =
+    variant === 'model'
+      ? `${model} · effort ${config.effort}. Click to change.`
+      : `Answered by ${current.name}. Click to pick another connected agent, or connect one.`;
 
   return (
     <>
       <button
         ref={trigger}
         type="button"
-        className={`${withModels ? 'op-model-picker' : 'op-runner-chip'}${open ? ' open' : ''}${className ? ` ${className}` : ''}`}
-        title={
-          withModels
-            ? `${current.name} · ${model} · effort ${config.effort}. Click to change.`
-            : `Answered by ${current.name}. Click to pick Claude Code, Codex or Antigravity.`
-        }
-        aria-label={withModels ? `Agent: ${current.name}, ${model}` : `Agent: ${current.name}`}
+        className={`${variant === 'chip' ? 'op-runner-chip' : 'op-model-picker'}${open ? ' open' : ''}${className ? ` ${className}` : ''}`}
+        title={title}
+        aria-label={variant === 'model' ? `Model: ${model}` : `Agent: ${current.name}`}
         aria-haspopup="menu"
         aria-expanded={open}
         onPointerDown={(e) => e.stopPropagation()}
         onClick={() => {
-          if (!open) loadAgentConfig({ fresh: true }).catch(() => {}); // Fresh install and sign-in states.
+          if (!open) {
+            loadAgentConfig({ fresh: true }).catch(() => {}); // Fresh install and sign-in states.
+            if (withAgents) loadHarnesses().catch(() => {});
+          }
           setOpen(!open);
         }}
       >
-        <RunnerMark runner={config.runner} size={withModels ? 13 : 11} />
-        <span className={withModels ? 'op-truncate' : undefined}>{withModels ? model : current.short}</span>
-        <ChevronDown size={withModels ? 13 : 10} className={withModels ? 'op-select-chevron' : undefined} />
+        {variant !== 'model' && <RunnerMark runner={config.runner} size={variant === 'chip' ? 11 : 13} />}
+        <span className={variant === 'chip' ? undefined : 'op-truncate'}>{label}</span>
+        <ChevronDown size={variant === 'chip' ? 10 : 13} className={variant === 'chip' ? undefined : 'op-select-chevron'} />
       </button>
       {open &&
         createPortal(
           <div
             ref={menu}
             role="menu"
-            aria-label="Agent"
+            aria-label={withModels ? 'Model' : 'Agent'}
             className={`op-popover op-runner-menu${withModels ? ' with-models' : ''}`}
             style={pos}
             data-op-overlay-ui
             onPointerDown={(e) => e.stopPropagation()}
           >
-            {runners.length > 0 && <div className="op-runner-head">Ask with</div>}
-            {runners.map((runner) => {
-              const note = runnerNote(config, runner);
-              const selected = runner === config.runner;
-              const needsAllow = runner === 'agy' && !!config.agy && !config.agy.allowed;
-              return (
-                <div key={runner} className="op-runner-row">
-                  <button
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={selected}
-                    className="op-runner-option"
-                    disabled={!note.installed}
-                    title={note.installed ? (runnerReady(config, runner) ? undefined : HOW_TO[runner]) : HOW_TO[runner]}
-                    onClick={() => pick(runner)}
-                  >
-                    <span className="op-select-check">{selected && <Check size={12} />}</span>
-                    <RunnerMark runner={runner} />
-                    <span className="op-truncate">{RUNNER_NAMES[runner].name}</span>
-                    {note.text && <span className="op-runner-note">{note.text}</span>}
-                  </button>
-                  {runner === 'agy' && (
-                    <span className="op-runner-info" tabIndex={0} title={AGY_NOTE} aria-label={AGY_NOTE}>
-                      <Info size={12} />
-                    </span>
-                  )}
-                  {needsAllow && (
-                    <button
-                      type="button"
-                      className="op-btn op-runner-allow"
-                      title="Add the allow rule to agy's settings and use Antigravity"
-                      onClick={async () => {
-                        await allowAgy();
-                        pick('agy');
-                      }}
+            {withAgents && (
+              <>
+                {choices.length > 0 && <div className="op-runner-head">Ask with</div>}
+                {choices.map(({ runner, name, harness }) => {
+                  const note = runnerNote(config, runner);
+                  const selected = runner === config.runner;
+                  const unconnected = !!harness && !harness.connected;
+                  const needsAllow = runner === 'agy' && !unconnected && !!config.agy && !config.agy.allowed;
+                  return (
+                    <div key={runner} className="op-runner-row">
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={selected}
+                        className="op-runner-option"
+                        disabled={!note.installed}
+                        title={
+                          unconnected
+                            ? `${name} isn't connected: Connect adds OpenPaper to its settings.`
+                            : note.installed && runnerReady(config, runner)
+                              ? undefined
+                              : HOW_TO[runner]
+                        }
+                        onClick={() => pick(runner)}
+                      >
+                        <span className="op-select-check">{selected && <Check size={12} />}</span>
+                        <RunnerMark runner={runner} />
+                        <span className="op-truncate">{name}</span>
+                        {/* Not connected: the Connect button beside it says so. */}
+                        {!unconnected && note.text && <span className="op-runner-note">{note.text}</span>}
+                      </button>
+                      {runner === 'agy' && (
+                        <span className="op-runner-info" tabIndex={0} title={AGY_NOTE} aria-label={AGY_NOTE}>
+                          <Info size={12} />
+                        </span>
+                      )}
+                      {unconnected && harness && (
+                        <button
+                          type="button"
+                          className="op-btn op-runner-allow"
+                          disabled={connecting !== null}
+                          title={`Add OpenPaper to ${harness.label}'s settings`}
+                          onClick={() => void connect(harness)}
+                        >
+                          {connecting === harness.id ? <Loader2 size={11} className="op-spin" /> : 'Connect'}
+                        </button>
+                      )}
+                      {needsAllow && (
+                        <button
+                          type="button"
+                          className="op-btn op-runner-allow"
+                          title="Add the allow rule to agy's settings and use Antigravity"
+                          onClick={async () => {
+                            await allowAgy();
+                            pick('agy');
+                          }}
+                        >
+                          Allow
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+                {elsewhere.length > 0 && <div className="op-runner-head">From their own apps</div>}
+                {elsewhere.map((h) => (
+                  <div key={h.id} className="op-runner-row">
+                    <div
+                      className="op-runner-option op-runner-elsewhere"
+                      role="menuitem"
+                      aria-disabled
+                      title={`OpenPaper can't run ${h.label} itself. Ask ${h.label} to design in OpenPaper, and its work appears here live.`}
                     >
-                      Allow
-                    </button>
-                  )}
-                </div>
-              );
-            })}
+                      <span className="op-select-check" />
+                      <AgentLogo id={h.id} />
+                      <span className="op-truncate">{h.label}</span>
+                    </div>
+                  </div>
+                ))}
+                {(choices.length > 0 || elsewhere.length > 0) && <div className="op-menu-sep" />}
+                <button type="button" role="menuitem" className="op-runner-option op-runner-connect" onClick={openSettings}>
+                  <span className="op-select-check" />
+                  <Plus size={14} className="op-runner-mark" />
+                  <span className="op-truncate">Connect agent…</span>
+                </button>
+              </>
+            )}
             {withModels && (
               <>
-                {runners.length > 0 && <div className="op-menu-sep" />}
                 <div className="op-runner-head">Model</div>
                 {config.models.map((m) => (
                   <button

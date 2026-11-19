@@ -3,7 +3,7 @@ import { Home } from './home/Home.tsx';
 import { EditorView } from './editor/EditorView.tsx';
 import { SiteView } from './site/SiteView.tsx';
 import { Toasts } from './ui/Toasts.tsx';
-import { ConnectDialog } from './ui/ConnectDialog.tsx';
+import { SettingsDialog } from './ui/SettingsDialog.tsx';
 import { toast, useEditor } from './state/store.ts';
 import { closeFile, exitVersion, navigateTo, showVersion } from './sync/session.ts';
 
@@ -23,7 +23,7 @@ function parseRoute(hash: string): Route {
 
 export function App() {
   const [route, setRoute] = useState<Route>(() => parseRoute(location.hash));
-  const showConnect = useEditor((s) => s.showConnect);
+  const showSettings = useEditor((s) => s.showSettings);
   const fileId = route.name === 'file' ? route.fileId : null;
   const version = route.name === 'file' ? (route.version ?? null) : null;
 
@@ -50,7 +50,7 @@ export function App() {
   return (
     <>
       {route.name === 'file' ? <EditorView /> : route.name === 'site' ? <SiteView key={route.siteId} siteId={route.siteId} /> : <Home />}
-      {showConnect && <ConnectDialog />}
+      {showSettings && <SettingsDialog />}
       <Toasts />
     </>
   );

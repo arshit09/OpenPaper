@@ -257,7 +257,7 @@ function AgentsPanel() {
           <div className="op-label" style={{ marginBottom: 10 }}>
             Connect Claude Code, Cursor, Codex or any MCP client, then ask it to design something in OpenPaper.
           </div>
-          <button className="op-btn primary" onClick={() => setState({ showConnect: true })}>
+          <button className="op-btn primary" onClick={() => setState({ showSettings: true })}>
             <Plug size={13} /> Connect an agent
           </button>
         </div>
