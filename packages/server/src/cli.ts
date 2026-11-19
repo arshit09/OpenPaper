@@ -15,7 +15,7 @@ Commands:
   serve                 Run the server in the foreground
   mcp                   MCP stdio relay for agent harnesses (starts the server when needed)
   install <agent...>    Add OpenPaper to an agent's MCP config (or --all)
-  uninstall <agent...>  Take OpenPaper back out of an agent's MCP config (or --all)
+  disconnect <agent...> Take OpenPaper back out of an agent's MCP config (or --all)
   status                Show whether the server is running
   stop                  Stop the running server
   doctor                Check your setup
@@ -27,7 +27,7 @@ Options:
   -v, --version         Print version
   -h, --help            Show help
 
-Agents for install and uninstall: ${Object.keys(HARNESSES).join(', ')}
+Agents for install and disconnect: ${Object.keys(HARNESSES).join(', ')}
 `;
 
 interface Args {
@@ -99,7 +99,7 @@ async function main() {
       return;
     }
     case 'install':
-    case 'uninstall': {
+    case 'disconnect': {
       const adding = command === 'install';
       const targets = flags.all ? Object.keys(HARNESSES) : positionals;
       if (!targets.length) {

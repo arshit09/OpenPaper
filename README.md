@@ -112,7 +112,7 @@ selection's prompt or the dock. Connected agents get a **Disconnect** button the
 ```bash
 openpaper install claude-code       # or: cursor, vscode, codex, claude-desktop, windsurf,
                                     #     gemini-cli, antigravity, opencode, copilot-cli, --all
-openpaper uninstall claude-code     # take OpenPaper back out of an agent's config
+openpaper disconnect claude-code    # take OpenPaper back out of an agent's config
 ```
 
 Claude Code, Codex and Antigravity can also answer inside OpenPaper: once connected, pick one in the agent menu beside
