@@ -65,7 +65,29 @@ with it, and the app runs in its own window.
 
 Windows 10 or 11, 64-bit. How the app and installer are built: [apps/desktop](apps/desktop/README.md).
 
-### macOS and Linux (or Windows from source)
+### macOS, Linux and Windows: the CLI
+
+One line installs the `openpaper` command, with its own Node.js and no admin rights:
+
+```bash
+# macOS and Linux
+curl -fsSL https://github.com/arshit09/OpenPaper/releases/latest/download/install.sh | bash
+```
+
+```powershell
+# Windows PowerShell
+irm https://github.com/arshit09/OpenPaper/releases/latest/download/install.ps1 | iex
+```
+
+```bat
+:: Windows CMD
+curl -fsSL https://github.com/arshit09/OpenPaper/releases/latest/download/install.cmd -o install.cmd && install.cmd && del install.cmd
+```
+
+Then `openpaper start` opens the editor in your browser. Run the line again to update; `openpaper uninstall` removes it (your designs
+stay). macOS 11+, Linux with glibc 2.28+, or Windows 10/11, on x64 or arm64. What the scripts do: [apps/cli](apps/cli/README.md).
+
+### From source
 
 Requirements: **Node.js 20.19+** (22 recommended) and, for screenshots/exports, any Chromium browser (Chrome, Edge, Brave or Chromium — Edge ships with Windows).
 

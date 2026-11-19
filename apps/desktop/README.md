@@ -64,7 +64,12 @@ server's production dependencies from `node_modules` (the versions in `package-l
 the official Node.js build for this Node version (checked against nodejs.org's SHA-256 list, cached in
 `release/cache`), compiles both executables and writes the zip, manifest and installer to `release/`.
 
-To publish, create a GitHub release tagged `v<version>` and attach all three files. The version comes from
+The same run packages the cross-platform CLI from that staged server: `OpenPaper-<version>-cli.tar.gz`, its manifest
+`OpenPaper-cli.json`, and the install scripts from [apps/cli](../cli/README.md). `npm run package:cli` does only
+that part, without Rust.
+
+To publish, create a GitHub release tagged `v<version>` and attach every file in `release/` (not the `cache` and
+`stage` folders): the three app files, the two CLI files and the three install scripts. The version comes from
 `packages/server/package.json` and must match `apps/desktop/Cargo.toml`.
 
 Options: `--node <version>` picks the bundled Node.js, `--skip-editor` reuses `apps/editor/dist`, `--base-url <url>`
