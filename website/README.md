@@ -26,6 +26,7 @@ The details live on topic pages, reached from `explore.html`.
 | `agents.html` | Built-in agent, connecting agents, live presence, screenshots, prompts |
 | `mcp.html` | Transports, every MCP tool, Paper compatibility |
 | `download.html` | Platform tabs (opens on the visitor's OS, or `#macos` / `#windows` / `#linux`): the Windows app, and the CLI's one-line installs |
+| `changelog.html` | Every release's notes, read from GitHub releases when the page opens (nothing to update by hand) |
 | `install.html` | Using the Windows app, the CLI's commands, environment variables, building from source, development |
 | `privacy.html` | The data folder, localhost only, what goes online and when |
 | `terms.html` | Terms of Use (the same text the Windows installer shows) |

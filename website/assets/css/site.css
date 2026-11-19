@@ -2855,14 +2855,6 @@ a:hover .link-arrow .i {
   line-height: 1.4;
   letter-spacing: 0;
 }
-.dl-lede {
-  max-width: 640px;
-  margin-top: 14px;
-  color: var(--text-2);
-  font-size: 16.5px;
-  line-height: 1.6;
-  text-wrap: pretty;
-}
 .dl-actions {
   display: flex;
   flex-wrap: wrap;
@@ -2876,17 +2868,10 @@ a:hover .link-arrow .i {
   font-size: 16px;
 }
 .dl-req {
-  margin: 28px 0 0;
-  font-size: 14.5px;
+  margin-top: 16px;
+  color: var(--text-3);
+  font-size: 14px;
   line-height: 1.5;
-}
-.dl-req dt {
-  color: var(--text);
-  font-weight: 600;
-}
-.dl-req dd {
-  margin: 2px 0 0;
-  color: var(--text-2);
 }
 .dl-note {
   display: flex;
@@ -2927,32 +2912,10 @@ a:hover .link-arrow .i {
   overflow-wrap: anywhere;
   font-size: 13.5px;
 }
-.dl-sec-quiet .dl-title {
-  color: var(--text-2);
-  font-size: 22px;
-  letter-spacing: -0.025em;
-}
-.dl-sec-quiet .dl-lede {
-  margin-top: 8px;
-  font-size: 15.5px;
-}
-.dl-next {
-  border-bottom: none;
-}
-.dl-next .ref {
-  margin-top: 24px;
-}
-@media (min-width: 641px) {
-  .dl-next .ref dl div {
-    grid-template-columns: 280px minmax(0, 1fr);
-  }
-}
-.dl-more {
-  max-width: 640px;
-  margin-top: 20px;
-  color: var(--text-2);
-  font-size: 15px;
-  line-height: 1.6;
+.dl-foot {
+  display: flex;
+  justify-content: center;
+  padding-top: 48px;
 }
 @media (max-width: 640px) {
   .dl-hero {
@@ -2973,6 +2936,297 @@ a:hover .link-arrow .i {
   }
   .dl-sec {
     padding: 40px 0;
+  }
+}
+/* ---------- Changelog ---------- */
+/* Each release (drawn by site.js from GitHub) is a row: version and date on the left, held while its notes scroll. */
+.cl-hero {
+  padding-bottom: 64px;
+}
+.cl-body {
+  margin-bottom: 72px;
+}
+.cl-body > .wrap {
+  max-width: calc(960px + var(--gutter) * 2);
+}
+:root:not(.js) [data-changelog] {
+  display: none;
+}
+.cl-status {
+  padding: 72px 0;
+  color: var(--text-2);
+  text-align: center;
+}
+.cl-status a {
+  color: var(--text);
+}
+.cl-rel {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 56px;
+  padding: 64px 0;
+  border-bottom: 1px solid var(--line);
+}
+.cl-rel:last-child {
+  border-bottom: none;
+}
+.cl-head {
+  position: sticky;
+  top: 96px;
+  align-self: start;
+}
+.cl-ver {
+  font-size: clamp(28px, 3vw, 36px);
+  line-height: 1.05;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+}
+.cl-ver a {
+  text-decoration: none;
+}
+.cl-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  color: var(--text-3);
+  font-size: 14px;
+}
+.cl-badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  background: var(--bg-2);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.cl-badge.is-latest {
+  border-color: var(--solid);
+  background: var(--solid);
+  color: var(--solid-text);
+}
+.cl-name {
+  margin-top: 8px;
+  color: var(--text-2);
+  font-size: 15px;
+}
+.cl-gh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.cl-gh:hover {
+  color: var(--text);
+}
+.cl-gh .i {
+  width: 13px;
+  height: 13px;
+}
+/* The release notes, as GitHub renders them. */
+.cl-notes {
+  color: var(--text-2);
+  font-size: 16px;
+  line-height: 1.65;
+  overflow-wrap: break-word;
+}
+.cl-notes > * + * {
+  margin-top: 14px;
+}
+.cl-notes > p:first-child {
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.55;
+  letter-spacing: -0.012em;
+  text-wrap: pretty;
+}
+.cl-notes h3 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 40px;
+  color: var(--text-3);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.cl-notes h3::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+.cl-notes > h3:first-child {
+  margin-top: 0;
+}
+.cl-notes h4,
+.cl-notes h5,
+.cl-notes h6 {
+  margin-top: 28px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.cl-notes h3 + *,
+.cl-notes h4 + * {
+  margin-top: 16px;
+}
+.cl-notes ul,
+.cl-notes ol {
+  padding-left: 22px;
+}
+.cl-notes ul {
+  list-style: disc;
+}
+.cl-notes ol {
+  list-style: decimal;
+}
+.cl-notes li {
+  padding-left: 4px;
+}
+.cl-notes li + li,
+.cl-notes li > ul,
+.cl-notes li > ol {
+  margin-top: 10px;
+}
+.cl-notes li::marker {
+  color: var(--text-3);
+}
+.cl-notes strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.cl-notes a {
+  color: var(--text);
+  text-underline-offset: 3px;
+  text-decoration-color: var(--line-2);
+}
+.cl-notes a:hover {
+  text-decoration-color: currentColor;
+}
+.cl-notes code,
+.cl-notes tt {
+  padding: 1px 5px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.86em;
+}
+.cl-notes pre {
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-x: auto;
+}
+.cl-notes pre code {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: inherit;
+}
+.cl-notes .pl-c {
+  color: var(--text-3);
+}
+.cl-table {
+  overflow-x: auto;
+}
+.cl-notes table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+.cl-notes th,
+.cl-notes td {
+  padding: 10px 14px 10px 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+.cl-notes th {
+  color: var(--text);
+  font-weight: 600;
+}
+.cl-notes td code {
+  white-space: nowrap;
+}
+.cl-notes img,
+.cl-notes video {
+  max-width: 100%;
+  height: auto;
+  border-radius: 12px;
+}
+.cl-notes blockquote {
+  padding-left: 16px;
+  border-left: 2px solid var(--line-2);
+}
+.cl-notes hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+.cl-more {
+  margin-top: 36px;
+}
+.cl-content > .cl-more:first-child {
+  margin-top: 0;
+}
+.cl-more summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 14.5px;
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+}
+.cl-more summary::-webkit-details-marker {
+  display: none;
+}
+.cl-more summary:hover {
+  color: var(--text);
+}
+.cl-more summary .i {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.2s var(--ease);
+}
+.cl-more[open] summary .i {
+  transform: rotate(90deg);
+}
+.cl-more > .cl-notes {
+  margin-top: 20px;
+  font-size: 15px;
+}
+@media (max-width: 760px) {
+  .cl-hero {
+    padding-bottom: 48px;
+  }
+  .cl-rel {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+    padding: 44px 0;
+  }
+  .cl-head {
+    position: static;
+  }
+  .cl-notes > p:first-child {
+    font-size: 17px;
   }
 }
 /* ---------- Install: platforms ---------- */

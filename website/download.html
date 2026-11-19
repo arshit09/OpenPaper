@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light" />
     <title>Download · OpenPaper</title>
-    <meta name="description" content="Download OpenPaper: the desktop app for Windows, or install the openpaper command on macOS, Linux and Windows with one line in your terminal." />
+    <meta name="description" content="Download OpenPaper for Windows, macOS and Linux." />
     <meta property="og:title" content="Download · OpenPaper" />
-    <meta property="og:description" content="Download OpenPaper: the desktop app for Windows, or install the openpaper command on macOS, Linux and Windows with one line in your terminal." />
+    <meta property="og:description" content="Download OpenPaper for Windows, macOS and Linux." />
     <meta property="og:image" content="assets/brand/openpaper-app-icon-1024.png" />
     <meta name="theme-color" content="#ffffff" />
     <link rel="icon" href="assets/brand/favicon.ico" sizes="any" />
@@ -196,7 +196,6 @@
       <section class="page-hero center dl-hero">
         <div class="wrap">
           <h1 class="h1 reveal">Download <em class="s">OpenPaper.</em></h1>
-          <p class="lede reveal">Free and open source. The desktop app on Windows, or one line in your terminal on macOS, Linux and Windows.</p>
           <div class="dl-tabs reveal" role="tablist" aria-label="Platform">
             <button type="button" role="tab" id="tab-macos" data-os-tab="macos" aria-controls="dl-macos" aria-selected="false" tabindex="-1"><svg class="logo-ico" aria-hidden="true"><use href="#b-apple" /></svg>macOS</button>
             <button type="button" role="tab" id="tab-windows" data-os-tab="windows" aria-controls="dl-windows" aria-selected="true"><svg class="logo-ico" aria-hidden="true"><use href="#b-windows" /></svg>Windows</button>
@@ -211,20 +210,15 @@
           <div class="dl-panel" id="dl-windows" role="tabpanel" aria-labelledby="tab-windows" tabindex="0">
             <section class="dl-sec">
               <h2 class="dl-title">OpenPaper App <span class="ver" data-release>v0.3.0</span></h2>
-              <p class="dl-lede">The desktop app. A 4 MB installer downloads OpenPaper, installs it for your account with no admin prompt, and adds it to the Start menu and your desktop. Connect your agents in one click.</p>
               <div class="dl-actions">
                 <a class="btn btn-solid btn-lg" href="https://github.com/arshit09/OpenPaper/releases/latest/download/OpenPaper-Setup.exe"><svg class="i"><use href="#i-download" /></svg>Download for Windows</a>
               </div>
-              <dl class="dl-req">
-                <dt>Minimum requirements</dt>
-                <dd>Windows 10 or 11, 64-bit (x64)</dd>
-              </dl>
-              <p class="dl-note"><svg class="i"><use href="#i-shield-check" /></svg><span><b>“Windows protected your PC”?</b> The installer isn’t code-signed yet. Click <b>More info</b>, then <b>Run anyway</b>. It checks the SHA-256 of everything it downloads.</span></p>
+              <p class="dl-req">Windows 10 or 11, x64</p>
+              <p class="dl-note"><svg class="i"><use href="#i-shield-check" /></svg><span>“Windows protected your PC”? Click <b>More info</b>, then <b>Run anyway</b>.</span></p>
             </section>
 
             <section class="dl-sec">
               <h2 class="dl-title">OpenPaper CLI <span class="ver" data-release>v0.3.0</span></h2>
-              <p class="dl-lede">The <code>openpaper</code> command: start the editor in your browser and connect your agents from the terminal. It brings its own Node.js and needs no admin rights. Runs natively on x64 and Arm PCs.</p>
               <div class="dl-shell">
                 <h3><svg class="logo-ico" aria-hidden="true"><use href="#b-windows" /></svg>Windows PowerShell</h3>
                 <div class="code-line">
@@ -243,10 +237,7 @@
                   </button>
                 </div>
               </div>
-              <dl class="dl-req">
-                <dt>Minimum requirements</dt>
-                <dd>Windows 10 (version 1803) or 11, x64 or Arm64</dd>
-              </dl>
+              <p class="dl-req">Windows 10 (1803) or 11, x64 or Arm64</p>
             </section>
           </div>
 
@@ -254,7 +245,6 @@
           <div class="dl-panel" id="dl-macos" role="tabpanel" aria-labelledby="tab-macos" tabindex="0">
             <section class="dl-sec">
               <h2 class="dl-title">OpenPaper CLI <span class="ver" data-release>v0.3.0</span></h2>
-              <p class="dl-lede">The <code>openpaper</code> command: start the editor in your browser and connect your agents from the terminal. It brings its own Node.js and needs no admin rights.</p>
               <div class="dl-shell">
                 <h3><svg class="logo-ico" aria-hidden="true"><use href="#b-apple" /></svg>Terminal</h3>
                 <div class="code-line">
@@ -264,14 +254,7 @@
                   </button>
                 </div>
               </div>
-              <dl class="dl-req">
-                <dt>Minimum requirements</dt>
-                <dd>macOS 11 Big Sur or later, Apple silicon or Intel</dd>
-              </dl>
-            </section>
-            <section class="dl-sec dl-sec-quiet">
-              <h2 class="dl-title">OpenPaper App</h2>
-              <p class="dl-lede">The desktop app is Windows only for now. On a Mac, the CLI gives you the same editor in your browser.</p>
+              <p class="dl-req">macOS 11 or later, Apple silicon or Intel</p>
             </section>
           </div>
 
@@ -279,7 +262,6 @@
           <div class="dl-panel" id="dl-linux" role="tabpanel" aria-labelledby="tab-linux" tabindex="0">
             <section class="dl-sec">
               <h2 class="dl-title">OpenPaper CLI <span class="ver" data-release>v0.3.0</span></h2>
-              <p class="dl-lede">The <code>openpaper</code> command: start the editor in your browser and connect your agents from the terminal. It brings its own Node.js and needs no root.</p>
               <div class="dl-shell">
                 <h3><svg class="logo-ico" aria-hidden="true"><use href="#b-linux" /></svg>Terminal</h3>
                 <div class="code-line">
@@ -289,47 +271,15 @@
                   </button>
                 </div>
               </div>
-              <dl class="dl-req">
-                <dt>Minimum requirements</dt>
-                <dd>x64 or arm64 with glibc 2.28 or later (Ubuntu 20.04, Debian 10, Fedora 29 and newer), and curl or wget</dd>
-              </dl>
-            </section>
-            <section class="dl-sec dl-sec-quiet">
-              <h2 class="dl-title">OpenPaper App</h2>
-              <p class="dl-lede">The desktop app is Windows only for now. On Linux, the CLI gives you the same editor in your browser.</p>
+              <p class="dl-req">x64 or arm64, glibc 2.28 or later</p>
             </section>
           </div>
 
-          <section class="dl-sec dl-next" aria-labelledby="dl-next-title">
-            <h2 class="dl-title" id="dl-next-title">After installing the CLI</h2>
-            <div class="ref">
-              <dl>
-                <div><dt>openpaper start</dt><dd>Open the editor in your browser.</dd></div>
-                <div><dt>openpaper install claude-code</dt><dd>Connect an agent. Name several, or use <code>--all</code>. <a href="agents.html#connect">All agents</a></dd></div>
-                <div><dt>openpaper uninstall</dt><dd>Remove the CLI. Your designs stay in <code>~/.openpaper</code>.</dd></div>
-              </dl>
-            </div>
-            <p class="dl-more">
-              Run the install line again to update. Prefer to build it yourself? <a href="install.html#source">Run it from source</a>. You can read
-              <a href="https://github.com/arshit09/OpenPaper/tree/main/apps/cli">what the install scripts do</a>, or browse
-              <a href="https://github.com/arshit09/OpenPaper/releases">all releases</a>.
-            </p>
-          </section>
+          <div class="dl-foot">
+            <a class="btn btn-ghost" href="changelog.html"><svg class="i"><use href="#i-history" /></svg>Changelog</a>
+          </div>
         </div>
       </section>
-
-      <div class="wrap">
-        <div class="cta-strip reveal">
-          <div>
-            <h2>New to OpenPaper?</h2>
-            <p>See what the canvas and your agents can do.</p>
-          </div>
-          <div class="cta-row">
-            <a class="btn btn-solid" href="explore.html">Explore features</a>
-            <a class="btn btn-ghost" href="install.html">Install guide</a>
-          </div>
-        </div>
-      </div>
     </main>
 
     <!-- @footer -->
@@ -356,6 +306,7 @@
         <nav aria-label="Start">
           <h3>Start</h3>
           <a href="download.html">Download</a>
+          <a href="changelog.html">Changelog</a>
           <a href="install.html">Install</a>
           <a href="privacy.html">Privacy &amp; data</a>
           <a href="terms.html">Terms of Use</a>

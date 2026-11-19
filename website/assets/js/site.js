@@ -198,6 +198,134 @@
     }
   }
 
+  /* ---------- Changelog ---------- */
+  // Every release's notes, read from GitHub, so publishing a release is all it takes to update the page. GitHub
+  // renders and sanitizes the Markdown (the html+json media type adds body_html). Asked once per visit.
+  const changelog = document.querySelector('[data-changelog]');
+  if (changelog) {
+    const repo = 'https://github.com/arshit09/OpenPaper';
+    // Install steps, file lists and checksums are about getting a release, not what changed in it: they fold away.
+    const installHeading = /^(windows|mac ?os|linux|install|download|files|assets|checksums?|sha-?256|what['’]?s in this release)\b/i;
+    const make = (tag, className, text) => {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text != null) node.textContent = text;
+      return node;
+    };
+    const icon = (name) => {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', 'i');
+      svg.setAttribute('aria-hidden', 'true');
+      const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+      use.setAttribute('href', `#${name}`);
+      svg.append(use);
+      return svg;
+    };
+    const showStatus = (text, link) => {
+      const p = make('p', 'cl-status', text);
+      if (link) {
+        const a = make('a', null, 'GitHub');
+        a.href = `${repo}/releases`;
+        p.append(' ', a, '.');
+      }
+      changelog.replaceChildren(p);
+      changelog.removeAttribute('aria-busy');
+    };
+    // Splits a release's notes into what changed and, folded, how to install it.
+    const splitNotes = (html) => {
+      const tpl = document.createElement('template');
+      tpl.innerHTML = html || '';
+      // The notes' own headings sit under the release's version: h2 becomes h3, and so on.
+      tpl.content.querySelectorAll('h1, h2, h3, h4, h5').forEach((h) => {
+        const lower = document.createElement(`h${Number(h.tagName[1]) + 1}`);
+        lower.append(...h.childNodes);
+        h.replaceWith(lower);
+      });
+      tpl.content.querySelectorAll('table').forEach((table) => {
+        const scroll = make('div', 'cl-table');
+        table.replaceWith(scroll);
+        scroll.append(table);
+      });
+      const changes = make('div', 'cl-notes');
+      const install = make('div', 'cl-notes');
+      let into = changes;
+      [...tpl.content.childNodes].forEach((node) => {
+        const heading = node.nodeType === 1 && (node.matches('h3') ? node : node.querySelector(':scope > h3'));
+        if (heading) into = installHeading.test(heading.textContent.trim()) ? install : changes;
+        into.append(node);
+      });
+      return { changes, install };
+    };
+    const render = (releases) => {
+      if (!releases.length) return showStatus('No releases yet.');
+      const latest = releases.find((r) => !r.prerelease)?.tag;
+      const items = releases.map((r) => {
+        const version = r.tag.replace(/^v(?=\d)/, '');
+        const item = make('article', 'cl-rel');
+        item.id = r.tag;
+
+        const head = make('header', 'cl-head');
+        const title = make('h2', 'cl-ver');
+        const self = make('a', null, version);
+        self.href = `#${r.tag}`;
+        title.append(self);
+        const meta = make('p', 'cl-meta');
+        if (r.date) {
+          const time = make('time', null, new Date(r.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }));
+          time.dateTime = r.date;
+          meta.append(time);
+        }
+        if (r.tag === latest) meta.append(make('span', 'cl-badge is-latest', 'Latest'));
+        else if (r.prerelease) meta.append(make('span', 'cl-badge', 'Pre-release'));
+        head.append(title, meta);
+        if (r.name && !r.name.includes(version)) head.append(make('p', 'cl-name', r.name));
+        const gh = make('a', 'cl-gh', 'GitHub');
+        gh.href = r.url || `${repo}/releases/tag/${r.tag}`;
+        gh.append(icon('i-external-link'));
+        head.append(gh);
+
+        const body = make('div', 'cl-content');
+        const { changes, install } = splitNotes(r.html);
+        if (changes.childNodes.length) body.append(changes);
+        if (install.childNodes.length) {
+          const more = make('details', 'cl-more');
+          const summary = make('summary', null, 'Install notes and files');
+          summary.prepend(icon('i-chevron-right'));
+          more.append(summary, install);
+          body.append(more);
+        }
+        item.append(head, body);
+        return item;
+      });
+      changelog.replaceChildren(...items);
+      changelog.removeAttribute('aria-busy');
+      // A link to one version (changelog.html#v0.2.0) lands on it once it's drawn.
+      const target = location.hash && document.getElementById(decodeURIComponent(location.hash.slice(1)));
+      if (target) target.scrollIntoView();
+    };
+    const load = async () => {
+      let releases = null;
+      try {
+        releases = JSON.parse(sessionStorage.getItem('op-releases') || 'null');
+      } catch {}
+      if (!Array.isArray(releases)) {
+        const res = await fetch('https://api.github.com/repos/arshit09/OpenPaper/releases?per_page=100', {
+          headers: { Accept: 'application/vnd.github.html+json' },
+        });
+        if (!res.ok) throw new Error(`GitHub answered ${res.status}`);
+        releases = (await res.json())
+          .filter((r) => !r.draft)
+          .map((r) => ({ tag: r.tag_name, name: r.name, date: r.published_at || r.created_at, prerelease: r.prerelease, html: r.body_html, url: r.html_url }))
+          .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+        try {
+          sessionStorage.setItem('op-releases', JSON.stringify(releases));
+        } catch {}
+      }
+      render(releases);
+    };
+    load().catch(() => showStatus('Couldn’t load the release notes. Read them on', true));
+  }
+
   /* ---------- Copy buttons ---------- */
   const writeClipboard = async (text) => {
     try {
