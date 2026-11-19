@@ -93,9 +93,23 @@ export function SettingsDialog() {
   const harnesses = useEditor((s) => s.harnesses);
   const [info, setInfo] = useState<McpInfo | null>(null);
   const [manual, setManual] = useState(false);
+  const [lookup, setLookup] = useState<'looking' | 'failed'>('looking');
+  const [lookupError, setLookupError] = useState('');
+
+  const lookForAgents = () => {
+    setLookup('looking');
+    loadHarnesses().catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      // A server started before an update runs old code that doesn't know this request yet.
+      setLookupError(
+        /unknown method/i.test(message) ? 'OpenPaper is still running its previous version. Restart OpenPaper, then open Settings again.' : message
+      );
+      setLookup('failed');
+    });
+  };
 
   useEffect(() => {
-    loadHarnesses().catch(() => {});
+    lookForAgents();
     client.request<McpInfo>('mcp.info').then(setInfo).catch(() => {});
   }, []);
 
@@ -135,6 +149,13 @@ export function SettingsDialog() {
                 {harnesses.map((h) => (
                   <AgentRow key={h.id} agent={h} />
                 ))}
+              </div>
+            ) : lookup === 'failed' ? (
+              <div className="op-row" style={{ minHeight: 56, gap: 12, justifyContent: 'space-between' }} role="alert">
+                <span style={{ color: 'var(--op-danger)', lineHeight: 1.5 }}>Couldn't look for your agents. {lookupError}</span>
+                <button className="op-btn compact outline" style={{ flexShrink: 0 }} onClick={lookForAgents}>
+                  Try again
+                </button>
               </div>
             ) : (
               <div className="op-row op-label" style={{ minHeight: 56 }}>
