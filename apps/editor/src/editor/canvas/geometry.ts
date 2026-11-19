@@ -93,10 +93,26 @@ function notifyLayout() {
   for (const l of layoutListeners) l();
 }
 
+/**
+ * Marks the box a Lottie layer draws into. The player rewrites its SVG every frame, inside a box
+ * of fixed size, so those changes never move a layer and must not keep overlays measuring.
+ */
+export const LOTTIE_HOST_ATTR = 'data-op-lottie-host';
+
+function movesLayers(records: MutationRecord[]): boolean {
+  for (const r of records) {
+    const el = r.target instanceof Element ? r.target : r.target.parentElement;
+    if (!el?.closest(`[${LOTTIE_HOST_ATTR}]`)) return true;
+  }
+  return false;
+}
+
 /** Watch the canvas for anything that can change layer boxes (set up by Canvas). */
 export function watchLayout(viewport: HTMLElement, world: HTMLElement): () => void {
   worldEl = world;
-  const mutations = new MutationObserver(notifyLayout);
+  const mutations = new MutationObserver((records) => {
+    if (movesLayers(records)) notifyLayout();
+  });
   mutations.observe(world, { attributes: true, childList: true, characterData: true, subtree: true });
   const resize = new ResizeObserver(notifyLayout);
   resize.observe(viewport);

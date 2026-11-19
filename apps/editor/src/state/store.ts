@@ -171,6 +171,56 @@ export const useEditor = create<EditorState>(() => ({
 export const getState = useEditor.getState;
 export const setState = useEditor.setState;
 
+// ---- per-layer subscriptions ------------------------------------------------
+
+/**
+ * Canvas layers listen here instead of to the whole store. A store subscription runs on every
+ * update (each pan step, hover, streamed agent token), and with a few selectors per layer a large
+ * page ran tens of thousands of them per update. Here a layer is told only when something it
+ * renders from changed: its record, its parent's (the layout it sits in), its drag preview, or
+ * whether its text is being edited.
+ */
+const layerListeners = new Map<string, Set<() => void>>();
+let layerUnsubscribe: (() => void) | null = null;
+
+export function subscribeLayer(id: string, listener: () => void): () => void {
+  let set = layerListeners.get(id);
+  if (!set) layerListeners.set(id, (set = new Set()));
+  set.add(listener);
+  layerUnsubscribe ??= useEditor.subscribe(notifyLayers);
+  return () => {
+    set.delete(listener);
+    if (!set.size && layerListeners.get(id) === set) layerListeners.delete(id);
+    if (!layerListeners.size && layerUnsubscribe) {
+      layerUnsubscribe();
+      layerUnsubscribe = null;
+    }
+  };
+}
+
+function notifyLayers(s: EditorState, prev: EditorState): void {
+  const nodes = s.doc?.nodes;
+  const before = prev.doc?.nodes;
+  const nodesChanged = nodes !== before;
+  const transientChanged = s.transient !== prev.transient;
+  const editingChanged = s.editingTextId !== prev.editingTextId;
+  if (!nodesChanged && !transientChanged && !editingChanged) return;
+  const due: Array<Set<() => void>> = [];
+  for (const [id, set] of layerListeners) {
+    let changed = false;
+    if (nodesChanged) {
+      const node = nodes?.[id];
+      const parentId = node?.parentId ?? before?.[id]?.parentId;
+      changed = node !== before?.[id] || (!!parentId && nodes?.[parentId] !== before?.[parentId]);
+    }
+    if (!changed && transientChanged) changed = s.transient[id] !== prev.transient[id];
+    if (!changed && editingChanged) changed = s.editingTextId === id || prev.editingTextId === id;
+    if (changed) due.push(set);
+  }
+  // Collected first: a listener may re-render and (un)subscribe layers while this runs.
+  for (const set of due) for (const listener of [...set]) listener();
+}
+
 export function getNode(id: string | null | undefined): NodeRecord | undefined {
   if (!id) return undefined;
   return getState().doc?.nodes[id];

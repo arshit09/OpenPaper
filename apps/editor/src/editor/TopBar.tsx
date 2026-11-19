@@ -40,7 +40,8 @@ const TOOLS: Array<{ id: Tool; label: string; key: string; icon: typeof Frame }>
 ];
 
 export function TopBar() {
-  const doc = useEditor((s) => s.doc)!;
+  // Only the name: the whole document changes with every edit.
+  const fileName = useEditor((s) => s.doc?.name ?? '');
   const tool = useEditor((s) => s.tool);
   const showShaders = useEditor((s) => s.showShaders);
   const agents = useEditor((s) => s.agents);
@@ -65,11 +66,11 @@ export function TopBar() {
           <input
             className="op-input"
             autoFocus
-            defaultValue={doc.name}
+            defaultValue={fileName}
             onBlur={(e) => {
               setEditingName(false);
               const name = e.currentTarget.value.trim();
-              if (name && name !== doc.name) void command({ type: 'renameFile', name });
+              if (name && name !== fileName) void command({ type: 'renameFile', name });
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') e.currentTarget.blur();
@@ -77,8 +78,8 @@ export function TopBar() {
             }}
           />
         ) : (
-          <button className="op-btn op-filename" onDoubleClick={() => !readOnly && setEditingName(true)} title={readOnly ? doc.name : `${doc.name}\nDouble-click to rename`}>
-            <span>{doc.name}</span>
+          <button className="op-btn op-filename" onDoubleClick={() => !readOnly && setEditingName(true)} title={readOnly ? fileName : `${fileName}\nDouble-click to rename`}>
+            <span>{fileName}</span>
           </button>
         )}
         {vcs && (

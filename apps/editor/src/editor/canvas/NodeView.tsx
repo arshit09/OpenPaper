@@ -1,6 +1,6 @@
-import { memo, useEffect, useMemo, useRef, type CSSProperties } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useSyncExternalStore, type CSSProperties } from 'react';
 import { parentKindOf, renderSpec, scopeSvgIds, splitSvgMarkup, svgAttrToReact } from '@openpaper/core';
-import { getState, useEditor } from '../../state/store.ts';
+import { getState, subscribeLayer, useEditor } from '../../state/store.ts';
 import { renderContext } from './render-context.ts';
 import { registerLayer } from './geometry.ts';
 import { ShaderNode } from '../shaders/ShaderLayer.tsx';
@@ -11,19 +11,24 @@ const SvgNode = memo(function SvgNode({ markup, style, id }: { markup: string; s
   const { attrs, inner } = useMemo(() => splitSvgMarkup(scopeSvgIds(markup, `_${id}_`)), [markup, id]);
   const el = useRef<SVGSVGElement | null>(null);
   const paused = useEditor((s) => s.animationsPaused);
-  const animates = /<(animate\w*|set)\b/i.test(inner);
+  const animates = useMemo(() => /<(animate\w*|set)\b/i.test(inner), [inner]);
   // SMIL animations (<animate>, <animateTransform>, …) hold still with the rest of the design.
   useEffect(() => {
     if (!animates) return;
     if (paused) el.current?.pauseAnimations();
     else el.current?.unpauseAnimations();
   }, [paused, animates, inner]);
-  const props: Record<string, string> = {};
-  for (const [k, v] of Object.entries(attrs)) {
-    if (k === 'style' || k.toLowerCase().startsWith('on')) continue;
-    props[svgAttrToReact(k)] = v;
-  }
-  if (!props.xmlns) props.xmlns = 'http://www.w3.org/2000/svg';
+  // Per markup, not per render: a dragged SVG re-renders on every pointer move.
+  const props = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === 'style' || k.toLowerCase().startsWith('on')) continue;
+      out[svgAttrToReact(k)] = v;
+    }
+    if (!out.xmlns) out.xmlns = 'http://www.w3.org/2000/svg';
+    return out;
+  }, [attrs]);
+  const html = useMemo(() => ({ __html: inner }), [inner]);
   return (
     <svg
       {...props}
@@ -33,7 +38,7 @@ const SvgNode = memo(function SvgNode({ markup, style, id }: { markup: string; s
       }}
       style={style}
       data-op-id={id}
-      dangerouslySetInnerHTML={{ __html: inner }}
+      dangerouslySetInnerHTML={html}
     />
   );
 });
@@ -75,11 +80,17 @@ const VideoNode = memo(function VideoNode({ id, style, src, loop, speed }: { id:
 
 /** Renders one design node (and its subtree) as real DOM. */
 export const NodeView = memo(function NodeView({ id }: { id: string }) {
-  const node = useEditor((s) => s.doc?.nodes[id]);
-  // Only the parent's layout kind matters; selecting a primitive avoids re-rendering siblings.
-  const parentKind = useEditor((s) => parentKindOf(node?.parentId ? s.doc?.nodes[node.parentId] : undefined));
-  const transient = useEditor((s) => s.transient[id]);
-  const editing = useEditor((s) => s.editingTextId === id);
+  // Woken only by changes to this layer (see subscribeLayer), not by every store update.
+  const subscribe = useCallback((listener: () => void) => subscribeLayer(id, listener), [id]);
+  const node = useSyncExternalStore(subscribe, () => getState().doc?.nodes[id]);
+  // Only the parent's layout kind matters; a primitive avoids re-rendering siblings.
+  const parentKind = useSyncExternalStore(subscribe, () => {
+    const s = getState();
+    const parentId = s.doc?.nodes[id]?.parentId;
+    return parentKindOf(parentId ? s.doc?.nodes[parentId] : undefined);
+  });
+  const transient = useSyncExternalStore(subscribe, () => getState().transient[id]);
+  const editing = useSyncExternalStore(subscribe, () => getState().editingTextId === id);
 
   if (!node) return null;
   const spec = renderSpec(node, parentKind, renderContext);

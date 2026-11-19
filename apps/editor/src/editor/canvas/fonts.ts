@@ -3,6 +3,11 @@ import { useEditor } from '../../state/store.ts';
 import { client } from '../../sync/session.ts';
 
 const loaded = new Set<string>();
+/**
+ * Layer records already looked at. A change replaces a record rather than editing it, so after the
+ * first scan of a file only the layers a patch touched are read again.
+ */
+let scanned = new WeakSet<object>();
 
 /** The font load in progress (scheduled or running), for {@link fontsSettled}. */
 let pending: { promise: Promise<void>; resolve: () => void } | null = null;
@@ -27,7 +32,11 @@ function familiesInDoc(): string[] {
       if (fam && !fam.startsWith('var(')) out.add(fam);
     }
   };
-  for (const n of Object.values(doc.nodes)) if (n.styles.fontFamily) add(n.styles.fontFamily);
+  for (const n of Object.values(doc.nodes)) {
+    if (scanned.has(n)) continue;
+    scanned.add(n);
+    if (n.styles.fontFamily) add(n.styles.fontFamily);
+  }
   for (const t of doc.tokens) if (t.type === 'fontFamily') add(t.value);
   return [...out];
 }
@@ -51,6 +60,8 @@ async function loadMissingFonts() {
     await Promise.all(sheets);
   } catch {
     for (const f of families) loaded.delete(f);
+    // Look at every layer again next time, so these families are asked for again.
+    scanned = new WeakSet();
   }
 }
 

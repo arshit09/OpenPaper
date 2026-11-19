@@ -417,7 +417,9 @@ export function onPointerMove(e: PointerLike) {
         const r = worldRectOf(id);
         return r && rectsIntersect(r, rect) && !doc.nodes[id]?.isLocked;
       });
-      setState({ selection: [...new Set([...gesture.additive, ...hits])] });
+      const selection = [...new Set([...gesture.additive, ...hits])];
+      // Unchanged most moves: a new array would re-render the panels and overlays for nothing.
+      if (selection.length !== s.selection.length || selection.some((id, i) => id !== s.selection[i])) setState({ selection });
       return;
     }
     case 'draw': {

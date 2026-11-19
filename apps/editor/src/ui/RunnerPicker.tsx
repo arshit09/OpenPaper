@@ -161,7 +161,7 @@ export function RunnerPicker({
         aria-expanded={open}
         onPointerDown={(e) => e.stopPropagation()}
         onClick={() => {
-          if (!open) loadAgentConfig().catch(() => {}); // Fresh install and sign-in states.
+          if (!open) loadAgentConfig({ fresh: true }).catch(() => {}); // Fresh install and sign-in states.
           setOpen(!open);
         }}
       >

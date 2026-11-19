@@ -108,7 +108,7 @@ function CliSetup({ config }: { config: AgentConfigInfo }) {
             Allow
           </button>
         ) : (
-          <button className="op-btn" disabled={busy} onClick={() => void run(loadAgentConfig)}>
+          <button className="op-btn" disabled={busy} onClick={() => void run(() => loadAgentConfig({ fresh: true }))}>
             Check again
           </button>
         )}
@@ -156,7 +156,7 @@ function AgentSetup({ config, claudeCodeOnly }: { config: AgentConfigInfo; claud
             Use Claude Code
           </button>
         ) : (
-          <button className="op-btn" disabled={busy} onClick={() => void run(loadAgentConfig)}>
+          <button className="op-btn" disabled={busy} onClick={() => void run(() => loadAgentConfig({ fresh: true }))}>
             Check again
           </button>
         )}
@@ -301,11 +301,20 @@ export function AgentDock({
     el.style.height = `${el.scrollHeight}px`;
   }, [text]);
 
-  // Before paint, so the conversation opens already scrolled to the latest message.
+  // Before paint, so the conversation opens already scrolled to the latest message. New output
+  // follows only while the reader is at the bottom: scrolled up to read, the list stays put.
+  const atBottom = useRef(true);
+  useLayoutEffect(() => {
+    atBottom.current = true;
+  }, [open, chat.key]);
   useLayoutEffect(() => {
     const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [chat.items, open]);
+    if (el && atBottom.current) el.scrollTop = el.scrollHeight;
+  }, [chat.items, open, chat.key]);
+  const onListScroll = () => {
+    const el = listRef.current;
+    if (el) atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+  };
 
   const key = chat.key;
   if (!key) return null;
@@ -403,7 +412,7 @@ export function AgentDock({
           )}
           {needsSetup && config && (cliRunner && !claudeCodeOnly ? <CliSetup config={config} /> : <AgentSetup config={config} claudeCodeOnly={claudeCodeOnly} />)}
           {(!needsSetup || chat.items.length > 0) && (
-            <div ref={listRef} className="op-scroll" style={{ maxHeight: 'min(46vh, 420px)', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div ref={listRef} onScroll={onListScroll} className="op-scroll" style={{ maxHeight: 'min(46vh, 420px)', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
               {!chat.items.length && (
                 <div className="op-label" style={{ lineHeight: 1.6 }}>
                   {emptyHint ?? (

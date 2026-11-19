@@ -113,11 +113,14 @@ function StyleField({
   );
 }
 
+/** One context for reading colours back (the Inspector renders often; a canvas each time adds up). */
+let colorContext: CanvasRenderingContext2D | null = null;
+
 function toHex(color: string | undefined | null): string {
   if (!color) return '#000000';
   if (/^#[0-9a-f]{6}$/i.test(color)) return color;
   if (/^#[0-9a-f]{3}$/i.test(color)) return `#${color.slice(1).split('').map((c) => c + c).join('')}`;
-  const ctx = document.createElement('canvas').getContext('2d')!;
+  const ctx = (colorContext ??= document.createElement('canvas').getContext('2d')!);
   ctx.fillStyle = '#000';
   ctx.fillStyle = color;
   const v = ctx.fillStyle;

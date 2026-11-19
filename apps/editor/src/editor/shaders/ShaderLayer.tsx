@@ -56,6 +56,11 @@ function useRenderZoom(): number {
   return full ? 1 : settled;
 }
 
+function loseContext(canvas: HTMLCanvasElement) {
+  const gl = (canvas.getContext('webgl2') ?? canvas.getContext('webgl')) as WebGLRenderingContext | null;
+  if (gl && !gl.isContextLost()) gl.getExtension('WEBGL_lose_context')?.loseContext();
+}
+
 const ShaderCanvas = memo(function ShaderCanvas({
   component,
   props,
@@ -83,7 +88,22 @@ const ShaderCanvas = memo(function ShaderCanvas({
       if ((e.target as Element).tagName === 'CANVAS') setGeneration((g) => (g < MAX_REMOUNTS ? g + 1 : g));
     };
     el.addEventListener('webglcontextlost', lost, true);
-    return () => el.removeEventListener('webglcontextlost', lost, true);
+    // The library removes its canvas when it lets go of an effect (unmounted, or a new shader) but
+    // leaves the WebGL context to garbage collection. The browser caps live contexts and drops the
+    // oldest once over, so free each one as its canvas goes.
+    const release = (records: MutationRecord[]) => {
+      for (const r of records) for (const n of r.removedNodes) if (n instanceof HTMLCanvasElement) loseContext(n);
+    };
+    const removals = new MutationObserver(release);
+    removals.observe(el, { childList: true });
+    return () => {
+      // First, so freeing contexts here doesn't count as a loss to recover from.
+      el.removeEventListener('webglcontextlost', lost, true);
+      release(removals.takeRecords());
+      removals.disconnect();
+      // Still attached when this runs before the library's own cleanup.
+      for (const canvas of el.querySelectorAll(':scope > canvas')) loseContext(canvas as HTMLCanvasElement);
+    };
   }, [library, generation]);
   const renderProps = useMemo(() => {
     if (!def) return null;

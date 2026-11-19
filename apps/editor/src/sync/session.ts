@@ -28,6 +28,39 @@ import { SyncClient } from './client.ts';
 
 export const client = new SyncClient();
 
+/** Chat items kept on screen (the server keeps as many). */
+const MAX_CHAT_ITEMS = 500;
+
+/**
+ * Text the agent streamed since the last frame, per reply. It arrives a few characters at a time;
+ * applying each piece would rebuild the conversation (and re-parse its markdown) per piece.
+ */
+const pendingDeltas = new Map<string, { text: string; thinking: string }>();
+let deltaFrame = 0;
+
+function queueDelta(id: string, text: string, thinking: string) {
+  const prev = pendingDeltas.get(id);
+  pendingDeltas.set(id, { text: (prev?.text ?? '') + text, thinking: (prev?.thinking ?? '') + thinking });
+  deltaFrame ||= requestAnimationFrame(flushDeltas);
+}
+
+function flushDeltas() {
+  if (deltaFrame) cancelAnimationFrame(deltaFrame);
+  deltaFrame = 0;
+  if (!pendingDeltas.size) return;
+  const deltas = new Map(pendingDeltas);
+  pendingDeltas.clear();
+  setState((s) => ({
+    agentChat: {
+      ...s.agentChat,
+      items: s.agentChat.items.map((i) => {
+        const d = i.kind === 'assistant' ? deltas.get(i.id) : undefined;
+        return d && i.kind === 'assistant' ? { ...i, text: i.text + d.text, thinking: i.thinking + d.thinking } : i;
+      }),
+    },
+  }));
+}
+
 client.onState((connection) => setState({ connection }));
 
 client.subscribe((message) => {
@@ -74,22 +107,21 @@ client.subscribe((message) => {
     case 'agent': {
       if (getState().agentChat.key !== message.fileId) break;
       const e = message.event;
+      if (e.type === 'delta') {
+        queueDelta(e.id, e.text ?? '', e.thinking ?? '');
+        break;
+      }
+      // Anything else comes after the text streamed before it.
+      if (e.type === 'reset') pendingDeltas.clear();
+      else flushDeltas();
       setState((s) => {
         const chat = s.agentChat;
         switch (e.type) {
-          case 'item':
-            return { agentChat: { ...chat, items: [...chat.items.filter((i) => i.id !== e.item.id), e.item] } };
-          case 'delta':
-            return {
-              agentChat: {
-                ...chat,
-                items: chat.items.map((i) =>
-                  i.id === e.id && i.kind === 'assistant'
-                    ? { ...i, text: i.text + (e.text ?? ''), thinking: i.thinking + (e.thinking ?? '') }
-                    : i
-                ),
-              },
-            };
+          case 'item': {
+            const items = [...chat.items.filter((i) => i.id !== e.item.id), e.item];
+            // As many as the server keeps: a long conversation doesn't grow the editor without end.
+            return { agentChat: { ...chat, items: items.length > MAX_CHAT_ITEMS ? items.slice(-MAX_CHAT_ITEMS) : items } };
+          }
           case 'tool':
             return {
               agentChat: {
@@ -180,7 +212,13 @@ export async function refreshResources(): Promise<ResourceInfo[]> {
   return resources;
 }
 
+/** The newest `openFile` call: an older one answering later must not replace what it opened. */
+let openSeq = 0;
+let latestOpen: string | null = null;
+
 export async function openFile(fileId: string, opts: { keepView?: boolean; pageId?: string } = {}): Promise<void> {
+  const seq = ++openSeq;
+  latestOpen = fileId;
   // Opening a file (not reopening the one on screen after a reconnect) shows the loader.
   if (!opts.keepView) setState({ opening: { fileId } });
   let result: OpenFileResult;
@@ -190,6 +228,15 @@ export async function openFile(fileId: string, opts: { keepView?: boolean; pageI
     if (getState().opening?.fileId === fileId) setState({ opening: null });
     throw error;
   }
+  if (seq !== openSeq) {
+    // Overtaken by a newer open: don't show this file, nor keep receiving its changes, unless it's
+    // on screen or the newer open is for it too.
+    if (latestOpen !== fileId && getState().doc?.id !== fileId) client.notify('file.close', { fileId });
+    return;
+  }
+  // The file this one replaces stops sending its changes (agents writing to it, presence, activity).
+  const previous = getState().doc?.id;
+  if (previous && previous !== fileId) client.notify('file.close', { fileId: previous });
   flushLive();
   const preview = getState().preview;
   if (preview?.live.doc.id === fileId) {
@@ -216,6 +263,7 @@ export async function openFile(fileId: string, opts: { keepView?: boolean; pageI
 /** Show the agent conversation for a file id, or `site:<id>` for a live site (null: none). */
 export function openChat(key: string | null): void {
   const same = getState().agentChat.key === key;
+  if (!same) pendingDeltas.clear();
   setState((s) => ({ agentChat: same ? s.agentChat : { ...s.agentChat, key, items: [], running: false, usage: null } }));
   if (!key) return;
   client
@@ -228,8 +276,9 @@ export function openChat(key: string | null): void {
 }
 
 /** Ask the server what runs the agent and which coding agents are installed (the dock and the selection prompt share it). */
-export async function loadAgentConfig(): Promise<AgentConfigInfo> {
-  const config = await client.request<AgentConfigInfo>('agent.config.get');
+export async function loadAgentConfig(opts: { fresh?: boolean } = {}): Promise<AgentConfigInfo> {
+  // The server reuses what the coding agents reported for a while; `fresh` asks them again.
+  const config = await client.request<AgentConfigInfo>('agent.config.get', opts.fresh ? { fresh: true } : {});
   setState({ agentConfig: config });
   return config;
 }

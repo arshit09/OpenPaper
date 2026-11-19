@@ -1,8 +1,8 @@
-import { memo, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { memo, useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { EMBED_FRAME_STYLE, embedFrameUrl, embedSandbox, type NodeRecord } from '@openpaper/core';
 import type { AnimationItem } from 'lottie-web';
 import { getState, useEditor } from '../../state/store.ts';
-import { registerLayer } from './geometry.ts';
+import { LOTTIE_HOST_ATTR, registerLayer } from './geometry.ts';
 
 /** Runs `fn` when the animations are replayed (not on mount). */
 export function useReplay(fn: () => void) {
@@ -20,12 +20,42 @@ let player: Promise<typeof import('lottie-web')['default']> | null = null;
 const loadPlayer = () => (player ??= import('lottie-web/build/player/lottie_light').then((m) => m.default));
 
 const HOST_STYLE: CSSProperties = { width: '100%', height: '100%' };
+const HOST_PROPS = { [LOTTIE_HOST_ATTR]: '' };
+
+/**
+ * Whether the element is on screen. The light Lottie build never pauses by itself, so a layer
+ * panned away would otherwise keep redrawing its SVG every frame.
+ */
+function useOnScreen(el: Element | null): boolean {
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver((entries) => setVisible(entries.some((e) => e.isIntersecting)));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [el]);
+  return visible;
+}
 
 /** A Lottie layer: the layer box with the animation drawn as SVG inside it. */
 export const LottieNode = memo(function LottieNode({ id, style, src, loop, speed }: { id: string; style: CSSProperties; src?: string; loop: boolean; speed: number }) {
   const host = useRef<HTMLDivElement | null>(null);
+  const [box, setBox] = useState<HTMLDivElement | null>(null);
   const [anim, setAnim] = useState<AnimationItem | null>(null);
   const paused = useEditor((s) => s.animationsPaused);
+  const onScreen = useOnScreen(box);
+  const playing = !paused && onScreen;
+  const boxRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      const unregister = registerLayer(id, el);
+      setBox(el);
+      return () => {
+        unregister?.();
+        setBox(null);
+      };
+    },
+    [id]
+  );
   useEffect(() => {
     const el = host.current;
     if (!el || !src) return;
@@ -38,7 +68,7 @@ export const LottieNode = memo(function LottieNode({ id, style, src, loop, speed
           container: el,
           renderer: 'svg',
           loop,
-          autoplay: !getState().animationsPaused,
+          autoplay: false,
           animationData: data,
           rendererSettings: { preserveAspectRatio: 'xMidYMid meet' },
         });
@@ -52,19 +82,20 @@ export const LottieNode = memo(function LottieNode({ id, style, src, loop, speed
     };
   }, [src, loop]);
   useEffect(() => anim?.setSpeed(speed), [anim, speed]);
+  // Plays unless animations are paused or the layer is off screen (then it resumes where it was).
   useEffect(() => {
     if (!anim) return;
-    if (paused) anim.pause();
-    else anim.play();
-  }, [anim, paused]);
+    if (playing) anim.play();
+    else anim.pause();
+  }, [anim, playing]);
   useReplay(() => {
     if (!anim) return;
-    if (getState().animationsPaused) anim.goToAndStop(0, true);
+    if (getState().animationsPaused || !onScreen) anim.goToAndStop(0, true);
     else anim.goToAndPlay(0, true);
   });
   return (
-    <div ref={(el) => registerLayer(id, el)} data-op-id={id} style={style}>
-      <div ref={host} style={HOST_STYLE} />
+    <div ref={boxRef} data-op-id={id} style={style}>
+      <div ref={host} style={HOST_STYLE} {...HOST_PROPS} />
     </div>
   );
 });

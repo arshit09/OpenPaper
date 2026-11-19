@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Eye, EyeOff, Lock, Unlock, Frame as FrameIcon, Type, Square, Shapes, Plus, FileText, Copy, Trash2, Minus, Blend, Film, Sparkles, CodeXml } from 'lucide-react';
 import { displayName, isAncestorOf, readerOf, type NodeRecord } from '@openpaper/core';
 import { useEditor, setState, getState, showPage } from '../../state/store.ts';
@@ -140,9 +140,16 @@ function PagesSection() {
 type DropPos = 'before' | 'after' | 'inside';
 let dragIds: string[] = [];
 
-function LayerRow({ id, depth, expanded, toggle }: { id: string; depth: number; expanded: Set<string>; toggle: (id: string) => void }) {
+/** The selection as a set, built once per selection rather than searched by every row on every update. */
+let selectedSet: { of: readonly string[]; set: Set<string> } = { of: [], set: new Set() };
+function isSelected(selection: readonly string[], id: string): boolean {
+  if (selectedSet.of !== selection) selectedSet = { of: selection, set: new Set(selection) };
+  return selectedSet.set.has(id);
+}
+
+const LayerRow = memo(function LayerRow({ id, depth, expanded, toggle }: { id: string; depth: number; expanded: Set<string>; toggle: (id: string) => void }) {
   const node = useEditor((s) => s.doc?.nodes[id]);
-  const selected = useEditor((s) => s.selection.includes(id));
+  const selected = useEditor((s) => isSelected(s.selection, id));
   const hovered = useEditor((s) => s.hoverId === id);
   const agentColor = useEditor((s) => s.agents.find((a) => a.lastNodeId === id)?.color);
   const [renaming, setRenaming] = useState(false);
@@ -265,39 +272,48 @@ function LayerRow({ id, depth, expanded, toggle }: { id: string; depth: number; 
       {isOpen && node.children.map((c) => <LayerRow key={c} id={c} depth={depth + 1} expanded={expanded} toggle={toggle} />)}
     </>
   );
-}
+});
 
 function LayersSection() {
   const rootChildren = useEditor((s) => {
     const page = s.doc && s.pageId ? s.doc.pages[s.pageId] : undefined;
     return page ? s.doc!.nodes[page.rootId]?.children ?? [] : [];
   });
-  const selection = useEditor((s) => s.selection);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const toggle = (id: string) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  // Stable, so rows (memoized) re-render only for their own changes.
+  const toggle = useCallback(
+    (id: string) =>
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      }),
+    []
+  );
 
-  // Reveal the selection in the tree.
+  // Reveal the selection in the tree (watched, not rendered from: the tree needn't re-render for it).
   useEffect(() => {
-    const doc = getState().doc;
-    if (!doc || !selection.length) return;
-    const add: string[] = [];
-    for (const id of selection) {
-      let n = doc.nodes[id];
-      while (n?.parentId) {
-        const p = doc.nodes[n.parentId];
-        if (!p || p.component === 'PageRoot') break;
-        add.push(p.id);
-        n = p;
+    const reveal = (selection: readonly string[]) => {
+      const doc = getState().doc;
+      if (!doc || !selection.length) return;
+      const add: string[] = [];
+      for (const id of selection) {
+        let n = doc.nodes[id];
+        while (n?.parentId) {
+          const p = doc.nodes[n.parentId];
+          if (!p || p.component === 'PageRoot') break;
+          add.push(p.id);
+          n = p;
+        }
       }
-    }
-    if (add.some((id) => !expanded.has(id))) setExpanded((prev) => new Set([...prev, ...add]));
-  }, [selection]); // eslint-disable-line react-hooks/exhaustive-deps
+      setExpanded((prev) => (add.some((id) => !prev.has(id)) ? new Set([...prev, ...add]) : prev));
+    };
+    reveal(getState().selection);
+    return useEditor.subscribe((s, prev) => {
+      if (s.selection !== prev.selection) reveal(s.selection);
+    });
+  }, []);
 
   const empty = useMemo(() => rootChildren.length === 0, [rootChildren]);
   return (

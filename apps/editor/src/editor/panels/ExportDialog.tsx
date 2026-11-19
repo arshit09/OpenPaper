@@ -18,7 +18,10 @@ const FORMATS: { value: Format; label: string }[] = [
 const SCALES = [0.5, 1, 2, 3, 4].map((s) => ({ value: String(s), label: `${s}x` }));
 
 function download(base64: string, mimeType: string, name: string) {
-  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  // A plain loop: `Uint8Array.from` with a mapping callback takes seconds on a large export.
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   const url = URL.createObjectURL(new Blob([bytes], { type: mimeType }));
   const a = document.createElement('a');
   a.href = url;

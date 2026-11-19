@@ -246,7 +246,7 @@ export function Home() {
                         <Folder size={34} />
                       ) : r.thumbnail ? (
                         // A new version swaps in place: the browser keeps the old image until the new one is decoded.
-                        <img src={r.thumbnail.url} alt="" draggable={false} decoding="async" />
+                        <img src={r.thumbnail.url} alt="" draggable={false} decoding="async" loading="lazy" />
                       ) : (
                         <FileText size={30} />
                       )}

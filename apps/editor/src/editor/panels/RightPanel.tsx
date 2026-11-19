@@ -9,7 +9,7 @@ import { VersionPanel } from './VersionPanel.tsx';
 
 function CodePanel() {
   const selection = useEditor((s) => s.selection);
-  const doc = useEditor((s) => s.doc);
+  const fileId = useEditor((s) => s.doc?.id);
   const version = useEditor((s) => s.version);
   const previewing = useEditor((s) => !!s.preview);
   const [format, setFormat] = useState<'tailwind' | 'inline-styles'>('tailwind');
@@ -18,18 +18,23 @@ function CodePanel() {
   const id = selection[0];
 
   useEffect(() => {
-    if (!doc || !id || previewing) {
+    if (!fileId || !id || previewing) {
       setCode('');
       return;
     }
+    // A slow answer for an earlier layer, format or version must not replace a newer one.
+    let current = true;
     const timer = setTimeout(() => {
       client
-        .request<string>('jsx', { fileId: doc.id, nodeId: id, format, includeNodeIds: false })
-        .then(setCode)
-        .catch((e: Error) => setCode(`// ${e.message}`));
+        .request<string>('jsx', { fileId, nodeId: id, format, includeNodeIds: false })
+        .then((text) => current && setCode(text))
+        .catch((e: Error) => current && setCode(`// ${e.message}`));
     }, 120);
-    return () => clearTimeout(timer);
-  }, [doc?.id, id, format, version, previewing]); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [fileId, id, format, version, previewing]);
 
   // The server writes code for the current version, not an older one on screen.
   if (previewing) return <div className="op-empty">Code is shown for the current version. Go back to it to see a layer’s code.</div>;
