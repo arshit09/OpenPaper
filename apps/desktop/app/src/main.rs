@@ -24,6 +24,8 @@ const MAIN: &str = "main";
 /// Port of the server the editor was loaded from; 0 until it's known.
 static SERVER_PORT: AtomicU16 = AtomicU16::new(0);
 static SHOWN: AtomicBool = AtomicBool::new(false);
+/// The window is in the tray or minimized, and the editor was told it isn't on screen.
+static BACKGROUND: AtomicBool = AtomicBool::new(false);
 
 /// Server start-up, which runs alongside the window opening rather than after it.
 const STARTING: u8 = 1;
@@ -69,11 +71,22 @@ fn main() {
             build_window(app.handle())?;
             Ok(())
         })
-        .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
+        .on_window_event(|window, event| match event {
+            WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
                 let _ = window.hide();
+                if let Some(webview) = window.app_handle().get_webview_window(MAIN) {
+                    set_background(&webview, true);
+                }
             }
+            // Minimizing and restoring both resize the window.
+            WindowEvent::Resized(_) => {
+                if let Some(webview) = window.app_handle().get_webview_window(MAIN) {
+                    let hidden = webview.is_minimized().unwrap_or(false) || !webview.is_visible().unwrap_or(true);
+                    set_background(&webview, hidden);
+                }
+            }
+            _ => {}
         })
         .run(tauri::generate_context!())
         .expect("OpenPaper failed to start");
@@ -165,6 +178,30 @@ fn tune_webview(window: &WebviewWindow) {
     });
 }
 
+/// In the tray or minimized, the editor isn't on screen. WebView2 can't tell on its own (the window is
+/// only hidden), so the editor would keep animating, laying out and holding its memory as if it were.
+/// Marked invisible, the page reports itself hidden (animations, timers and the canvas go idle) and
+/// WebView2 trims what it holds. Agents keep working: the editor stays connected.
+fn set_background(window: &WebviewWindow, background: bool) {
+    if BACKGROUND.swap(background, Ordering::SeqCst) == background {
+        return;
+    }
+    #[cfg(windows)]
+    let _ = window.with_webview(move |webview| unsafe {
+        use webview2_com::Microsoft::Web::WebView2::Win32::{
+            ICoreWebView2_19, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL,
+        };
+        use windows_core::Interface;
+        let controller = webview.controller();
+        let _ = controller.SetIsVisible(!background);
+        let Ok(core) = controller.CoreWebView2() else { return };
+        if let Ok(core) = core.cast::<ICoreWebView2_19>() {
+            let level = if background { COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW } else { COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL };
+            let _ = core.SetMemoryUsageTargetLevel(level);
+        }
+    });
+}
+
 /// Find or start the server, then load the editor. Runs at launch, and again from the splash's "Try again".
 fn start_server(app: AppHandle) {
     if PHASE.swap(STARTING, Ordering::SeqCst) == STARTING {
@@ -215,6 +252,7 @@ fn show(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(MAIN) {
         let _ = window.unminimize();
         let _ = window.show();
+        set_background(&window, false);
         let _ = window.set_focus();
     }
 }
