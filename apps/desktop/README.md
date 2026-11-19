@@ -7,7 +7,7 @@ runtime that ships with Windows 10 and 11, so neither one bundles a browser.
 |---|---|---|
 | `OpenPaper-Setup.exe` | ~4 MB | The installer people download. It fetches the current release, checks it, and installs it per user (no admin prompt). |
 | `OpenPaper-<version>-windows-x64.zip` | ~50 MB | The release it fetches: the app, a Node.js runtime and the built server and editor (~140 MB installed). |
-| `OpenPaper-windows-x64.json` | | The manifest the installer reads: version, zip URL, size and SHA-256. |
+| `OpenPaper-windows-x64.json` | | The manifest the installer reads (and the app, to find updates): version, zip URL, size and SHA-256, and the same for this Setup. |
 
 ## How it works
 
@@ -24,6 +24,19 @@ window closes, because agents connected over MCP still use it.
 - Window size and position are remembered. The window follows the Windows light or dark setting.
 - Connecting an agent in **Settings** writes the bundled `node.exe` and `cli.js` paths into agent configs, so agents work
   without Node installed. The install folder stays the same across updates, so those paths stay valid.
+- **Updates.** Ten seconds after launch, then every six hours (by the wall clock, so time asleep counts), and when it's
+  opened again more than an hour after the last check, the app reads the same manifest Setup installs from. When it
+  names a newer version, the editor shows a notice in its bottom-left corner (**Not now** hides it until the app
+  restarts), the tray menu gets **Update to version x**, and if the window is in the tray or minimized, a Windows
+  notification appears, once per version. **Update** downloads that release's Setup, checks its size and SHA-256
+  against the manifest, and runs it with `--update --dir <install>`. A copy that wasn't installed by Setup (a
+  development build) opens the release page instead.
+- The editor gets no native APIs for this either: the app sets `window.__openpaperDesktop` (`{ version, update }`) and
+  fires an `openpaper-desktop` event on each editor load and change, and the notice's button navigates to
+  `/desktop/update`, which the window cancels and handles. See `app/src/update.rs`.
+- Windows shows the notification under the app's ID. The app registers its name and icon for it under
+  `HKCU\Software\Classes\AppUserModelId\io.github.arshit09.openpaper` (an app without a package registers there), and
+  the uninstaller removes that key.
 
 **The installer** (`installer/`, `OpenPaper Setup.exe`) has the website's look: the same palette, type and buttons,
 following light or dark mode. Install stays disabled until the Terms of Use and Privacy Policy box is ticked. Both
@@ -37,7 +50,10 @@ documents open in a panel inside the installer.
 6. Copies itself into the install as `Uninstall OpenPaper.exe`. Run with `--uninstall`, it removes the app, its
    shortcuts and entry, and, only if that box is ticked, the user's designs in `~\.openpaper`.
 
-Running the installer again updates or reinstalls in place. If WebView2 is missing (rare), it offers to install it first.
+Running the installer again updates or reinstalls in place. Run with `--update` (what the app does), it skips the
+first screen: it updates the install from `--dir` (else the registered one), keeps whether there's a desktop shortcut,
+and opens OpenPaper when it's done. Cancelling during the download leaves the running app as it was; closing the error
+screen after a failed update opens OpenPaper again. If WebView2 is missing (rare), it offers to install it first.
 
 ## Layout
 
@@ -83,7 +99,7 @@ real one:
 
 | Variable | Used by | Effect |
 |---|---|---|
-| `OPENPAPER_SETUP_MANIFEST` | installer | Read the manifest from this URL |
+| `OPENPAPER_SETUP_MANIFEST` | both | Read the manifest from this URL (the app checks it for updates) |
 | `OPENPAPER_INSTALL_DIR` | installer | Default install folder |
 | `OPENPAPER_HOME` | both | Data folder (as for the server) |
 | `OPENPAPER_PORT` | both | Use and start a server on this port only |
@@ -100,9 +116,12 @@ OPENPAPER_INSTALL_DIR=/tmp/op-test/OpenPaper OPENPAPER_HOME=/tmp/op-test/home OP
 
 The test install still adds real shortcuts and an Apps & Features entry; uninstall it afterwards.
 
+To try an update, edit the served manifest's `version` to something newer than the build and start the installed
+`OpenPaper.exe` with the same variables: the notice appears about ten seconds after the editor opens. An update also
+rewrites the real shortcuts and entry, so back them up first if this PC has a real install.
+
 ## Not done yet
 
 - **Code signing.** Unsigned, both executables show Windows SmartScreen's "Windows protected your PC" on first run.
-- **Updates from inside the app.** For now, running the installer again updates in place.
 - **macOS and Linux.** The same Tauri project can build for them, but there WebKit would draw the editor, so the
   canvas needs testing against Chrome-rendered exports first.

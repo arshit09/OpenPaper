@@ -49,7 +49,10 @@ pub fn register(dir: &Path, version: &str, size_bytes: u64) -> Result<(), String
 }
 
 pub fn unregister() {
-    let _ = RegKey::predef(HKEY_CURRENT_USER).delete_subkey_all(UNINSTALL_KEY);
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let _ = hkcu.delete_subkey_all(UNINSTALL_KEY);
+    // The name and icon the app registered for its notifications.
+    let _ = hkcu.delete_subkey_all(common::NOTIFICATION_KEY);
 }
 
 fn start_menu() -> Option<PathBuf> {
@@ -80,6 +83,11 @@ pub fn create_shortcuts(dir: &Path, desktop: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// Whether the desktop has OpenPaper's shortcut, so an update keeps (or leaves out) the same one.
+pub fn has_desktop_shortcut() -> bool {
+    dirs::desktop_dir().is_some_and(|desk| desk.join(SHORTCUT).is_file())
+}
+
 pub fn remove_shortcuts() {
     for folder in [start_menu(), dirs::desktop_dir()].into_iter().flatten() {
         let _ = fs::remove_file(folder.join(SHORTCUT));
@@ -99,24 +107,25 @@ pub fn spawn_hidden(program: &Path, args: &[&str]) -> std::io::Result<std::proce
     Command::new(program).args(args).creation_flags(CREATE_NO_WINDOW).spawn()
 }
 
-/// Run the uninstaller from a copy in %TEMP% when it was started from inside the install. True when handed off.
-pub fn relaunch_from_temp(dir: Option<&Path>) -> bool {
+/// Run `--uninstall` or `--update` from a copy in %TEMP% when started from inside the install. True when handed off.
+pub fn relaunch_from_temp(dir: Option<&Path>, flag: &str) -> bool {
     let Ok(exe) = std::env::current_exe() else { return false };
     let Some(install) = dir.map(Path::to_path_buf).or_else(|| exe.parent().map(Path::to_path_buf)) else { return false };
     if !common::is_inside(&exe, &install) {
         return false;
     }
-    let copy = std::env::temp_dir().join(format!("OpenPaper-Uninstall-{}.exe", std::process::id()));
+    let copy = std::env::temp_dir().join(format!("OpenPaper-Setup-{}.exe", std::process::id()));
     if fs::copy(&exe, &copy).is_err() {
         return false;
     }
-    Command::new(&copy).arg("--uninstall").arg("--dir").arg(&install).spawn().is_ok()
+    Command::new(&copy).arg(flag).arg("--dir").arg(&install).spawn().is_ok()
 }
 
-/// After the window closes: delete this run's browser data and, for the temporary uninstaller, itself.
-pub fn clean_up_after_exit(webview_dir: &Path, uninstalling: bool) {
+/// After the window closes: delete this run's browser data and, for a Setup run from %TEMP% (the uninstaller's
+/// copy, or the update the app downloaded), itself.
+pub fn clean_up_after_exit(webview_dir: &Path, temporary: bool) {
     let mut script = format!("/c ping -n 3 127.0.0.1 >nul & rmdir /s /q \"{}\"", webview_dir.display());
-    if uninstalling {
+    if temporary {
         if let Ok(exe) = std::env::current_exe() {
             if common::is_inside(&exe, &std::env::temp_dir()) {
                 script.push_str(&format!(" & del /f /q \"{}\"", exe.display()));

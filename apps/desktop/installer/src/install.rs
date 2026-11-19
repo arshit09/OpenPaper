@@ -13,9 +13,6 @@ use tauri::ipc::Channel;
 
 use crate::system;
 
-/// Where the release manifest lives. `scripts/package.mjs` can bake in another one (OPENPAPER_MANIFEST_URL at
-/// build time), and OPENPAPER_SETUP_MANIFEST overrides it at run time for testing against a local folder.
-const DEFAULT_MANIFEST: &str = "https://github.com/arshit09/OpenPaper/releases/latest/download/OpenPaper-windows-x64.json";
 /// What a cancelled install rejects with; the page goes back to its first screen on it.
 const CANCELLED: &str = "cancelled";
 
@@ -71,13 +68,6 @@ pub fn looks_like_install(dir: &Path) -> bool {
         && (dir.join(APP_EXE).is_file() || dir.join(UNINSTALL_EXE).is_file() || common::server_cli(dir).is_file())
 }
 
-fn manifest_url() -> String {
-    match std::env::var("OPENPAPER_SETUP_MANIFEST") {
-        Ok(url) if !url.trim().is_empty() => url,
-        _ => option_env!("OPENPAPER_MANIFEST_URL").unwrap_or(DEFAULT_MANIFEST).to_string(),
-    }
-}
-
 fn client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .user_agent(concat!("OpenPaper-Setup/", env!("CARGO_PKG_VERSION")))
@@ -93,7 +83,7 @@ fn offline(error: reqwest::Error) -> String {
 }
 
 pub async fn fetch_release() -> Result<Release, String> {
-    let url = manifest_url();
+    let url = common::manifest_url();
     let base = reqwest::Url::parse(&url).map_err(|e| format!("The release address isn't valid ({url}): {e}"))?;
     let res = client()?.get(base.clone()).header("Cache-Control", "no-cache").send().await.map_err(offline)?;
     if !res.status().is_success() {

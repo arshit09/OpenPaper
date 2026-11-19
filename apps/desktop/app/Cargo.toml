@@ -18,11 +18,18 @@ tauri = { workspace = true, features = ["tray-icon"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-window-state = "2"
 tauri-plugin-opener = "2"
+serde = { workspace = true }
 serde_json = { workspace = true }
+# Update checks; the same as the installer's, so nothing new to build.
+reqwest = { version = "0.12", default-features = false, features = ["native-tls"] }
+sha2 = "0.10"
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.39"
 windows-core = "0.62"
+# The update notification.
+windows = { version = "0.62", features = ["Data_Xml_Dom", "Foundation", "UI_Notifications", "Win32_System_WinRT"] }
+winreg = "0.56"
 
 [features]
 # Serve ui/ from the binary (what `tauri build` turns on); `cargo build` gets it by default.

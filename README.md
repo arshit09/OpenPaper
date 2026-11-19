@@ -60,7 +60,8 @@ with it, and the app runs in its own window.
 
 - **Settings** (the gear on the home screen) connects Claude Code, Cursor and the others in one click, and disconnects them.
 - Closing the window keeps OpenPaper running in the tray for your agents; **Quit OpenPaper** in the tray stops it.
-- To update, run the installer again. To uninstall, open Settings → Apps → OpenPaper (your designs stay unless you choose to delete them).
+- OpenPaper checks GitHub for a new version when it opens and every six hours. It tells you in the editor, or with a Windows notification while it's in the tray; **Update** installs it and opens OpenPaper again. Running the installer again also updates in place.
+- To uninstall, open Settings → Apps → OpenPaper (your designs stay unless you choose to delete them).
 - The installer isn't code-signed yet: if Windows shows "Windows protected your PC", click **More info**, then **Run anyway**.
 
 Windows 10 or 11, 64-bit. How the app and installer are built: [apps/desktop](apps/desktop/README.md).

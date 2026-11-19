@@ -5,7 +5,8 @@
 //
 // Writes apps/desktop/release/:
 //   OpenPaper-<version>-windows-x64.zip   OpenPaper.exe, node\node.exe, server\ (bundled CLI, editor, production node_modules)
-//   OpenPaper-windows-x64.json            { version, url, size, sha256, installedSize } — what the installer reads
+//   OpenPaper-windows-x64.json            { version, url, size, sha256, installedSize, setup } — what the installer
+//                                         reads, and the app to find updates (`setup`: this Setup's url, size, sha256)
 //   OpenPaper-Setup.exe                   the small installer, with --manifest-url baked in
 //   OpenPaper-<version>-cli.tar.gz        server/ without native binaries, the same on every platform
 //   OpenPaper-cli.json                    { version, url, size, sha256, node, speech-<target>-url/-sha256 } — what the
@@ -89,8 +90,9 @@ log(`node: v${nodeVersion}`);
 
 // 4. The app and the installer.
 run('cargo', ['build', '--release'], desktop, { OPENPAPER_MANIFEST_URL: manifestUrl });
-await cp(join(desktop, 'target', 'release', 'openpaper.exe'), join(stage, 'OpenPaper.exe'));
-await cp(join(desktop, 'target', 'release', 'openpaper-setup.exe'), join(out, 'OpenPaper-Setup.exe'));
+const built = join(process.env.CARGO_TARGET_DIR || join(desktop, 'target'), 'release');
+await cp(join(built, 'openpaper.exe'), join(stage, 'OpenPaper.exe'));
+await cp(join(built, 'openpaper-setup.exe'), join(out, 'OpenPaper-Setup.exe'));
 await cp(join(repo, 'LICENSE'), join(stage, 'LICENSE.txt'));
 await cp(join(repo, 'THIRD_PARTY_NOTICES.md'), join(stage, 'THIRD_PARTY_NOTICES.md'));
 
@@ -109,6 +111,8 @@ const manifest = {
   size: zipSize,
   sha256,
   installedSize: installedSize + setupSize,
+  // The app downloads this Setup and runs it with --update to update itself.
+  setup: { url: `${baseUrl}OpenPaper-Setup.exe`, size: setupSize, sha256: await hashFile(join(out, 'OpenPaper-Setup.exe')) },
 };
 await writeFile(join(out, 'OpenPaper-windows-x64.json'), JSON.stringify(manifest, null, 2) + '\n');
 

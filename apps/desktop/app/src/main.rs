@@ -3,8 +3,13 @@
 //! The window opens on a small splash page, makes sure the server is running (starting the bundled
 //! `node\node.exe server\cli.js serve` when it isn't), then loads the editor from it. Closing the window
 //! hides it to the tray so agents connected over MCP keep working; Quit in the tray stops everything.
+//! It checks for a newer release at launch and every few hours (see update.rs).
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+#[cfg(windows)]
+mod notify;
+mod update;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU8, Ordering};
@@ -15,7 +20,7 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::webview::{NewWindowResponse, PageLoadEvent};
 use tauri::window::Color;
-use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent, Wry};
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_window_state::StateFlags;
 
@@ -52,6 +57,7 @@ fn main() {
                 quit(app);
             } else {
                 show(app);
+                update::check_soon();
             }
         }))
         .plugin(
@@ -69,6 +75,7 @@ fn main() {
             start_server(app.handle().clone());
             build_tray(app.handle())?;
             build_window(app.handle())?;
+            update::spawn(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| match event {
@@ -125,6 +132,8 @@ fn build_window(app: &AppHandle) -> tauri::Result<()> {
                     // Still starting: it opens the editor when done.
                     _ => {}
                 }
+            } else if is_editor(payload.url()) {
+                update::tell_editor(&window);
             }
         })
         .on_document_title_changed(|window, title| {
@@ -132,6 +141,11 @@ fn build_window(app: &AppHandle) -> tauri::Result<()> {
         })
         // The editor and this app's own pages stay in the window; everything else opens in the browser.
         .on_navigation(move |url| {
+            // The editor's update notice asks for the update this way.
+            if is_editor(url) && url.path() == update::UPDATE_PATH {
+                update::start(&links);
+                return false;
+            }
             if is_splash(url) || is_editor(url) || matches!(url.scheme(), "about" | "blob" | "data") {
                 return true;
             }
@@ -271,16 +285,44 @@ fn quit(app: &AppHandle) {
     });
 }
 
-fn build_tray(app: &AppHandle) -> tauri::Result<()> {
+/// Open, then Update to version x when there's a newer one, then Quit.
+fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let open = MenuItem::with_id(app, "open", "Open OpenPaper", true, None::<&str>)?;
+    let separator = PredefinedMenuItem::separator(app)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit OpenPaper", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &PredefinedMenuItem::separator(app)?, &quit_item])?;
+    match update::available() {
+        Some((version, ready)) => {
+            let label = if ready { format!("Update to version {version}") } else { "Updating…".to_string() };
+            let update_item = MenuItem::with_id(app, "update", label, ready, None::<&str>)?;
+            Menu::with_items(app, &[&open, &update_item, &separator, &quit_item])
+        }
+        None => Menu::with_items(app, &[&open, &separator, &quit_item]),
+    }
+}
+
+fn tray_tooltip() -> String {
+    match update::available() {
+        Some((version, _)) => format!("OpenPaper (version {version} is available)"),
+        None => "OpenPaper".to_string(),
+    }
+}
+
+fn refresh_tray(app: &AppHandle) {
+    let Some(tray) = app.tray_by_id("main") else { return };
+    if let Ok(menu) = tray_menu(app) {
+        let _ = tray.set_menu(Some(menu));
+    }
+    let _ = tray.set_tooltip(Some(tray_tooltip()));
+}
+
+fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let mut tray = TrayIconBuilder::with_id("main")
-        .tooltip("OpenPaper")
-        .menu(&menu)
+        .tooltip(tray_tooltip())
+        .menu(&tray_menu(app)?)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open" => show(app),
+            "update" => update::start(app),
             "quit" => quit(app),
             _ => {}
         })

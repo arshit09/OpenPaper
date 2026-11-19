@@ -187,19 +187,23 @@ function installProgress() {
   return channel;
 }
 
-async function startInstall() {
-  if (!state.release || !$('#agree').checked) return;
-  state.busy = true;
-  const verb = $('#install').textContent === 'Update' ? 'Updating' : 'Installing';
-  $('#progress-eyebrow').textContent = `${verb} version ${state.release.version}`;
+function showProgress(eyebrow, detail) {
+  $('#progress-eyebrow').textContent = eyebrow;
   $('#progress-title').innerHTML = 'Getting OpenPaper <em>ready.</em>';
   $('#progress-meta').textContent = '';
   $('#cancel').hidden = false;
   $('#cancel').disabled = false;
   renderSteps(INSTALL_STEPS);
-  activate('download', 'Starting…');
+  activate('download', detail);
   setBar(0);
   show('progress');
+}
+
+async function startInstall() {
+  if (!state.release || !$('#agree').checked) return;
+  state.busy = true;
+  const verb = $('#install').textContent === 'Update' ? 'Updating' : 'Installing';
+  showProgress(`${verb} version ${state.release.version}`, 'Starting…');
   try {
     const desktop = $('#desktop').checked;
     const dir = await invoke('install', { dir: state.dir, desktop, release: state.release, progress: installProgress() });
@@ -214,6 +218,33 @@ async function startInstall() {
   } catch (error) {
     if (String(error) === 'cancelled') show('install');
     else showError(error, startInstall);
+  } finally {
+    state.busy = false;
+    state.step = null;
+  }
+}
+
+// ---------- Update (from the app) ----------
+
+/** The app started this Setup to update itself: no questions, keep its folder and shortcuts, then open it again. */
+async function startUpdate() {
+  state.busy = true;
+  showProgress('Updating OpenPaper', 'Checking for the latest version…');
+  try {
+    state.release = await invoke('fetch_release');
+    $('#progress-eyebrow').textContent = `Updating to version ${state.release.version}`;
+    const dir = await invoke('install', {
+      dir: state.dir,
+      desktop: state.info.desktopShortcut,
+      release: state.release,
+      progress: installProgress(),
+    });
+    // Opening OpenPaper also closes this window.
+    await invoke('launch', { dir });
+  } catch (error) {
+    // Cancelled during the download, before OpenPaper was closed: it's still running as it was.
+    if (String(error) === 'cancelled') appWindow.close();
+    else showError(error, startUpdate);
   } finally {
     state.busy = false;
     state.step = null;
@@ -296,6 +327,14 @@ function closeLegal() {
 async function requestClose() {
   if (state.busy && state.step !== 'download') return;
   if (state.busy) await invoke('cancel');
+  // An update that stopped may have closed OpenPaper already: open it again (as it was, if the update was undone).
+  // If it's still running, this only brings its window back.
+  if (state.info?.mode === 'update' && !state.busy && !$('[data-view="error"]').hidden) {
+    try {
+      await invoke('launch', { dir: state.dir });
+      return;
+    } catch {}
+  }
   appWindow.close();
 }
 
@@ -344,6 +383,11 @@ async function init() {
     $('#uninstall-eyebrow').textContent = version ? `Version ${version} installed` : 'OpenPaper';
     showPath($('#data-dir'), state.info.dataDir);
     show('uninstall');
+    return;
+  }
+  if (state.info.mode === 'update') {
+    setDir(state.info.updateDir ?? state.info.installed?.dir ?? state.info.defaultDir);
+    startUpdate();
     return;
   }
   setDir(state.info.installed?.dir ?? state.info.defaultDir);

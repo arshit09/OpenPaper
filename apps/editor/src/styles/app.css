@@ -907,6 +907,59 @@ textarea.op-input {
   animation: op-toast-in 0.2s var(--op-ease) both;
 }
 
+/* The desktop app's update notice: bottom left, over the panels, under dialogs. */
+.op-update {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  z-index: 800;
+  width: min(296px, calc(100vw - 24px));
+  padding: 10px 10px 10px 12px;
+  border-radius: 10px;
+  background: var(--op-panel);
+  border: 1px solid var(--op-border);
+  box-shadow: var(--op-shadow);
+  animation: op-toast-in 0.2s var(--op-ease) both;
+}
+.op-update-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  margin-top: -2px;
+}
+.op-update-head .op-icon-btn {
+  width: 24px;
+  height: 24px;
+  margin: -2px -4px 0 auto;
+}
+.op-update-icon {
+  flex-shrink: 0;
+  color: var(--op-text-2);
+}
+.op-update-title {
+  font-weight: 600;
+  font-size: 12.5px;
+}
+.op-update-text {
+  margin: 4px 0 10px 22px;
+  color: var(--op-text-2);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.op-update-error {
+  color: var(--op-danger);
+}
+.op-update-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.op-update-actions a.op-btn {
+  color: inherit;
+  text-decoration: none;
+}
+
 .op-empty {
   color: var(--op-text-3);
   padding: 16px 12px;

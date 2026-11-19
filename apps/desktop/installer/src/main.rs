@@ -3,7 +3,8 @@
 //! It reads a release manifest from GitHub Releases, downloads that release's zip, checks its SHA-256,
 //! and installs it for the current user (no admin rights) under %LOCALAPPDATA%\Programs\OpenPaper, with
 //! Start menu and desktop shortcuts and an Apps & Features entry. A copy of it in the install folder,
-//! "Uninstall OpenPaper.exe", removes OpenPaper again (`--uninstall`).
+//! "Uninstall OpenPaper.exe", removes OpenPaper again (`--uninstall`). The app runs a newer release's Setup with
+//! `--update --dir <install>` to update in place: no questions, then OpenPaper opens again.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -24,7 +25,8 @@ use tauri_plugin_opener::OpenerExt;
 
 struct Mode {
     uninstall: bool,
-    /// The install to remove (uninstall mode).
+    update: bool,
+    /// The install to remove (uninstall mode) or update (update mode).
     dir: Option<PathBuf>,
 }
 
@@ -35,30 +37,51 @@ struct SetupInfo {
     installed: Option<system::Installed>,
     default_dir: String,
     data_dir: String,
+    /// Update mode: the install to update, and whether it has a desktop shortcut to keep.
+    update_dir: Option<String>,
+    desktop_shortcut: bool,
 }
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let uninstalling = args.iter().any(|a| a == "--uninstall");
-    let dir = args.iter().position(|a| a == "--dir").and_then(|i| args.get(i + 1)).map(PathBuf::from);
-    // A running exe can't be deleted, so the uninstaller in the install folder hands over to a copy in %TEMP%.
-    if uninstalling && system::relaunch_from_temp(dir.as_deref()) {
-        return;
+    let updating = !uninstalling && args.iter().any(|a| a == "--update");
+    let dir = args
+        .iter()
+        .position(|a| a == "--dir")
+        .and_then(|i| args.get(i + 1))
+        .map(|d| std::path::absolute(d).unwrap_or_else(|_| PathBuf::from(d)));
+    // Work from %TEMP%: started from inside the install (its uninstaller, or by the app, whose working folder it
+    // is), Setup and its browser processes would keep that folder open, and Windows can't move or delete it then.
+    let _ = std::env::set_current_dir(std::env::temp_dir());
+    // A running exe can't be deleted or replaced, so a Setup started from inside the install hands over to a copy
+    // in %TEMP%. (The app runs a downloaded Setup from %TEMP% already.)
+    let flag = if uninstalling { Some("--uninstall") } else if updating { Some("--update") } else { None };
+    if let Some(flag) = flag {
+        if system::relaunch_from_temp(dir.as_deref(), flag) {
+            return;
+        }
     }
     if !system::ensure_webview2() {
         return;
     }
-    let dir = dir.or_else(|| {
-        let exe = std::env::current_exe().ok()?;
-        Some(exe.parent()?.to_path_buf())
-    });
+    let dir = if uninstalling {
+        dir.or_else(|| {
+            let exe = std::env::current_exe().ok()?;
+            Some(exe.parent()?.to_path_buf())
+        })
+    } else if updating {
+        dir.or_else(|| system::installed().map(|i| PathBuf::from(i.dir)))
+    } else {
+        None
+    };
     let webview_dir = std::env::temp_dir().join(format!("OpenPaper-Setup-{}", std::process::id()));
     let data_dir = webview_dir.clone();
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .manage(Mode { uninstall: uninstalling, dir: if uninstalling { dir } else { None } })
+        .manage(Mode { uninstall: uninstalling, update: updating, dir })
         .invoke_handler(tauri::generate_handler![setup_info, fetch_release, pick_folder, install, cancel, launch, uninstall])
         .setup(move |app| {
             build_window(app.handle(), data_dir.clone())?;
@@ -68,7 +91,7 @@ fn main() {
         .expect("OpenPaper Setup failed to start");
     app.run(move |_app, event| {
         if let RunEvent::Exit = event {
-            system::clean_up_after_exit(&webview_dir, uninstalling);
+            system::clean_up_after_exit(&webview_dir, uninstalling || updating);
         }
     });
 }
@@ -137,10 +160,12 @@ fn tune_webview(window: &WebviewWindow) {
 #[tauri::command]
 fn setup_info(mode: State<'_, Mode>) -> SetupInfo {
     SetupInfo {
-        mode: if mode.uninstall { "uninstall" } else { "install" },
+        mode: if mode.uninstall { "uninstall" } else if mode.update { "update" } else { "install" },
         installed: system::installed(),
         default_dir: install::default_dir().display().to_string(),
         data_dir: common::data_home().display().to_string(),
+        update_dir: mode.dir.as_ref().filter(|_| mode.update).map(|d| d.display().to_string()),
+        desktop_shortcut: system::has_desktop_shortcut(),
     }
 }
 
@@ -186,7 +211,7 @@ fn launch(app: AppHandle, dir: String) -> Result<(), String> {
 
 #[tauri::command]
 async fn uninstall(mode: State<'_, Mode>, remove_data: bool, progress: Channel<Progress>) -> Result<(), String> {
-    let dir = mode.dir.clone().ok_or("No OpenPaper install was given to remove.")?;
+    let dir = mode.dir.clone().filter(|_| mode.uninstall).ok_or("No OpenPaper install was given to remove.")?;
     tauri::async_runtime::spawn_blocking(move || install::remove(&dir, remove_data, &progress))
         .await
         .map_err(|e| e.to_string())?

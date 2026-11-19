@@ -15,8 +15,59 @@ use std::os::windows::process::CommandExt;
 pub const DEFAULT_PORT: u16 = 29_880;
 pub const APP_EXE: &str = "OpenPaper.exe";
 pub const UNINSTALL_EXE: &str = "Uninstall OpenPaper.exe";
-/// Tauri identifier of the app; names its WebView2 data and window-state folders.
+/// Tauri identifier of the app; names its WebView2 data and window-state folders, and is the ID Windows
+/// shows its notifications under.
 pub const APP_IDENTIFIER: &str = "io.github.arshit09.openpaper";
+/// Where Windows finds the name and icon for the app's notifications (an app without a package registers here).
+pub const NOTIFICATION_KEY: &str = r"Software\Classes\AppUserModelId\io.github.arshit09.openpaper";
+pub const RELEASES_URL: &str = "https://github.com/arshit09/OpenPaper/releases";
+
+/// The release manifest Setup installs from, which the app also reads to find updates. `scripts/package.mjs` can
+/// bake in another one (OPENPAPER_MANIFEST_URL at build time), and OPENPAPER_SETUP_MANIFEST overrides it at run
+/// time for testing against a local folder.
+pub fn manifest_url() -> String {
+    const DEFAULT: &str = "https://github.com/arshit09/OpenPaper/releases/latest/download/OpenPaper-windows-x64.json";
+    match std::env::var("OPENPAPER_SETUP_MANIFEST") {
+        Ok(url) if !url.trim().is_empty() => url,
+        _ => option_env!("OPENPAPER_MANIFEST_URL").filter(|u| !u.is_empty()).unwrap_or(DEFAULT).to_string(),
+    }
+}
+
+/// Whether dotted version `candidate` is newer than `current` ("0.10.0" > "0.9.2"). A pre-release tag such as
+/// "-beta.1" is ignored.
+pub fn is_newer(candidate: &str, current: &str) -> bool {
+    let parts = |v: &str| -> Vec<u64> {
+        let v = v.trim().trim_start_matches('v');
+        let core = v.split(['-', '+']).next().unwrap_or("");
+        core.split('.').map(|n| n.parse().unwrap_or(0)).collect()
+    };
+    let (a, b) = (parts(candidate), parts(current));
+    for i in 0..a.len().max(b.len()) {
+        let (x, y) = (a.get(i).copied().unwrap_or(0), b.get(i).copied().unwrap_or(0));
+        if x != y {
+            return x > y;
+        }
+    }
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_newer;
+
+    #[test]
+    fn compares_versions_by_number() {
+        assert!(is_newer("0.5.0", "0.4.0"));
+        assert!(is_newer("0.10.0", "0.9.2"));
+        assert!(is_newer("1.0", "0.99.99"));
+        assert!(is_newer("v0.4.1", "0.4.0"));
+        assert!(!is_newer("0.4.0", "0.4.0"));
+        assert!(!is_newer("0.4", "0.4.0"));
+        assert!(!is_newer("0.3.9", "0.4.0"));
+        assert!(!is_newer("0.4.0-beta.1", "0.4.0"));
+        assert!(!is_newer("", "0.4.0"));
+    }
+}
 
 #[cfg(windows)]
 pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
