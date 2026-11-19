@@ -118,6 +118,9 @@ const INSPECTOR_SOURCE = String.raw`(function () {
   var lastLocation = '';
   var readyAt = 0;
   var frame = 0;
+  // Frames in a row the selection didn't move; once settled the loop polls slowly (see tick).
+  var still = 0;
+  var slowTimer = 0;
   var host = null;
   var root = null;
   var hoverBox = null;
@@ -417,12 +420,14 @@ const INSPECTOR_SOURCE = String.raw`(function () {
     postRects();
   }
 
+  /** Tell the editor where the selection is; returns whether it moved. */
   function postRects() {
     var rects = selection.map(function (s) { return s.el.isConnected ? rectOf(s.el) : { x: 0, y: 0, width: 0, height: 0 }; });
     var key = JSON.stringify(rects);
-    if (key === lastRects) return;
+    if (key === lastRects) return false;
     lastRects = key;
     post({ type: 'rects', rects: rects });
+    return true;
   }
 
   function find(selector, tag) {
@@ -471,7 +476,16 @@ const INSPECTOR_SOURCE = String.raw`(function () {
 
   // --- Frame loop -----------------------------------------------------------
 
+  // Follow the selection every frame while it moves (scrolling, animating, the page re-rendering).
+  // Once it has kept still for SETTLE_FRAMES the loop checks only a few times a second, so a page
+  // with something selected doesn't keep the editor's renderer busy; scrolling, resizing and the
+  // pointer bring back full speed at once.
+  var SETTLE_FRAMES = 30;
+  var IDLE_POLL_MS = 250;
+
   function schedule() {
+    still = 0;
+    if (slowTimer) { clearTimeout(slowTimer); slowTimer = 0; }
     if (!frame) frame = requestAnimationFrame(tick);
   }
 
@@ -482,8 +496,11 @@ const INSPECTOR_SOURCE = String.raw`(function () {
     if (restoring) restore(now);
     reattach(now);
     render();
-    postRects();
-    if (selection.length || restoring || (inspecting && hoverEl)) schedule();
+    var moved = postRects();
+    if (!(selection.length || restoring || (inspecting && hoverEl))) return;
+    still = moved ? 0 : still + 1;
+    if (restoring || still < SETTLE_FRAMES) frame = requestAnimationFrame(tick);
+    else if (!slowTimer) slowTimer = setTimeout(function () { slowTimer = 0; if (!frame) frame = requestAnimationFrame(tick); }, IDLE_POLL_MS);
   }
 
   // --- Overlay --------------------------------------------------------------
@@ -532,10 +549,12 @@ const INSPECTOR_SOURCE = String.raw`(function () {
 
   function place(box, r) {
     if (!r || (r.width === 0 && r.height === 0)) { box.style.display = 'none'; return; }
-    box.style.display = 'block';
-    box.style.transform = 'translate(' + r.left + 'px,' + r.top + 'px)';
-    box.style.width = r.width + 'px';
-    box.style.height = r.height + 'px';
+    // Written only when changed: unchanged writes still cost the page a style recalculation.
+    var t = 'translate(' + r.left + 'px,' + r.top + 'px)';
+    if (box.style.display !== 'block') box.style.display = 'block';
+    if (box.style.transform !== t) box.style.transform = t;
+    if (box.style.width !== r.width + 'px') box.style.width = r.width + 'px';
+    if (box.style.height !== r.height + 'px') box.style.height = r.height + 'px';
   }
 
   function render() {
