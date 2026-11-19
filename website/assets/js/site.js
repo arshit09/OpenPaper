@@ -116,7 +116,7 @@
   }
 
   /* ---------- Tabs ---------- */
-  document.querySelectorAll('[role="tablist"]').forEach((list) => {
+  document.querySelectorAll('[role="tablist"]:not(.dl-tabs)').forEach((list) => {
     const tabs = [...list.querySelectorAll('[role="tab"]')];
     const select = (tab, focus) => {
       tabs.forEach((t) => {
@@ -138,6 +138,65 @@
       });
     });
   });
+
+  /* ---------- Download: platform tabs ---------- */
+  // The head script already set html[data-os] from the link (#linux) or the visitor's platform; CSS shows that
+  // panel. The tabs follow it, and picking one updates the link so it can be shared.
+  const dlTabs = document.querySelector('.dl-tabs');
+  if (dlTabs) {
+    const tabs = [...dlTabs.querySelectorAll('[role="tab"]')];
+    const select = (os, { focus = false, remember = false } = {}) => {
+      document.documentElement.dataset.os = os;
+      tabs.forEach((tab) => {
+        const on = tab.dataset.osTab === os;
+        tab.setAttribute('aria-selected', String(on));
+        tab.tabIndex = on ? 0 : -1;
+        if (on && focus) tab.focus();
+      });
+      if (remember) history.replaceState(null, '', `#${os}`);
+    };
+    tabs.forEach((tab, i) => {
+      tab.addEventListener('click', () => select(tab.dataset.osTab, { remember: true }));
+      tab.addEventListener('keydown', (e) => {
+        const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+        if (!step) return;
+        e.preventDefault();
+        select(tabs[(i + step + tabs.length) % tabs.length].dataset.osTab, { focus: true, remember: true });
+      });
+    });
+    window.addEventListener('hashchange', () => {
+      const os = location.hash.slice(1);
+      if (tabs.some((t) => t.dataset.osTab === os)) select(os);
+    });
+    select(document.documentElement.dataset.os || 'windows');
+  }
+
+  /* ---------- Latest release ---------- */
+  // Version badges show the latest GitHub release (the downloads always point at it), falling back to the
+  // version written in the page. Asked once per visit.
+  const releaseBadges = document.querySelectorAll('[data-release]');
+  if (releaseBadges.length) {
+    const show = (tag) => {
+      if (/^v\d+\.\d+\.\d+$/.test(tag || '')) releaseBadges.forEach((el) => (el.textContent = tag));
+    };
+    let cached = null;
+    try {
+      cached = sessionStorage.getItem('op-release');
+    } catch {}
+    if (cached) show(cached);
+    else {
+      fetch('https://api.github.com/repos/arshit09/OpenPaper/releases/latest', { headers: { Accept: 'application/vnd.github+json' } })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((release) => {
+          if (!release?.tag_name) return;
+          show(release.tag_name);
+          try {
+            sessionStorage.setItem('op-release', release.tag_name);
+          } catch {}
+        })
+        .catch(() => {});
+    }
+  }
 
   /* ---------- Copy buttons ---------- */
   const writeClipboard = async (text) => {

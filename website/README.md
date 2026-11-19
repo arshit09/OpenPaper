@@ -25,7 +25,8 @@ The details live on topic pages, reached from `explore.html`.
 | `shortcuts.html` | Every shortcut, searchable, with a Windows/macOS toggle |
 | `agents.html` | Built-in agent, connecting agents, live presence, screenshots, prompts |
 | `mcp.html` | Transports, every MCP tool, Paper compatibility |
-| `install.html` | The Windows app download, running from source on macOS and Linux, the `openpaper` CLI, environment variables, development |
+| `download.html` | Platform tabs (opens on the visitor's OS, or `#macos` / `#windows` / `#linux`): the Windows app, and the CLI's one-line installs |
+| `install.html` | Using the Windows app, the CLI's commands, environment variables, building from source, development |
 | `privacy.html` | The data folder, localhost only, what goes online and when |
 | `terms.html` | Terms of Use (the same text the Windows installer shows) |
 | `faq.html` | Common questions |
@@ -41,7 +42,8 @@ website/
     ├── css/site.css           tokens, layout and components
     ├── css/illustrations.css  the animated illustrations (.ill-*)
     ├── js/site.js             theme, tabs, copy buttons, reveals, shader canvases,
-    │                          shortcut search, and the hero's live-build playback
+    │                          shortcut search, the hero's live-build playback,
+    │                          download tabs and the latest-release badges
     └── brand/                 favicons and app icon (from apps/editor/public and docs/brand)
 ```
 
@@ -57,6 +59,10 @@ website/
 - **Illustrations** are HTML and CSS in `illustrations.css`, sized in container units, so they scale with any card.
   Each one's resting state is its finished frame, which is what visitors with reduced motion see.
 - When the editor UI changes, update the replica in `index.html` (`.mock`).
+- **Download buttons** all go to `download.html`. Its head script picks the platform before the first paint
+  (`html[data-os]`), and CSS shows that panel. The links and install lines use `releases/latest/download/`, and the
+  `[data-release]` badges ask GitHub's API for the latest tag once per visit, so a new release needs no site change.
+  The install scripts themselves live in `apps/cli`.
 
 ## Design
 
