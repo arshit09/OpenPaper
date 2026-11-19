@@ -1,4 +1,3 @@
-import { PDFDocument } from 'pdf-lib';
 import type { Page } from 'puppeteer-core';
 import {
   artboardOf,
@@ -19,6 +18,9 @@ import {
 import type { FontService } from '../fonts/fonts.ts';
 import type { HeadlessRenderer } from './headless.ts';
 
+
+/** Pages whose measured layout is kept for the next read. */
+const MAX_CACHED_LAYOUTS = 12;
 export const MODEL_IMAGE_MAX_SIDE = 2000;
 export const MODEL_IMAGE_MAX_BASE64 = 4_500_000;
 const MAX_CANVAS_SIDE = 16_000;
@@ -180,7 +182,12 @@ export class RenderService {
   async measurePage(doc: PaperDocument, version: number, pageId: string): Promise<LayoutMap | null> {
     const key = `${doc.id}:${pageId}`;
     const cached = this.layoutCache.get(key);
-    if (cached && cached.version === version) return cached.layout;
+    if (cached && cached.version === version) {
+      // Most recently used last (see below).
+      this.layoutCache.delete(key);
+      this.layoutCache.set(key, cached);
+      return cached.layout;
+    }
     let layout: LayoutMap | null = null;
     if (this.editorFallback) {
       layout = await this.editorFallback.measure(doc.id, pageId, version).catch(() => null);
@@ -190,7 +197,12 @@ export class RenderService {
       if (!target.rootIds.length) layout = {};
       else layout = await this.headless.withDocument(this.html(target), { width: 1600, height: 1000 }, (page) => page.evaluate(measureScript));
     }
-    if (layout) this.layoutCache.set(key, { version, layout });
+    if (layout) {
+      this.layoutCache.delete(key);
+      this.layoutCache.set(key, { version, layout });
+      // A layout holds every node of its page: keep the pages agents are working on, not every page ever read.
+      if (this.layoutCache.size > MAX_CACHED_LAYOUTS) this.layoutCache.delete(this.layoutCache.keys().next().value!);
+    }
     return layout;
   }
 
@@ -420,6 +432,8 @@ html,body{width:${Math.ceil(size.width)}px;height:${Math.ceil(size.height)}px}`;
   }
 
   async combinePdfs(parts: Buffer[]): Promise<Buffer> {
+    // Loaded on first use rather than at boot (~10 MB).
+    const { PDFDocument } = await import('pdf-lib');
     const out = await PDFDocument.create();
     for (const part of parts) {
       const src = await PDFDocument.load(part);

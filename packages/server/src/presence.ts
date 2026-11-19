@@ -164,6 +164,11 @@ export class PresenceService {
     this.onActivity(fileId, full);
   }
 
+  /** The file was deleted: drop its activity log. */
+  forgetFile(fileId: string) {
+    this.logs.delete(fileId);
+  }
+
   activityFor(fileId: string): ActivityEntry[] {
     return this.logs.get(fileId) ?? [];
   }

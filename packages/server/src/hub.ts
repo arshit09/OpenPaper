@@ -55,6 +55,8 @@ interface HistoryEntry {
 type Keyed = 'nodes' | 'pages' | 'comments';
 
 const SAVE_DEBOUNCE_MS = 400;
+/** Longest a change waits to be saved while changes keep coming (an agent streaming writes). */
+const SAVE_MAX_WAIT_MS = 3000;
 /** Undo steps kept per author, and in all, per file. */
 const MAX_HISTORY_PER_AUTHOR = 200;
 const MAX_HISTORY = 1000;
@@ -144,10 +146,14 @@ export class LiveDocument {
   version = 0;
   /** Set once the file is closed for deletion: later commits (a tool still running) are refused, not saved. */
   closed = false;
+  /** Last time the file was asked for or changed (epoch ms): the hub lets go of files left alone. */
+  lastUsedAt = Date.now();
   /** Every undoable change, oldest first. Each actor undoes the newest one it reaches. */
   private readonly history: HistoryEntry[] = [];
   private readonly redoStacks = new Map<string, HistoryEntry[]>();
   private saveTimer: NodeJS.Timeout | null = null;
+  /** When the oldest unsaved change was made (0: everything is saved or saving). */
+  private dirtySince = 0;
   private savePromise: Promise<void> = Promise.resolve();
 
   constructor(
@@ -318,10 +324,14 @@ export class LiveDocument {
   private scheduleSave(): void {
     if (this.closed) return;
     if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.dirtySince ||= Date.now();
+    // Saved once changes pause, and at least every few seconds while they don't: a crash during a
+    // long run of edits loses seconds, not the whole run.
+    const wait = Math.max(0, Math.min(SAVE_DEBOUNCE_MS, this.dirtySince + SAVE_MAX_WAIT_MS - Date.now()));
     this.saveTimer = setTimeout(() => {
       this.saveTimer = null;
       void this.flush();
-    }, SAVE_DEBOUNCE_MS);
+    }, wait);
   }
 
   /** Persist now (also waits for any in-flight save). */
@@ -330,6 +340,7 @@ export class LiveDocument {
       clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
+    this.dirtySince = 0;
     const snapshot = this.doc;
     this.savePromise = this.savePromise
       .then(() => this.store.save(snapshot))
@@ -342,17 +353,27 @@ function actorKey(actor: ActorRef): string {
   return `${actor.kind}:${actor.id}`;
 }
 
-/** All open documents, loaded lazily from the FileStore. */
+/**
+ * All open documents, loaded lazily from the FileStore.
+ *
+ * Files left alone are let go of (`releaseIdle`), so a long session doesn't keep every file it ever
+ * opened, with its undo history, in memory. A released file is only held weakly: whatever still has
+ * it (a tool call or image generation in progress) keeps using that same copy, and asking for the
+ * file brings it back rather than loading a second copy from disk that the two would fight over.
+ */
 export class DocumentHub extends EventEmitter<{ commit: [CommitEvent] }> {
   private readonly open = new Map<string, LiveDocument>();
   private readonly loading = new Map<string, Promise<LiveDocument>>();
+  private readonly released = new Map<string, WeakRef<LiveDocument>>();
+  /** A released file's version, so loading it again counts on from there: versions never go back. */
+  private readonly versions = new Map<string, number>();
 
   constructor(readonly store: FileStore) {
     super();
   }
 
   isOpen(fileId: string): boolean {
-    return this.open.has(fileId);
+    return this.find(fileId) !== undefined;
   }
 
   openIds(): string[] {
@@ -360,20 +381,24 @@ export class DocumentHub extends EventEmitter<{ commit: [CommitEvent] }> {
   }
 
   peek(fileId: string): LiveDocument | undefined {
-    return this.open.get(fileId);
+    return this.find(fileId);
   }
 
   async get(fileId: string): Promise<LiveDocument> {
-    const existing = this.open.get(fileId);
-    if (existing) return existing;
+    const existing = this.find(fileId);
+    if (existing) {
+      existing.lastUsedAt = Date.now();
+      return existing;
+    }
     const pending = this.loading.get(fileId);
     if (pending) return pending;
     if (!this.store.has(fileId)) throw new OpError(`File not found: "${fileId}". Use list_resources to find files.`);
     const promise = this.store
       .load(fileId)
       .then((doc) => {
-        const live = new LiveDocument(doc, this.store, (e) => this.emit('commit', e));
-        this.open.set(fileId, live);
+        const live = this.track(doc);
+        live.version = this.versions.get(fileId) ?? 0;
+        this.versions.delete(fileId);
         return live;
       })
       .finally(() => this.loading.delete(fileId));
@@ -383,14 +408,61 @@ export class DocumentHub extends EventEmitter<{ commit: [CommitEvent] }> {
 
   /** Register a freshly created document. */
   adopt(doc: PaperDocument): LiveDocument {
-    const live = new LiveDocument(doc, this.store, (e) => this.emit('commit', e));
+    return this.track(doc);
+  }
+
+  private track(doc: PaperDocument): LiveDocument {
+    const live: LiveDocument = new LiveDocument(doc, this.store, (e) => {
+      live.lastUsedAt = Date.now();
+      // Changed while released (by whoever still held it): it's in use again.
+      if (this.open.get(e.fileId) !== live && this.released.get(e.fileId)?.deref() === live) this.reopen(e.fileId, live);
+      this.emit('commit', e);
+    });
     this.open.set(doc.id, live);
     return live;
   }
 
+  /** The loaded copy of a file: open, or released but still held somewhere (then it's open again). */
+  private find(fileId: string): LiveDocument | undefined {
+    const open = this.open.get(fileId);
+    if (open) return open;
+    const live = this.released.get(fileId)?.deref();
+    if (live) this.reopen(fileId, live);
+    else this.released.delete(fileId);
+    return live;
+  }
+
+  private reopen(fileId: string, live: LiveDocument): void {
+    this.released.delete(fileId);
+    this.versions.delete(fileId);
+    this.open.set(fileId, live);
+  }
+
+  /**
+   * Save and let go of every file nobody has asked for or changed in `idleMs` that `inUse` doesn't
+   * claim (an editor showing it). Its undo history goes too, once nothing holds the file any more.
+   * Returns the ids let go of.
+   */
+  async releaseIdle(idleMs: number, inUse: (fileId: string) => boolean): Promise<string[]> {
+    const idle = (live: LiveDocument) => !live.closed && Date.now() - live.lastUsedAt >= idleMs && !inUse(live.id);
+    const out: string[] = [];
+    for (const [fileId, live] of [...this.open]) {
+      if (!idle(live)) continue;
+      await live.flush();
+      // Asked for or changed while it saved.
+      if (this.open.get(fileId) !== live || !idle(live)) continue;
+      this.open.delete(fileId);
+      this.released.set(fileId, new WeakRef(live));
+      this.versions.set(fileId, live.version);
+      out.push(fileId);
+    }
+    return out;
+  }
+
   /** Close a file that is about to be deleted: it saves what it has and refuses later changes. */
   async close(fileId: string): Promise<void> {
-    const live = this.open.get(fileId);
+    const live = this.find(fileId);
+    this.versions.delete(fileId);
     if (!live) return;
     live.closed = true;
     await live.flush();

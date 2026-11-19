@@ -97,7 +97,18 @@ export function findFreeSpot(obstacles: Box[], w: number, h: number, opts: Place
       }
       const xs = [inset.minX, ...obstacles.map((o) => o.minX), ...obstacles.map((o) => o.maxX + p)].filter((x) => x >= inset.minX && x + w <= inset.maxX);
       const ys = [inset.minY, ...obstacles.map((o) => o.minY), ...obstacles.map((o) => o.maxY + p)].filter((y) => y >= inset.minY && y + h <= inset.maxY);
-      for (const y of [...new Set(ys)].sort((m, n) => m - n)) for (const x of [...new Set(xs)].sort((m, n) => m - n)) if (free(x, y)) return round({ x, y });
+      const columns = [...new Set(xs)].sort((m, n) => m - n);
+      // Every spot tried here (with its padding) lies inside the viewport, so only what's in view can
+      // block it, and in one row only what overlaps that row. With hundreds of layers in view this
+      // keeps the search from checking every layer for every spot.
+      const inView = obstacles.filter((o) => intersects(o, vp));
+      for (const y of [...new Set(ys)].sort((m, n) => m - n)) {
+        const row = inView.filter((o) => o.minY < y + h + p && o.maxY > y - p);
+        for (const x of columns) {
+          const target = inflate(boxAt(x, y, w, h), p);
+          if (!row.some((o) => intersects(target, o))) return round({ x, y });
+        }
+      }
     }
   }
 

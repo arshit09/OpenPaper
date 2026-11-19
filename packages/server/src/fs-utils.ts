@@ -8,7 +8,13 @@ export async function writeFileAtomic(path: string, data: string | Uint8Array, m
   await mkdir(dirname(path), { recursive: true });
   const fileMode = mode ?? (await stat(path).then((s) => s.mode & 0o777).catch(() => 0o644));
   const tmp = join(dirname(path), `.${basename(path)}.${process.pid}.${Date.now()}.tmp`);
-  await writeFile(tmp, data, { mode: fileMode });
+  try {
+    await writeFile(tmp, data, { mode: fileMode });
+  } catch (error) {
+    // A disk that filled up mid-write leaves part of the file: don't let failed attempts pile up.
+    await rm(tmp, { force: true }).catch(() => {});
+    throw error;
+  }
   // Windows: antivirus / indexers can briefly lock the destination.
   for (let attempt = 0; ; attempt++) {
     try {

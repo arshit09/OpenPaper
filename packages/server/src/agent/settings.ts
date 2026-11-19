@@ -1,5 +1,4 @@
 import { readFile } from 'node:fs/promises';
-import { loadConfigWithSource } from '@anthropic-ai/sdk/core/credentials';
 import type { AgentConfigInfo, AgentRunner } from '@openpaper/core';
 import { writeFileAtomic } from '../fs-utils.ts';
 import { AGENT_MODELS } from './agent.ts';
@@ -42,6 +41,9 @@ const DEFAULT_PROBES: AgentProbes = {
   allowAgy: () => allowAgyDesignTools(),
 };
 
+/** How long what the coding agents reported is reused: asking them starts up to five CLI processes. */
+const PROBE_TTL_MS = 30_000;
+
 /** A Codex or agy model id ("" = its own default). It becomes a CLI argument, so it can't look like a flag. */
 const cliModel = (id: unknown): string => (typeof id === 'string' && /^\w[\w.:/-]{0,99}$/.test(id) ? id : '');
 
@@ -53,6 +55,7 @@ export class AgentSettings {
   readonly defaults = { runner: 'api' as Runner, model: 'claude-opus-5-5', effort: 'high' as Effort };
   private readonly probes: AgentProbes;
   private agyModelCache: ModelList = [];
+  private readonly probed = new Map<string, { at: number; value: Promise<unknown> }>();
 
   constructor(
     private readonly path: string,
@@ -90,21 +93,38 @@ export class AgentSettings {
     };
   }
 
-  async info(): Promise<AgentConfigInfo> {
+  /**
+   * The settings and what each coding agent reports. Their reports are reused for a short while (the
+   * dock asks on every file open); `fresh` asks them again, as "Check again" does.
+   */
+  async info(opts: { fresh?: boolean } = {}): Promise<AgentConfigInfo> {
+    if (opts.fresh) this.probed.clear();
     const r = await this.resolved();
     const [keySource, claudeCode, codex, agy, models] = await Promise.all([
       this.keySource(r.apiKey),
-      this.probes.claudeCode(),
-      this.probes.codex(),
-      this.probes.agy(),
+      this.probe('claudeCode'),
+      this.probe('codex'),
+      this.probe('agy'),
       this.modelsFor(r.runner),
     ]);
     return { runner: r.runner, keySource, claudeCode, codex, agy, model: r.model, effort: r.effort, models };
   }
 
+  private probe<K extends 'claudeCode' | 'codex' | 'agy' | 'codexModels' | 'codexDefault'>(name: K): ReturnType<AgentProbes[K]> {
+    const hit = this.probed.get(name);
+    if (hit && Date.now() - hit.at < PROBE_TTL_MS) return hit.value as ReturnType<AgentProbes[K]>;
+    const value = this.probes[name]() as ReturnType<AgentProbes[K]>;
+    const entry = { at: Date.now(), value };
+    this.probed.set(name, entry);
+    value.catch(() => {
+      if (this.probed.get(name) === entry) this.probed.delete(name);
+    });
+    return value;
+  }
+
   private async modelsFor(runner: Runner): Promise<ModelList> {
     if (runner === 'codex') {
-      const [list, configured] = await Promise.all([this.probes.codexModels(), this.probes.codexDefault()]);
+      const [list, configured] = await Promise.all([this.probe('codexModels'), this.probe('codexDefault')]);
       return [{ id: '', label: configured ? `Default (${configured})` : 'Default model' }, ...list];
     }
     if (runner === 'agy') {
@@ -142,17 +162,21 @@ export class AgentSettings {
     }
     if (patch.effort && EFFORTS.includes(patch.effort)) agent.effort = patch.effort;
     await writeFileAtomic(this.path, JSON.stringify({ ...cfg, agent }, null, 2), 0o600);
+    this.probed.clear();
   }
 
   /** Let agy run OpenPaper's design tools: one allow rule in its settings, added when the user asks. */
   async allowAgy(): Promise<void> {
     await this.probes.allowAgy();
+    this.probed.clear();
   }
 }
 
 /** Whether the SDK's default credential chain has an `ant auth login` profile (or workload federation) to use. */
 async function hasSdkProfile(): Promise<boolean> {
   try {
+    // Loaded here, not at boot: the credentials module pulls in much of the SDK.
+    const { loadConfigWithSource } = await import('@anthropic-ai/sdk/core/credentials');
     return (await loadConfigWithSource()) !== null;
   } catch {
     return false; // An unreadable profile: a request would fail too, so ask for a key.

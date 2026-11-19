@@ -1,6 +1,8 @@
+import { setFlagsFromString } from 'node:v8';
+import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
-import { createDocument, createSubtree, Transaction } from '@openpaper/core';
-import { LiveDocument, type ActorRef } from '../src/hub.ts';
+import { createDocument, createSubtree, Transaction, type PaperDocument } from '@openpaper/core';
+import { DocumentHub, LiveDocument, type ActorRef } from '../src/hub.ts';
 
 const user: ActorRef = { kind: 'user', id: 'u', name: 'User' };
 const other: ActorRef = { kind: 'user', id: 'u2', name: 'Other' };
@@ -158,6 +160,81 @@ describe('undo history', () => {
     live.closed = true;
     expect(() => resize(agent, 'a', '60px')).toThrow(/deleted/);
     expect(live.undo(user)).toBeNull();
+  });
+});
+
+describe('letting go of idle files', () => {
+  /** A hub over one file whose store keeps what was last saved; `loads` counts reads from disk. */
+  function hubWithFile() {
+    const doc = createDocument({ name: 'Idle' });
+    let onDisk: PaperDocument = structuredClone(doc);
+    const counts = { loads: 0, saves: 0 };
+    const store = {
+      has: (id: string) => id === doc.id,
+      load: async () => {
+        counts.loads++;
+        return structuredClone(onDisk);
+      },
+      save: async (d: PaperDocument) => {
+        counts.saves++;
+        onDisk = structuredClone(d);
+      },
+    };
+    const hub = new DocumentHub(store as never);
+    const rename = (live: LiveDocument, name: string) => live.transact(user, 'rename', (tx) => tx.setName(name));
+    return { hub, id: doc.id, counts, rename, onDisk: () => onDisk };
+  }
+
+  /** Collect garbage after the current job, when V8 may clear WeakRefs. */
+  async function collect() {
+    await new Promise((r) => setTimeout(r, 0));
+    setFlagsFromString('--expose-gc');
+    (runInNewContext('gc') as () => void)();
+    setFlagsFromString('--no-expose-gc');
+  }
+
+  it('saves a file left alone and lets go of it, keeping files in use or recently used', async () => {
+    const { hub, id, counts, rename, onDisk } = hubWithFile();
+    const live = await hub.get(id);
+    rename(live, 'Edited');
+    expect(await hub.releaseIdle(60_000, () => false)).toEqual([]);
+    live.lastUsedAt -= 120_000;
+    expect(await hub.releaseIdle(60_000, () => true)).toEqual([]);
+    expect(await hub.releaseIdle(60_000, () => false)).toEqual([id]);
+    expect(onDisk().name).toBe('Edited');
+    expect(counts.saves).toBe(1);
+    expect(hub.openIds()).toEqual([]);
+  });
+
+  it('gives whoever still holds a released file the same copy, never a second one from disk', async () => {
+    const { hub, id, counts, rename } = hubWithFile();
+    const held = await hub.get(id);
+    held.lastUsedAt = 0;
+    await hub.releaseIdle(1, () => false);
+    // A tool still running changes it: it's open again, and asking for the file finds that copy.
+    rename(held, 'Late');
+    expect(hub.openIds()).toEqual([id]);
+    expect(await hub.get(id)).toBe(held);
+    expect(hub.peek(id)?.doc.name).toBe('Late');
+    expect(counts.loads).toBe(1);
+  });
+
+  it('loads a released file again once nothing holds it, counting versions on from before', async () => {
+    const { hub, id, counts, rename } = hubWithFile();
+    let live: LiveDocument | null = await hub.get(id);
+    rename(live, 'One');
+    rename(live, 'Two');
+    expect(live.version).toBe(2);
+    live.lastUsedAt = 0;
+    live = null;
+    await hub.releaseIdle(1, () => false);
+    await collect();
+    const again = await hub.get(id);
+    expect(counts.loads).toBe(2);
+    expect(again.doc.name).toBe('Two');
+    expect(again.version).toBe(2);
+    rename(again, 'Three');
+    expect(again.version).toBe(3);
   });
 });
 

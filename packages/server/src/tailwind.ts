@@ -5,6 +5,9 @@ import { tokenCssName, tokensContentHash, type TokenRecord } from '@openpaper/co
 
 type Canonicalize = (candidates: string[]) => Promise<string[]>;
 
+/** How long the worker stays up after the last Tailwind export (a burst of get_jsx calls shares it). */
+const IDLE_STOP_MS = 3 * 60_000;
+
 /**
  * Runs inside a worker thread: Tailwind CSS v4's canonicalizer is CPU-heavy (seconds
  * for the first call per design system), so it must never block the server's event
@@ -61,7 +64,19 @@ export class TailwindService {
   private broken = false;
   private seq = 1;
   private readonly pending = new Map<number, { resolve: (v: string[]) => void; reject: (e: Error) => void }>();
+  private idleTimer: NodeJS.Timeout | null = null;
 
+  constructor(private readonly idleStopMs = IDLE_STOP_MS) {}
+
+  /** Whether the worker is running (tests). */
+  get running(): boolean {
+    return this.worker !== null;
+  }
+
+  /**
+   * The worker starts on the first Tailwind export, not at boot, and stops once exports pause: with
+   * Tailwind and its design systems loaded it holds ~200 MB, most of the server's memory otherwise.
+   */
   private getWorker(): Worker | null {
     if (this.broken) return null;
     if (this.worker) return this.worker;
@@ -77,13 +92,14 @@ export class TailwindService {
         this.pending.delete(msg.id);
         if (msg.error) p.reject(new Error(msg.error));
         else p.resolve(msg.out ?? []);
+        if (!this.pending.size) this.scheduleIdleStop();
       });
       worker.on('error', (error) => {
         console.warn('[openpaper] Tailwind worker failed:', error.message);
-        for (const p of this.pending.values()) p.reject(error);
-        this.pending.clear();
-        this.worker = null;
+        this.forget(worker, error);
       });
+      // Exiting without an error (out of memory, terminated) must not leave requests waiting forever.
+      worker.on('exit', () => this.forget(worker, new Error('The Tailwind worker stopped.')));
       this.worker = worker;
       return worker;
     } catch (error) {
@@ -93,9 +109,36 @@ export class TailwindService {
     }
   }
 
+  private forget(worker: Worker, error: Error): void {
+    if (this.worker !== worker) return;
+    this.worker = null;
+    for (const p of this.pending.values()) p.reject(error);
+    this.pending.clear();
+  }
+
+  private scheduleIdleStop(): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      if (!this.pending.size) this.stopWorker();
+    }, this.idleStopMs);
+    this.idleTimer.unref();
+  }
+
+  private stopWorker(): void {
+    const worker = this.worker;
+    if (!worker) return;
+    this.forget(worker, new Error('The Tailwind worker was stopped.'));
+    void worker.terminate();
+  }
+
   private request(key: string, css: string, candidates: string[]): Promise<string[]> {
     const worker = this.getWorker();
     if (!worker) return Promise.resolve(candidates);
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
     const id = this.seq++;
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
@@ -105,18 +148,16 @@ export class TailwindService {
 
   async canonicalizerFor(tokens: readonly TokenRecord[]): Promise<Canonicalize | undefined> {
     if (!this.getWorker()) return undefined;
+    // Started (or kept) for this export: it still stops if no request follows.
+    if (!this.pending.size) this.scheduleIdleStop();
     const key = tokens.length ? tokensContentHash(tokens) : 'default';
     const css = themeCss(tokens);
     return (candidates) => this.request(key, css, candidates).catch(() => candidates);
   }
 
-  /** Build the default design system in the background so the first get_jsx is fast. */
-  warmup(): void {
-    void this.request('default', themeCss([]), ['[display:flex]', '[padding:16px]']).catch(() => {});
-  }
-
   close(): void {
-    void this.worker?.terminate();
-    this.worker = null;
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = null;
+    this.stopWorker();
   }
 }

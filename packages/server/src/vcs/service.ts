@@ -276,6 +276,9 @@ export class VcsService {
     if (!b || !(await isDir(b.dir))) return;
     const live = await this.opts.hub.get(fileId);
     const stamp = await folderStamp(b.dir);
+    // Neither side changed since the last sync (the status check that follows every write, say):
+    // nothing to serialize, compare or record.
+    if (stamp && stamp === b.stamp && live.doc.updatedAt === b.syncedAt && !this.problems.has(fileId)) return;
     let notice: string | undefined;
     let loaded = false;
     if (stamp && b.stamp && stamp !== b.stamp) {
@@ -297,14 +300,17 @@ export class VcsService {
     }
     this.problems.delete(fileId);
     if (!loaded) await writeDesignFolder(b.dir, live.doc, this.opts.mediaDir, b.designId);
+    const recorded = `${b.syncedAt}|${b.stamp}`;
     b.syncedAt = live.doc.updatedAt;
     b.stamp = await folderStamp(b.dir);
-    await this.persistNow();
+    if (`${b.syncedAt}|${b.stamp}` !== recorded) await this.persistNow();
     return notice;
   }
 
   /** Show what's in the folder (after a branch switch or pull): replaces the content, and undo can't cross it. */
   private replaceFromFolder(live: LiveDocument, doc: PaperDocument, label: string): void {
+    // Cleared first: the change would otherwise be folded into every history entry, only to be thrown away.
+    live.clearHistory();
     live.transact(VCS_ACTOR, label, (tx) => replaceContent(tx, doc, true), { undoable: false });
     live.clearHistory();
   }

@@ -1,5 +1,5 @@
 import { isAbsolute, join, relative } from 'node:path';
-import Anthropic from '@anthropic-ai/sdk';
+import type Anthropic from '@anthropic-ai/sdk';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import {
   displayName,
@@ -26,6 +26,14 @@ type MessageParam = Anthropic.Beta.BetaMessageParam;
 type ContentBlockParam = Anthropic.Beta.BetaContentBlockParam;
 type ToolResultBlockParam = Anthropic.Beta.BetaToolResultBlockParam;
 type Message = Anthropic.Beta.BetaMessage;
+type Sdk = typeof import('@anthropic-ai/sdk').default;
+
+/** The Anthropic SDK, loaded the first time the API runner is used rather than at boot (~20 MB, half a second). */
+let sdk: Sdk | null = null;
+async function loadSdk(): Promise<Sdk> {
+  sdk ??= (await import('@anthropic-ai/sdk')).default;
+  return sdk;
+}
 
 const MAX_TOKENS = 64_000;
 const MAX_TURNS = 80;
@@ -191,8 +199,9 @@ function toToolResultContent(result: CallToolResult): ToolResultBlockParam['cont
 /** The SDK's error for streamed tool input it could not parse at all (not an API error). */
 function isToolJsonError(error: unknown): boolean {
   return (
-    error instanceof Anthropic.AnthropicError &&
-    !(error instanceof Anthropic.APIError) &&
+    sdk !== null &&
+    error instanceof sdk.AnthropicError &&
+    !(error instanceof sdk.APIError) &&
     error.message.startsWith('Unable to parse tool parameter JSON')
   );
 }
@@ -363,12 +372,12 @@ export class AgentChat {
   private async turn(text: string, opts: { target?: AgentTarget; page?: string }, controller: AbortController): Promise<void> {
     const config = await this.host.settings.resolved();
     const site = this.siteId ? this.host.getSite?.(this.siteId) : undefined;
-    const client =
-      config.runner !== 'api' || site
-        ? null
-        : this.host.createClient
-          ? this.host.createClient(config.apiKey)
-          : new Anthropic(config.apiKey ? { apiKey: config.apiKey } : {});
+    const api = config.runner === 'api' && !site ? await loadSdk() : null;
+    const client = !api
+      ? null
+      : this.host.createClient
+        ? this.host.createClient(config.apiKey)
+        : new api(config.apiKey ? { apiKey: config.apiKey } : {});
 
     const target = opts.target?.label ? opts.target : undefined;
     this.push({ kind: 'user', id: nextId(), text, ...(target ? { target: target.label.slice(0, 80) } : {}) });
@@ -407,13 +416,15 @@ export class AgentChat {
         await this.runClaudeCode(prompt, config.model, config.effort, controller.signal);
       }
     } catch (error) {
-      if (error instanceof Anthropic.APIUserAbortError || controller.signal.aborted) {
+      // (Only the API runner loads the SDK, so without it an error can't be one of its own.)
+      const s = sdk;
+      if ((s && error instanceof s.APIUserAbortError) || controller.signal.aborted) {
         this.notice('info', 'Stopped.');
-      } else if (error instanceof Anthropic.AuthenticationError) {
+      } else if (s && error instanceof s.AuthenticationError) {
         this.notice('error', 'The Anthropic API key was rejected. Check it in the agent settings.');
-      } else if (error instanceof Anthropic.RateLimitError) {
+      } else if (s && error instanceof s.RateLimitError) {
         this.notice('error', 'Rate limited by the Anthropic API — wait a moment and try again.');
-      } else if (error instanceof Anthropic.APIError) {
+      } else if (s && error instanceof s.APIError) {
         this.notice('error', `Anthropic API error ${error.status ?? ''}: ${error.message}`);
       } else if (error instanceof Error && error.message.startsWith('Could not resolve authentication method')) {
         this.notice('error', 'No Anthropic credentials found. Add an API key in the agent settings, set ANTHROPIC_API_KEY, or sign in with `ant auth login`.');
@@ -787,6 +798,12 @@ export class AgentService {
       this.chats.set(fileId, c);
     }
     return c;
+  }
+
+  /** The file was deleted: stop its run and drop its conversation. */
+  forget(fileId: string) {
+    this.chats.get(fileId)?.stop();
+    this.chats.delete(fileId);
   }
 
   stopAll() {

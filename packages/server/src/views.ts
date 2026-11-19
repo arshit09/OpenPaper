@@ -70,6 +70,12 @@ export class ViewRegistry {
     return this.ordered().find((c) => c.view.fileId === fileId && (!pageId || c.view.pageId === pageId)) ?? null;
   }
 
+  /** Whether any editor shows this file or receives its changes. */
+  watching(fileId: string): boolean {
+    for (const c of this.conns.values()) if (c.view.fileId === fileId || c.subscriptions.has(fileId)) return true;
+    return false;
+  }
+
   openFileIds(): string[] {
     const ids: string[] = [];
     for (const c of this.ordered()) if (c.view.fileId && !ids.includes(c.view.fileId)) ids.push(c.view.fileId);

@@ -385,6 +385,20 @@ describe('built-in design agent on Claude Code', () => {
     expect(chat.running).toBe(false);
   });
 
+  it("reuses what the coding agents reported for a while, and asks again when told to or after a change", async () => {
+    let asked = 0;
+    const claudeCode = async () => (asked++, { version: '1.0.0', loggedIn: true, plan: null });
+    const settings = new AgentSettings(join(home, 'probe-config.json'), { ...NO_PROBES, claudeCode });
+    await settings.info();
+    await settings.info();
+    expect(asked).toBe(1);
+    await settings.info({ fresh: true });
+    expect(asked).toBe(2);
+    await settings.update({ effort: 'low' });
+    await settings.info();
+    expect(asked).toBe(3);
+  });
+
   it('reports the install and sign-in from Claude Code itself', async () => {
     expect(await claudeCodeStatus(command)).toEqual({ version: '9.9.9', loggedIn: true, plan: 'max' });
     expect(await claudeCodeStatus(null)).toBeNull();

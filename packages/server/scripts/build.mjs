@@ -14,8 +14,13 @@ await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
 
 await build({
-  entryPoints: [join(root, 'src/cli.ts')],
-  outfile: join(dist, 'cli.js'),
+  entryPoints: { cli: join(root, 'src/cli.ts') },
+  outdir: dist,
+  // Each command loads only its own code: `openpaper mcp` (one per agent session) is a small stdio
+  // relay and must not load the whole server. Chunks sit next to cli.js, so `import.meta.url` paths
+  // (the editor, the shader runtime) resolve the same from any of them.
+  splitting: true,
+  chunkNames: '[name]-[hash]',
   bundle: true,
   platform: 'node',
   format: 'esm',

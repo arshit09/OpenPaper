@@ -129,8 +129,9 @@ export class AssetResolver {
       if (url.startsWith('/media/')) {
         const path = this.media.pathFor(url);
         if (!path) return null;
+        // Media names are content hashes, so the size never changes: read the file once, not on every paste.
         const size = imageSize(await readFile(path));
-        return { url, ...size };
+        return remember({ url, ...size });
       }
       if (url.startsWith('data:')) {
         const stored = await this.media.putDataUri(url);

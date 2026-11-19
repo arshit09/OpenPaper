@@ -35,6 +35,10 @@ import { VERSION } from './version.ts';
 import { ViewRegistry } from './views.ts';
 import { VcsService } from './vcs/service.ts';
 
+/** A file no editor shows is let go of (saved, then dropped from memory) after this long without use. */
+const RELEASE_IDLE_MS = 10 * 60_000;
+const RELEASE_SWEEP_MS = 60_000;
+
 export interface StartOptions {
   paths: OpenPaperPaths;
   port?: number;
@@ -74,6 +78,10 @@ export async function startServer(opts: StartOptions): Promise<RunningServer> {
   const store = new FileStore(paths);
   await store.init();
   const hub = new DocumentHub(store);
+  const releaseSweep = setInterval(() => {
+    hub.releaseIdle(RELEASE_IDLE_MS, (fileId) => views.watching(fileId)).catch(() => {});
+  }, RELEASE_SWEEP_MS);
+  releaseSweep.unref();
   const media = new MediaStore(paths.assets);
   const figmaSettings = new FigmaSettings(paths.config);
   const assets = new AssetResolver(media, () => figmaSettings.token());
@@ -184,11 +192,11 @@ export async function startServer(opts: StartOptions): Promise<RunningServer> {
     vcs,
     viewMemory,
   });
-  tailwind.warmup();
 
   let closing: Promise<void> | null = null;
   const close = () => {
     closing ??= (async () => {
+      clearInterval(releaseSweep);
       agents.stopAll();
       thumbnails.close();
       speech.close();

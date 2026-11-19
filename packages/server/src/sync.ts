@@ -208,6 +208,9 @@ export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings
         await env.store.delete(id);
         await thumbnails?.removed(id);
         viewMemory?.forget(id);
+        agents.forget(id);
+        env.presence.forgetFile(id);
+        env.render.invalidate(id);
         env.resourcesChanged();
         return null;
       }
@@ -255,7 +258,7 @@ export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings
         return env.images.models();
       // ---- built-in design agent ----
       case 'agent.config.get':
-        return agentSettings.info();
+        return agentSettings.info({ fresh: params?.fresh === true });
       case 'agent.config.set':
         await agentSettings.update({
           ...(params?.runner ? { runner: String(params.runner) as Runner } : {}),
