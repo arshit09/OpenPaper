@@ -305,6 +305,23 @@ export interface VcsLocalFolder {
   remoteUrl?: string | null;
   /** `origin` is the GitHub repository asked about. */
   matches?: boolean;
+  /** The repository's current branch (null: not on a branch). */
+  branch?: string | null;
+  /** The folder's path inside the repository, '/'-separated ('' = its top). */
+  inner?: string;
+  /** Why the design asked about can't be kept here (another design, or other files, are there already). */
+  taken?: string;
+}
+
+/** A Git repository already on this computer (a code project, say) that a design can be kept in, beside the code. */
+export interface VcsProject {
+  /** The repository's top folder. */
+  root: string;
+  name: string;
+  /** Current branch (null: not on a branch). */
+  branch: string | null;
+  /** Its `origin` as people name it (`owner/name` on GitHub, else `host/path`); null when it has no remote. */
+  remote: string | null;
 }
 
 /** Where to keep a design that starts being tracked. */
@@ -319,8 +336,11 @@ export type VcsTrackPlan =
       /** The design's folder inside the repository ('' = the repository is the design folder). */
       path: string;
     }
-  /** A folder on this computer only: inside a repository it joins it, else it becomes one. */
-  | { kind: 'local'; dir: string };
+  /**
+   * A folder on this computer: inside a repository (a code project, say) it joins it, else it becomes one.
+   * `push: false` commits the first version without pushing it: a code project's branch carries other work.
+   */
+  | { kind: 'local'; dir: string; push?: boolean };
 
 export interface VcsChange {
   /** Path inside the design folder. */

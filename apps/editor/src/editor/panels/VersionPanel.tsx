@@ -8,6 +8,7 @@ import {
   Ellipsis,
   ExternalLink,
   Folder,
+  FolderCode,
   FolderGit2,
   FolderOpen,
   GitBranch,
@@ -21,7 +22,7 @@ import {
   Undo2,
   Unlink,
 } from 'lucide-react';
-import type { VcsBranch, VcsChange, VcsCommit, VcsLocalFolder, VcsRepo, VcsRepoTree, VcsSetup, VcsStatus, VcsTrackPlan } from '@openpaper/core';
+import type { VcsBranch, VcsChange, VcsCommit, VcsLocalFolder, VcsProject, VcsRepo, VcsRepoTree, VcsSetup, VcsStatus, VcsTrackPlan } from '@openpaper/core';
 import { setState, toast, useEditor } from '../../state/store.ts';
 import { client, refreshVcs } from '../../sync/session.ts';
 import { Select } from '../../ui/Select.tsx';
@@ -72,11 +73,19 @@ function folderNameFor(name: string): string {
   );
 }
 
-/** Join with the separator the server's paths already use. */
+/** Join with the separator the server's paths already use (`child` may be a '/'-separated path). */
 function joinPath(parent: string, child: string): string {
   const sep = parent.includes('\\') ? '\\' : '/';
-  return `${parent.replace(/[\\/]+$/, '')}${sep}${child}`;
+  return `${parent.replace(/[\\/]+$/, '')}${sep}${child.replace(/^[\\/]+|[\\/]+$/g, '').replace(/[\\/]+/g, sep)}`;
 }
+
+/** A folder path inside a project as typed ("designs\\Landing/"), as '/'-separated parts without "." or "..". */
+const cleanInner = (path: string) =>
+  path
+    .split(/[\\/]+/)
+    .map((s) => s.trim())
+    .filter((s) => s && s !== '.' && s !== '..')
+    .join('/');
 
 const lastPart = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 const parentOf = (dir: string) => (dir.includes('/') ? dir.slice(0, dir.lastIndexOf('/')) : '');
@@ -108,11 +117,27 @@ export function VersionPanel() {
 
 // ---- starting to track ----------------------------------------------------------
 
-type Mode = 'existing' | 'new' | 'local';
+/** A repository of the design's own, or a code project's repository (the design goes along with the code). */
+type Where = 'own' | 'code';
+type Mode = 'existing' | 'new' | 'local' | 'code';
+
+/** Why a folder is taken, without repeating its path (shown just above). */
+const takenText = (info: VcsLocalFolder) => {
+  const text = info.taken ?? '';
+  return text.startsWith(info.path) ? `This folder${text.slice(info.path.length)}` : text.replace(info.path, 'this folder');
+};
 
 /** Whether the folder on this computer works for the choice, and what will happen there. */
-function localVerdict(mode: Mode | null, info: VcsLocalFolder | null, repo: VcsRepo | null): { ok: boolean; text: string } | null {
+function localVerdict(mode: Mode | null, info: VcsLocalFolder | null, repo: VcsRepo | null, project: VcsProject | null): { ok: boolean; text: string } | null {
   if (!mode || !info) return null;
+  if (mode === 'code') {
+    if (!info.repoRoot) return { ok: false, text: 'This folder isn’t in a Git repository any more. Pick another project.' };
+    if (info.taken) return { ok: false, text: takenText(info) };
+    const on = info.branch ? ` on ${info.branch}` : '';
+    return project?.remote
+      ? { ok: true, text: `Versions are commits${on}, beside the code’s, and push to ${project.remote}. The first one waits for you to push it.` }
+      : { ok: true, text: `Versions are commits${on}, beside the code’s. The project has no remote, so they stay on this computer.` };
+  }
   if (mode === 'existing') {
     if (info.matches) return { ok: true, text: 'Your copy of the repository is here.' };
     if (info.state === 'missing' || info.state === 'empty') return { ok: true, text: 'The repository will be downloaded here.' };
@@ -124,6 +149,7 @@ function localVerdict(mode: Mode | null, info: VcsLocalFolder | null, repo: VcsR
     return { ok: false, text: 'This folder isn’t empty. Pick another place, or another name.' };
   }
   if (info.state === 'files') return { ok: false, text: 'This folder has other files in it. Pick another name or place.' };
+  if (info.taken) return { ok: false, text: takenText(info) };
   if (info.repoRoot) return { ok: true, text: `It joins the repository in ${lastPart(info.repoRoot)}.` };
   return { ok: true, text: 'A new Git repository is made here.' };
 }
@@ -167,6 +193,14 @@ function Setup({ fileId }: { fileId: string }) {
   const [local, setLocal] = useState<VcsLocalFolder | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [where, setWhere] = useState<Where>('own');
+  /** Code projects on this computer (live sites' folders, repositories other designs are in). */
+  const [projects, setProjects] = useState<VcsProject[] | null>(null);
+  const [projectsError, setProjectsError] = useState<string | null>(null);
+  const [project, setProject] = useState<VcsProject | null>(null);
+  /** The design's folder inside the project. */
+  const [inner, setInner] = useState(() => `designs/${folderNameFor(docName)}`);
+  const [pickNote, setPickNote] = useState<string | null>(null);
 
   const loadSetup = (fresh = false) =>
     client.request<VcsSetup>('vcs.setup', { fresh }).then(
@@ -182,7 +216,23 @@ function Setup({ fileId }: { fileId: string }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const repo = choice?.kind === 'existing' ? choice.repo : null;
-  const mode: Mode | null = account === LOCAL ? 'local' : (choice?.kind ?? null);
+  const mode: Mode | null = where === 'code' ? (project ? 'code' : null) : account === LOCAL ? 'local' : (choice?.kind ?? null);
+
+  useEffect(() => {
+    if (where !== 'code' || projects) return;
+    let current = true;
+    client.request<VcsProject[]>('vcs.projects', {}).then(
+      (list) => {
+        if (!current) return;
+        setProjects(list);
+        setProject((p) => p ?? list[0] ?? null);
+      },
+      (e) => current && setProjectsError(errorText(e))
+    );
+    return () => {
+      current = false;
+    };
+  }, [where]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setRepos(null);
@@ -218,14 +268,22 @@ function Setup({ fileId }: { fileId: string }) {
     };
   }, [repo?.fullName]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const localPath = exact ?? (parent && mode ? joinPath(parent, mode === 'local' ? name.trim() || folderNameFor(docName) : mode === 'new' ? newName : (repo?.name ?? '')) : '');
+  const innerPath = cleanInner(inner);
+  const localPath =
+    mode === 'code'
+      ? innerPath
+        ? joinPath(project!.root, innerPath)
+        : ''
+      : (exact ?? (parent && mode ? joinPath(parent, mode === 'local' ? name.trim() || folderNameFor(docName) : mode === 'new' ? newName : (repo?.name ?? '')) : ''));
 
   useEffect(() => {
     setLocal(null);
     if (!localPath || !mode) return;
     let current = true;
     const timer = setTimeout(() => {
-      client.request<VcsLocalFolder>('vcs.inspect', { path: localPath, fullName: repo?.fullName }).then(
+      // Where the design itself would go (not a repository's folder): say if it's taken.
+      const designDir = mode === 'local' || mode === 'code';
+      client.request<VcsLocalFolder>('vcs.inspect', { path: localPath, fullName: repo?.fullName, ...(designDir ? { fileId } : {}) }).then(
         (info) => current && setLocal(info),
         () => {}
       );
@@ -243,14 +301,47 @@ function Setup({ fileId }: { fileId: string }) {
   const folders = useMemo(() => (tree ? tree.dirs.filter((d) => parentOf(d) === at).sort((a, b) => a.localeCompare(b)) : []), [tree, at]);
   const repoPath = [at, name.trim()].filter(Boolean).join('/');
   const designThere = !!tree?.designs.includes(repoPath);
-  const verdict = localVerdict(mode, local, repo);
+  const verdict = localVerdict(mode, local, repo, project);
   const ready =
     !!setup?.git &&
     !busy &&
     !!verdict?.ok &&
-    (mode === 'local' ? !!name.trim() : mode === 'new' ? /^[A-Za-z0-9._-]{1,100}$/.test(newName) : mode === 'existing' ? !!tree && !designThere : false);
+    (mode === 'code'
+      ? !!innerPath
+      : mode === 'local'
+        ? !!name.trim()
+        : mode === 'new'
+          ? /^[A-Za-z0-9._-]{1,100}$/.test(newName)
+          : mode === 'existing'
+            ? !!tree && !designThere
+            : false);
+
+  /** Pick a code project's folder (or a folder inside it, which the design then goes in). */
+  async function chooseProject() {
+    setPickNote(null);
+    let picked: string | null;
+    try {
+      picked = await client.request<string | null>('vcs.pickFolder', { title: 'Choose your code project’s folder', start: project?.root ?? parent });
+    } catch (e) {
+      return setError(errorText(e));
+    }
+    if (!picked) return;
+    try {
+      const info = await client.request<VcsLocalFolder>('vcs.inspect', { path: picked });
+      if (!info.repoRoot) return setPickNote(`${lastPart(picked)} isn’t a Git repository. Run git init in it first, or keep the design in its own repository.`);
+      const list = await client.request<VcsProject[]>('vcs.projects', { also: picked });
+      const found = list[0];
+      if (!found) return;
+      setProjects(list);
+      setProject(found);
+      setInner(`${info.inner || 'designs'}/${folderNameFor(docName)}`);
+    } catch (e) {
+      setError(errorText(e));
+    }
+  }
 
   async function changeFolder() {
+    if (mode === 'code') return chooseProject();
     let picked: string | null;
     try {
       picked = await client.request<string | null>('vcs.pickFolder', {
@@ -278,8 +369,9 @@ function Setup({ fileId }: { fileId: string }) {
   async function start() {
     if (!mode) return;
     const plan: VcsTrackPlan =
-      mode === 'local'
-        ? { kind: 'local', dir: localPath }
+      mode === 'local' || mode === 'code'
+        ? // Beside code, the branch carries other work: the first version is committed, and pushed when the user says.
+          { kind: 'local', dir: localPath, ...(mode === 'code' ? { push: false } : {}) }
         : {
             kind: 'github',
             account,
@@ -293,6 +385,7 @@ function Setup({ fileId }: { fileId: string }) {
       const result = await client.request<VcsResult>('vcs.track', { fileId, plan });
       setState({ vcs: result.status });
       if (result.warning) toast(result.warning, 7000);
+      else if (mode === 'code') toast(`Committed the first version in ${project!.name}${result.status.branch ? ` on ${result.status.branch}` : ''}`, 4000);
       else toast(mode === 'local' ? 'Saved the first version' : `Saved the first version to ${mode === 'new' ? `${account}/${newName}` : repo!.fullName}`, 4000);
     } catch (e) {
       setError(errorText(e));
@@ -335,20 +428,86 @@ function Setup({ fileId }: { fileId: string }) {
         </div>
       )}
 
-      <Field label="Account">
-        <Select value={account} options={accountOptions} onChange={setAccount} aria-label="GitHub account" />
-        {!setup.accounts.length && (
-          <p className="op-vc-note">
-            No GitHub sign-in found on this computer. Sign in with the GitHub CLI (<code>gh auth login</code>) or Git, then{' '}
-            <button type="button" className="op-vc-link" onClick={() => void loadSetup(true)}>
-              check again
-            </button>
-            . Until then, versions can stay on this computer.
-          </p>
-        )}
+      <Field label="Keep it in">
+        <div className="op-toolbar op-segmented op-vc-segmented" role="radiogroup" aria-label="Keep it in">
+          <button type="button" role="radio" aria-checked={where === 'own'} className={`op-tab${where === 'own' ? ' active' : ''}`} onClick={() => setWhere('own')} title="A repository of its own, on GitHub or on this computer">
+            <FolderGit2 size={12} />
+            <span className="op-tab-label">Own repository</span>
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={where === 'code'}
+            className={`op-tab${where === 'code' ? ' active' : ''}`}
+            onClick={() => setWhere('code')}
+            title="A folder in your code project’s repository: the design goes along with the code’s commits, branches and pushes"
+          >
+            <FolderCode size={12} />
+            <span className="op-tab-label">Code project</span>
+          </button>
+        </div>
       </Field>
 
-      {account && account !== LOCAL && (
+      {where === 'code' && (
+        <Field label="Code project" aside={projects && projects.length > 0 && <span className="op-label">{projects.length}</span>}>
+          <div className="op-vc-list op-scroll short" role="listbox" aria-label="Code projects">
+            {projects?.map((p) => (
+              <button
+                key={p.root}
+                type="button"
+                role="option"
+                aria-selected={project?.root === p.root}
+                className={`op-vc-row${project?.root === p.root ? ' selected' : ''}`}
+                title={p.remote ? `${p.root}\n${p.remote}` : p.root}
+                onClick={() => setProject(p)}
+              >
+                <FolderCode size={13} />
+                <span className="op-truncate">{p.name}</span>
+                {p.branch && (
+                  <span className="meta op-truncate" style={{ gap: 3, alignItems: 'center', maxWidth: '45%' }}>
+                    <GitBranch size={11} />
+                    {p.branch}
+                  </span>
+                )}
+              </button>
+            ))}
+            {!projects && !projectsError && <div className="op-vc-row muted">Looking for your code projects…</div>}
+            <button type="button" className="op-vc-row" onClick={() => void chooseProject()}>
+              <FolderOpen size={13} />
+              <span className="op-truncate">{projects?.length ? 'Another folder…' : 'Choose your project’s folder…'}</span>
+            </button>
+          </div>
+          {projectsError && <p className="op-vc-note bad">{projectsError}</p>}
+          {pickNote && <p className="op-vc-note bad">{pickNote}</p>}
+          {projects && !projects.length && !pickNote && <p className="op-vc-note">Pick the folder of a project that uses Git. The design gets a folder inside it, and goes along with the code.</p>}
+        </Field>
+      )}
+
+      {mode === 'code' && (
+        <Field label="Folder in the project">
+          <input className="op-input" value={inner} onChange={(e) => setInner(e.target.value)} aria-label="The design’s folder in the project" spellCheck={false} />
+          <p className="op-vc-note">
+            Saves to <code>{innerPath || '…'}</code> in {project!.name}
+          </p>
+        </Field>
+      )}
+
+      {where === 'own' && (
+        <Field label="Account">
+          <Select value={account} options={accountOptions} onChange={setAccount} aria-label="GitHub account" />
+          {!setup.accounts.length && (
+            <p className="op-vc-note">
+              No GitHub sign-in found on this computer. Sign in with the GitHub CLI (<code>gh auth login</code>) or Git, then{' '}
+              <button type="button" className="op-vc-link" onClick={() => void loadSetup(true)}>
+                check again
+              </button>
+              . Until then, versions can stay on this computer.
+            </p>
+          )}
+        </Field>
+      )}
+
+      {where === 'own' && account && account !== LOCAL && (
         <Field label="Repository" aside={repos && <span className="op-label">{repos.length}</span>}>
           <label className="op-vc-search">
             <Search size={13} />
@@ -456,12 +615,15 @@ function Setup({ fileId }: { fileId: string }) {
             <span>{localPath}</span>
           </div>
           <div className="op-row" style={{ alignItems: 'flex-start' }}>
-            <p className={`op-vc-note${verdict && !verdict.ok ? ' bad' : ''}`} style={{ flex: 1 }}>
-              {verdict?.text ?? 'Checking the folder…'}
+            <p className={`op-vc-note${(verdict && !verdict.ok) || !localPath ? ' bad' : ''}`} style={{ flex: 1 }}>
+              {!localPath ? 'Name a folder for the design.' : (verdict?.text ?? 'Checking the folder…')}
             </p>
-            <button type="button" className="op-btn outline compact" onClick={() => void changeFolder()}>
-              Change…
-            </button>
+            {/* A code project is picked from its list. */}
+            {mode !== 'code' && (
+              <button type="button" className="op-btn outline compact" onClick={() => void changeFolder()}>
+                Change…
+              </button>
+            )}
           </div>
         </Field>
       )}
@@ -477,7 +639,7 @@ function Setup({ fileId }: { fileId: string }) {
           'Start tracking'
         )}
       </button>
-      {!mode && account !== LOCAL && <p className="op-vc-note">Pick a repository above, or make a new one.</p>}
+      {!mode && where === 'own' && account !== LOCAL && <p className="op-vc-note">Pick a repository above, or make a new one.</p>}
     </div>
   );
 }
@@ -598,9 +760,13 @@ function Tracked({ fileId, status }: { fileId: string; status: VcsStatus }) {
   };
 
   useEffect(() => {
-    void loadBranches();
     fetchRemote(false);
   }, [fileId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Branches made or switched to outside OpenPaper (in a code editor, say) show up too.
+  useEffect(() => {
+    void loadBranches();
+  }, [fileId, branch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The branch name follows the message until it's typed in by hand.
   useEffect(() => {
@@ -735,7 +901,11 @@ function Tracked({ fileId, status }: { fileId: string; status: VcsStatus }) {
           onChange={(name) => void switchTo(name)}
           placeholder="No branch"
           disabled={!!busy || !!previewing}
-          title="Branch: switching shows that branch’s version of the design"
+          title={
+            status.path
+              ? 'Branch: switching checks it out for the whole repository, code and all, and shows its version of the design'
+              : 'Branch: switching shows that branch’s version of the design'
+          }
           aria-label="Branch"
           style={{ flex: 1 }}
         />
@@ -847,6 +1017,8 @@ function Tracked({ fileId, status }: { fileId: string; status: VcsStatus }) {
             </span>
           )}
         </button>
+        {/* In a code project, those can be the code's commits. */}
+        {hasRemote && ahead > 0 && changes.length > 0 && !previewing && <p className="op-vc-note">The push also takes {plural(ahead, 'earlier commit')} on {branch ?? 'this branch'} that aren’t on the remote yet.</p>}
         {previewing && <p className="op-vc-note">You’re looking at an older version. Go back to the current version to commit.</p>}
       </div>
 

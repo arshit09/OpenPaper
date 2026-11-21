@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, watch, type FSWatcher } from 'node:fs';
 import { mkdir, readdir, readFile, stat } from 'node:fs/promises';
 import { homedir, userInfo } from 'node:os';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import {
   newFileId,
   type PaperDocument,
@@ -11,6 +11,7 @@ import {
   type VcsChange,
   type VcsCommit,
   type VcsLocalFolder,
+  type VcsProject,
   type VcsSetup,
   type VcsStatus,
   type VcsTrackPlan,
@@ -18,7 +19,21 @@ import {
 import { writeFileAtomic } from '../fs-utils.ts';
 import type { ActorRef, DocumentHub, LiveDocument } from '../hub.ts';
 import type { FileStore } from '../storage.ts';
-import { ASSETS_DIR, changeLabel, designFiles, folderDesignId, folderStamp, MANIFEST, PAGES_DIR, parseDesign, readDesignFolder, writeDesignFolder } from './folder.ts';
+import {
+  ASSETS_DIR,
+  changeLabel,
+  designFiles,
+  findDesignFolders,
+  folderDesignId,
+  folderStamp,
+  isDesignPath,
+  MANIFEST,
+  PAGES_DIR,
+  parseDesign,
+  readDesignFolder,
+  sameDesign,
+  writeDesignFolder,
+} from './folder.ts';
 import { git, GitError, gitTest, gitVersion, readBlobs, splitNul } from './git.ts';
 import { GitHub, gitAuthEnv, githubFullName } from './github.ts';
 
@@ -26,6 +41,10 @@ import { GitHub, gitAuthEnv, githubFullName } from './github.ts';
  * Version control for designs: a tracked design is mirrored into a folder inside a Git repository
  * (written a moment after each edit), and commits, branches, pushes and pulls are plain Git on that
  * folder. Bindings (file id → folder) live in `<home>/vcs.json`.
+ *
+ * The repository can be a code project: the design then goes along with the code's Git work. Its folder
+ * is watched, so a branch switch, pull or stash made outside OpenPaper (a terminal, a code editor) shows
+ * on the canvas as soon as Git is done.
  */
 
 export interface VcsOptions {
@@ -38,6 +57,8 @@ export interface VcsOptions {
   /** A file's version control changed: editors showing it ask for its status again. */
   changed: (fileId: string, notice?: string) => void;
   github?: GitHub;
+  /** Folders the user keeps code in (their live sites' project folders), offered as places to keep a design. */
+  projectFolders?: () => string[];
 }
 
 /** What an operation leaves behind, plus anything worth telling the user about it. */
@@ -73,6 +94,10 @@ interface VcsFile {
 }
 
 const SYNC_DELAY_MS = 700;
+/** How long a design's folder has to be quiet after a change outside OpenPaper before it's read. */
+const FOLLOW_DELAY_MS = 400;
+/** Times to wait for Git to finish (its index.lock to go) before reading the folder anyway. */
+const FOLLOW_RETRIES = 20;
 const FETCH_EVERY_MS = 60_000;
 const NETWORK_TIMEOUT_MS = 10 * 60_000;
 const SNAPSHOT_CACHE = 6;
@@ -91,6 +116,26 @@ async function isDir(path: string): Promise<boolean> {
 }
 
 const samePath = (a: string, b: string) => (process.platform === 'win32' ? resolve(a).toLowerCase() === resolve(b).toLowerCase() : resolve(a) === resolve(b));
+
+/** The branch checked out at `cwd` (null: not on a branch, or not in a repository). */
+function currentBranch(cwd: string): Promise<string | null> {
+  return git(['branch', '--show-current'], { cwd }).then(
+    (s) => s.trim() || null,
+    () => null
+  );
+}
+
+/** A remote as people name it: `owner/name` on GitHub, `host/path` elsewhere, a repository folder's name on this computer. */
+function remoteLabel(url: string | null): string | null {
+  if (!url) return null;
+  const github = githubFullName(url);
+  if (github) return github;
+  const scp = /^[^@/\\]+@([^:/\\]+):(.+)$/.exec(url); // git@host:team/app.git
+  if (scp) return `${scp[1]}/${scp[2]}`.replace(/\.git\/?$/, '');
+  const web = /^[a-z][\w+.-]*:\/\/(?:[^@/]+@)?(.+)$/i.exec(url);
+  if (web && !/^file:/i.test(url)) return web[1]!.replace(/\.git\/?$/, '').replace(/\/$/, '');
+  return basename(url.replace(/^file:\/\//i, '').replace(/[\\/]+$/, '')).replace(/\.git$/, '') || url;
+}
 
 /** A remote URL without any credentials written into it. */
 const cleanUrl = (url: string) => url.replace(/^(\w+:\/\/)[^@/]+@/, '$1');
@@ -124,6 +169,9 @@ function cleanRepoPath(path: string): string {
   return parts.join('/');
 }
 
+/** Git's ways of saying the remote turned the sign-in down. */
+const AUTH_REFUSED = /Authentication failed|could not read Username|terminal prompts disabled|Permission to .* denied|returned error: 403/i;
+
 /** Turn what git said into what to do about it. */
 function friendly(error: unknown, branch?: string | null): Error {
   const text = error instanceof GitError ? `${error.message}\n${error.stderr}` : message(error);
@@ -136,7 +184,7 @@ function friendly(error: unknown, branch?: string | null): Error {
   if (/Not possible to fast-forward|have diverged|divergent branches/i.test(text)) {
     return new Error('This branch and the remote both have new commits. Push yours to a new branch instead, or merge them with Git.');
   }
-  if (/Authentication failed|could not read Username|terminal prompts disabled|Permission to .* denied|returned error: 403/i.test(text)) {
+  if (AUTH_REFUSED.test(text)) {
     return new Error('The remote turned down the sign-in. Check that this account can push to the repository, or sign in again with `gh auth login`.');
   }
   if (/Could not resolve host|unable to access|Failed to connect|timed out/i.test(text)) return new Error('Can’t reach the remote. Check your internet connection.');
@@ -194,6 +242,13 @@ export class VcsService {
   private readonly snapshots = new Map<string, { doc: PaperDocument; commit: VcsCommit }>();
   /** Why a file's folder can't be mirrored right now (e.g. unreadable after a merge conflict). */
   private readonly problems = new Map<string, string>();
+  /** Watchers on the design folders, and the pending reads of folders that changed. */
+  private readonly watchers = new Map<string, FSWatcher>();
+  private readonly followTimers = new Map<string, NodeJS.Timeout>();
+  /** Each design's repository's Git folder ('' when there's none), to see whether Git is at work in it. */
+  private readonly gitDirs = new Map<string, string>();
+  /** The branch each design was last seen on, to say so when it changes outside OpenPaper. */
+  private readonly branchSeen = new Map<string, string | null>();
 
   constructor(private readonly opts: VcsOptions) {
     this.github = opts.github ?? new GitHub();
@@ -209,6 +264,7 @@ export class VcsService {
     this.opts.hub.on('commit', (e) => {
       if (this.data.files[e.fileId]) this.schedule(e.fileId);
     });
+    for (const fileId of Object.keys(this.data.files)) this.watch(fileId);
   }
 
   isTracked(fileId: string): boolean {
@@ -217,6 +273,7 @@ export class VcsService {
 
   /** Bring every pending folder up to date (the server is stopping). */
   async close(): Promise<void> {
+    for (const fileId of [...this.watchers.keys(), ...this.followTimers.keys()]) this.unwatch(fileId);
     const pending = [...this.timers.keys()];
     for (const timer of this.timers.values()) clearTimeout(timer);
     this.timers.clear();
@@ -250,11 +307,86 @@ export class VcsService {
       setTimeout(() => {
         this.timers.delete(fileId);
         this.run(fileId, () => this.syncNow(fileId)).then(
-          (notice) => this.opts.changed(fileId, notice),
+          (notice) => notice || this.opts.changed(fileId), // a notice was sent already
           (error) => console.error(`[openpaper] couldn't write ${fileId} to its folder:`, error)
         );
       }, SYNC_DELAY_MS)
     );
+  }
+
+  // ---- following the folder ------------------------------------------------------
+
+  /** Watch the design's folder for changes made outside OpenPaper (nothing happens if it's watched already). */
+  private watch(fileId: string): void {
+    const b = this.data.files[fileId];
+    if (!b || this.watchers.has(fileId)) return;
+    let watcher: FSWatcher;
+    try {
+      watcher = watch(b.dir, { recursive: true, persistent: false }, (_event, name) => {
+        if (!name || isDesignPath(String(name).replace(/\\/g, '/'))) this.follow(fileId);
+      });
+    } catch {
+      return; // the folder is gone, or can't be watched here: changes show at the next status check instead
+    }
+    // The folder went away (a branch without it): it's watched again once it's back.
+    watcher.on('error', () => this.unwatch(fileId));
+    this.watchers.set(fileId, watcher);
+  }
+
+  private unwatch(fileId: string): void {
+    this.watchers.get(fileId)?.close();
+    this.watchers.delete(fileId);
+    clearTimeout(this.followTimers.get(fileId));
+    this.followTimers.delete(fileId);
+    this.gitDirs.delete(fileId);
+  }
+
+  /** The design's files changed on disk: read them once they've been quiet for a moment. */
+  private follow(fileId: string, attempt = 0): void {
+    clearTimeout(this.followTimers.get(fileId));
+    this.followTimers.set(
+      fileId,
+      setTimeout(() => {
+        this.followTimers.delete(fileId);
+        void this.followNow(fileId, attempt);
+      }, FOLLOW_DELAY_MS)
+    );
+  }
+
+  private async followNow(fileId: string, attempt: number): Promise<void> {
+    const b = this.data.files[fileId];
+    // An edit is on its way to the folder, and writing it deals with the change.
+    if (!b || this.timers.has(fileId)) return;
+    // Git is still at work (a checkout, pull or stash): wait for it, so the design isn't read half switched.
+    if (attempt < FOLLOW_RETRIES && (await this.gitBusy(fileId))) return this.follow(fileId, attempt + 1);
+    const before = b.stamp;
+    try {
+      const notice = await this.run(fileId, () => this.syncNow(fileId));
+      // Our own writes come back here too, and change nothing. A notice was sent already.
+      if (!notice && this.data.files[fileId]?.stamp !== before) this.opts.changed(fileId);
+    } catch (error) {
+      console.error(`[openpaper] couldn't read ${fileId}'s folder after it changed:`, error);
+    }
+  }
+
+  /** Whether a Git command holds the design's repository's index (its `index.lock` is there). */
+  private async gitBusy(fileId: string): Promise<boolean> {
+    let gitDir = this.gitDirs.get(fileId);
+    if (gitDir === undefined) {
+      const dir = this.data.files[fileId]?.dir;
+      gitDir = dir ? await git(['rev-parse', '--absolute-git-dir'], { cwd: dir }).then((s) => s.trim(), () => '') : '';
+      this.gitDirs.set(fileId, gitDir);
+    }
+    return !!gitDir && existsSync(join(gitDir, 'index.lock'));
+  }
+
+  /** What to tell the user when the folder's version replaced the design: a branch switch outside OpenPaper says so. */
+  private async outsideNotice(fileId: string, dir: string): Promise<string> {
+    const branch = await currentBranch(dir);
+    const before = this.branchSeen.get(fileId);
+    this.branchSeen.set(fileId, branch);
+    if (branch && before !== undefined && branch !== before) return `Switched to ${branch} outside OpenPaper, so the design shows that branch’s version.`;
+    return 'The design’s folder changed outside OpenPaper, so the design now shows what’s in it.';
   }
 
   private persistNow(): Promise<void> {
@@ -267,43 +399,57 @@ export class VcsService {
 
   /**
    * Make the folder match the design. If the folder changed outside OpenPaper (a pull or branch switch in a
-   * terminal) while the design wasn't edited here, the folder's version is loaded instead. Returns a notice then.
+   * terminal) while the design wasn't edited here, the folder's version is loaded instead. Returns a notice then,
+   * and tells the editors showing the design.
    */
   private async syncNow(fileId: string): Promise<string | undefined> {
     clearTimeout(this.timers.get(fileId));
     this.timers.delete(fileId);
     const b = this.data.files[fileId];
     if (!b || !(await isDir(b.dir))) return;
+    this.watch(fileId);
     const live = await this.opts.hub.get(fileId);
     const stamp = await folderStamp(b.dir);
     // Neither side changed since the last sync (the status check that follows every write, say):
     // nothing to serialize, compare or record.
     if (stamp && stamp === b.stamp && live.doc.updatedAt === b.syncedAt && !this.problems.has(fileId)) return;
     let notice: string | undefined;
-    let loaded = false;
-    if (stamp && b.stamp && stamp !== b.stamp) {
+    /** The version of the design the folder holds once this is done (an edit made meanwhile isn't in it). */
+    let synced: string | null = null;
+    let replaced = false;
+    if (stamp && b.stamp && stamp !== b.stamp && live.doc.updatedAt === b.syncedAt) {
+      let doc: PaperDocument;
+      try {
+        doc = await readDesignFolder(b.dir, this.opts.mediaDir);
+      } catch (error) {
+        // Don't write over files someone is fixing (a merge conflict): wait until they can be read.
+        this.problems.set(fileId, `The design’s files can’t be read (${message(error)}). Fix them, or discard the changes with Git.`);
+        return;
+      }
+      // Still not edited while the files were read (else, below, the edit is kept and written).
       if (live.doc.updatedAt === b.syncedAt) {
-        let doc: PaperDocument;
-        try {
-          doc = await readDesignFolder(b.dir, this.opts.mediaDir);
-        } catch (error) {
-          // Don't write over files someone is fixing (a merge conflict): wait until they can be read.
-          this.problems.set(fileId, `The design’s files can’t be read (${message(error)}). Fix them, or discard the changes with Git.`);
-          return;
+        // Files rewritten with the same design (a formatter, say) change nothing, and undo keeps its steps.
+        if (!sameDesign(doc, live.doc, b.designId ?? fileId)) {
+          this.replaceFromFolder(live, doc, 'Load the design from its folder');
+          replaced = true;
         }
-        this.replaceFromFolder(live, doc, 'Load the design from its folder');
-        loaded = true;
-        notice = 'The design’s folder changed outside OpenPaper, so the design now shows what’s in it.';
-      } else {
-        notice = 'The design’s folder changed outside OpenPaper while you were editing; your version was kept.';
+        synced = live.doc.updatedAt;
       }
     }
+    if (synced === null && stamp && b.stamp && stamp !== b.stamp) notice = 'The design’s folder changed outside OpenPaper while you were editing; your version was kept.';
     this.problems.delete(fileId);
-    if (!loaded) await writeDesignFolder(b.dir, live.doc, this.opts.mediaDir, b.designId);
+    if (synced === null) {
+      const doc = live.doc;
+      synced = doc.updatedAt;
+      await writeDesignFolder(b.dir, doc, this.opts.mediaDir, b.designId);
+    }
+    if (replaced) notice = await this.outsideNotice(fileId, b.dir);
     const recorded = `${b.syncedAt}|${b.stamp}`;
-    b.syncedAt = live.doc.updatedAt;
+    b.syncedAt = synced;
     b.stamp = await folderStamp(b.dir);
     if (`${b.syncedAt}|${b.stamp}` !== recorded) await this.persistNow();
+    // Said whichever way the change was found (a status check, the folder's watcher, a commit).
+    if (notice) this.opts.changed(fileId, notice);
     return notice;
   }
 
@@ -320,12 +466,17 @@ export class VcsService {
     const b = this.data.files[fileId]!;
     const live = await this.opts.hub.get(fileId);
     let notice: string | undefined;
-    if (await folderDesignId(b.dir)) this.replaceFromFolder(live, await readDesignFolder(b.dir, this.opts.mediaDir), label);
-    else {
-      await writeDesignFolder(b.dir, live.doc, this.opts.mediaDir, b.designId);
+    let synced: string;
+    if (await folderDesignId(b.dir)) {
+      this.replaceFromFolder(live, await readDesignFolder(b.dir, this.opts.mediaDir), label);
+      synced = live.doc.updatedAt;
+    } else {
+      const doc = live.doc;
+      synced = doc.updatedAt;
+      await writeDesignFolder(b.dir, doc, this.opts.mediaDir, b.designId);
       notice = 'This branch doesn’t have the design yet. Commit to add it.';
     }
-    b.syncedAt = live.doc.updatedAt;
+    b.syncedAt = synced;
     b.stamp = await folderStamp(b.dir);
     await this.persistNow();
     return notice;
@@ -362,6 +513,21 @@ export class VcsService {
     } catch {
       // Signed out since: Git's own credentials may still work.
       return {};
+    }
+  }
+
+  /**
+   * Run a network command signed in as the design's GitHub login, then once more with Git's own sign-in if
+   * GitHub turns the login down: a code project's pushes may go through another account.
+   */
+  private async withAuth<T>(binding: Binding, fn: (env: Record<string, string>) => Promise<T>): Promise<T> {
+    const env = await this.authEnv(binding);
+    try {
+      return await fn(env);
+    } catch (error) {
+      const text = error instanceof GitError ? `${error.message}\n${error.stderr}` : message(error);
+      if (!Object.keys(env).length || !AUTH_REFUSED.test(text)) throw error;
+      return fn({});
     }
   }
 
@@ -421,6 +587,7 @@ export class VcsService {
     const url = await originUrl(where.root);
     const fullName = githubFullName(url);
     status.remote = url ? { url, fullName, webUrl: fullName ? `https://github.com/${fullName}` : null } : null;
+    this.branchSeen.set(fileId, status.branch ?? null);
     return status;
   }
 
@@ -434,7 +601,7 @@ export class VcsService {
         try {
           const where = await this.locate(fileId);
           const remotes = splitLines(await git(['remote'], { cwd: where.root }));
-          if (remotes.includes('origin')) await git(['fetch', '--prune', 'origin'], { cwd: where.root, env: await this.authEnv(binding), timeoutMs: NETWORK_TIMEOUT_MS });
+          if (remotes.includes('origin')) await this.withAuth(binding, (env) => git(['fetch', '--prune', 'origin'], { cwd: where.root, env, timeoutMs: NETWORK_TIMEOUT_MS }));
         } catch (error) {
           warning = `Couldn’t check the remote for new commits: ${message(friendly(error))}`;
         }
@@ -645,7 +812,7 @@ export class VcsService {
     if (!splitLines(await git(['remote'], { cwd: where.root })).includes('origin')) throw new Error('This repository isn’t connected to a remote, so there’s nowhere to push.');
     if (!(await gitTest(['rev-parse', '--verify', '-q', 'HEAD'], { cwd: where.root }))) throw new Error('Commit something first: there’s nothing to push yet.');
     try {
-      await git(['push', '-u', 'origin', branch], { cwd: where.root, env: await this.authEnv(where.binding), timeoutMs: NETWORK_TIMEOUT_MS });
+      await this.withAuth(where.binding, (env) => git(['push', '-u', 'origin', branch], { cwd: where.root, env, timeoutMs: NETWORK_TIMEOUT_MS }));
     } catch (error) {
       throw friendly(error, branch);
     }
@@ -659,10 +826,9 @@ export class VcsService {
       await this.syncNow(fileId);
       const branch = (await git(['branch', '--show-current'], { cwd: where.root })).trim() || null;
       if (!(await gitTest(['rev-parse', '--verify', '-q', '@{u}'], { cwd: where.root }))) throw new Error(`${branch ?? 'This branch'} isn’t on the remote yet, so there’s nothing to pull.`);
-      const env = await this.authEnv(where.binding);
       await this.exclusive(async () => {
         try {
-          await git(['pull', '--ff-only', '--no-rebase'], { cwd: where.root, env, timeoutMs: NETWORK_TIMEOUT_MS });
+          await this.withAuth(where.binding, (env) => git(['pull', '--ff-only', '--no-rebase'], { cwd: where.root, env, timeoutMs: NETWORK_TIMEOUT_MS }));
         } catch (error) {
           throw friendly(error, branch);
         }
@@ -682,22 +848,55 @@ export class VcsService {
 
   /**
    * What a folder on this computer holds (`fullName`: does its `origin` point at that GitHub repository?).
-   * A folder that doesn't exist yet reports the repository it would be made in, if any.
+   * A folder that doesn't exist yet reports the repository it would be made in, if any. With `fileId`, the
+   * folder is the one that design would be kept in, and `taken` says why it can't be.
    */
-  async inspectLocal(path: string, fullName?: string): Promise<VcsLocalFolder> {
+  async inspectLocal(path: string, fullName?: string, fileId?: string): Promise<VcsLocalFolder> {
     const abs = resolve(String(path));
     const info = await stat(abs).catch(() => null);
-    if (info && !info.isDirectory()) return { path: abs, state: 'files' };
+    const taken = fileId ? await this.ensureFree(abs, fileId).then(() => undefined, (error: unknown) => message(error)) : undefined;
+    const extra = taken ? { taken } : {};
+    if (info && !info.isDirectory()) return { path: abs, state: 'files', ...extra };
     let near = abs;
     while (!info && !(await isDir(near)) && dirname(near) !== near) near = dirname(near);
     const root = (await isDir(near)) ? await git(['rev-parse', '--show-toplevel'], { cwd: near }).then((s) => resolve(s.trim()), () => null) : null;
-    if (!info) return root ? { path: abs, state: 'missing', repoRoot: root } : { path: abs, state: 'missing' };
     if (root) {
+      const repo = { repoRoot: root, branch: await currentBranch(root), inner: relative(root, abs).split(sep).join('/'), ...extra };
+      if (!info) return { path: abs, state: 'missing', ...repo };
       const url = await originUrl(root);
       const matches = fullName ? githubFullName(url)?.toLowerCase() === fullName.toLowerCase() : undefined;
-      return { path: abs, state: samePath(root, abs) ? 'repo' : 'in-repo', repoRoot: root, remoteUrl: url, ...(matches !== undefined ? { matches } : {}) };
+      return { path: abs, state: samePath(root, abs) ? 'repo' : 'in-repo', remoteUrl: url, ...(matches !== undefined ? { matches } : {}), ...repo };
     }
-    return { path: abs, state: (await readdir(abs)).length ? 'files' : 'empty' };
+    if (!info) return { path: abs, state: 'missing', ...extra };
+    return { path: abs, state: (await readdir(abs)).length ? 'files' : 'empty', ...extra };
+  }
+
+  /**
+   * Git repositories on this computer to keep a design in beside its code: the folders of the user's live
+   * sites (most recently opened first), then repositories other designs are kept inside. `also`: a folder
+   * the user just picked, whose repository comes first.
+   */
+  async projects(also?: string): Promise<VcsProject[]> {
+    const sites = [...(also ? [resolve(also)] : []), ...(this.opts.projectFolders?.() ?? [])];
+    const folders = [...sites, ...Object.values(this.data.files).map((b) => b.dir)];
+    const roots = await Promise.all(
+      folders.map(async (folder) => ((await isDir(folder)) ? git(['rev-parse', '--show-toplevel'], { cwd: folder }).then((s) => resolve(s.trim()), () => null) : null))
+    );
+    const out: VcsProject[] = [];
+    roots.forEach((root, i) => {
+      if (!root || out.some((p) => samePath(p.root, root))) return;
+      // A repository that is a design's folder has nothing else in it to keep a design beside.
+      if (i >= sites.length && samePath(root, folders[i]!)) return;
+      out.push({ root, name: basename(root), branch: null, remote: null });
+    });
+    await Promise.all(
+      out.map(async (project) => {
+        const [branch, url] = await Promise.all([currentBranch(project.root), originUrl(project.root)]);
+        project.branch = branch;
+        project.remote = remoteLabel(url);
+      })
+    );
+    return out;
   }
 
   /** A design may go in a folder that's new, empty, holds this same design, or (a repository's top) only the usual repository files. */
@@ -723,8 +922,10 @@ export class VcsService {
     let dir: string;
     let account: string | null = null;
     let remote = false;
+    let push = true;
     if (plan.kind === 'local') {
       dir = resolve(String(plan.dir));
+      push = plan.push !== false;
       await this.ensureFree(dir, fileId);
       await mkdir(dir, { recursive: true });
       const root = await git(['rev-parse', '--show-toplevel'], { cwd: dir }).then((s) => resolve(s.trim()), () => null);
@@ -782,7 +983,7 @@ export class VcsService {
       } catch (error) {
         if (!(error instanceof NothingToCommit)) warning = `The design is in its folder, but the first commit failed: ${message(error)}`;
       }
-      if (remote && !warning) {
+      if (remote && push && !warning) {
         try {
           await this.pushNow(fileId);
         } catch (error) {
@@ -790,6 +991,7 @@ export class VcsService {
         }
       }
     });
+    this.watch(fileId);
     return { status: await this.status(fileId), warning };
   }
 
@@ -810,6 +1012,8 @@ export class VcsService {
       this.timers.delete(fileId);
       delete this.data.files[fileId];
       this.problems.delete(fileId);
+      this.branchSeen.delete(fileId);
+      this.unwatch(fileId);
       await this.persistNow();
     });
   }
@@ -817,9 +1021,16 @@ export class VcsService {
   /**
    * Open a design folder (e.g. from a cloned repository) as a file, tracked from there. If the same design is
    * already open from that folder, that file; if OpenPaper has the design elsewhere, a copy with a new id.
+   * A code project's folder works too, when there's one design inside it.
    */
   async openFolder(path: string): Promise<string> {
-    const dir = resolve(String(path));
+    let dir = resolve(String(path));
+    if (!existsSync(join(dir, MANIFEST)) && (await isDir(dir))) {
+      const found = await findDesignFolders(dir);
+      if (found.length > 1) throw new Error(`${dir} holds ${found.length} designs (${found.slice(0, 4).join(', ')}${found.length > 4 ? ', …' : ''}). Open the folder of the one you want.`);
+      if (!found.length) throw new Error(`There’s no OpenPaper design in ${dir}. Pick a design’s folder: the one with an ${MANIFEST} in it.`);
+      dir = join(dir, ...found[0]!.split('/'));
+    }
     for (const [id, b] of Object.entries(this.data.files)) if (samePath(b.dir, dir) && this.opts.store.has(id)) return id;
     const doc = await readDesignFolder(dir, this.opts.mediaDir);
     const designId = doc.id;
@@ -832,6 +1043,7 @@ export class VcsService {
     await this.persistNow();
     if (!root) await git(['init', '-b', 'main'], { cwd: dir });
     await this.run(doc.id, () => this.syncNow(doc.id));
+    this.watch(doc.id);
     return doc.id;
   }
 }

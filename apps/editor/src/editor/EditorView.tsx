@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useEditor, setState } from '../state/store.ts';
+import { useEditor, setState, getState } from '../state/store.ts';
 import { Canvas } from './canvas/Canvas.tsx';
 import { TopBar } from './TopBar.tsx';
 import { LeftPanel } from './panels/LeftPanel.tsx';
@@ -70,6 +70,17 @@ export function EditorView() {
     const timer = setTimeout(() => void refreshVcs().catch(() => {}), vcsEpoch ? 300 : 0);
     return () => clearTimeout(timer);
   }, [docId, vcsEpoch]);
+
+  // Git work done elsewhere in the design's repository (a commit or a new branch in a code editor) shows
+  // when the window is back in front.
+  useEffect(() => {
+    if (!docId) return;
+    const back = () => {
+      if (getState().vcs?.tracked) void refreshVcs().catch(() => {});
+    };
+    window.addEventListener('focus', back);
+    return () => window.removeEventListener('focus', back);
+  }, [docId]);
 
   useEffect(() => {
     if (docName !== undefined) document.title = `${docName} — OpenPaper`;

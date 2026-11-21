@@ -411,7 +411,13 @@ export function createSyncServer({ env, policy, mcpLaunch, agents, agentSettings
       case 'vcs.tree':
         return versionControl().github.tree(String(params.account), String(params.fullName), String(params.branch));
       case 'vcs.inspect':
-        return versionControl().inspectLocal(String(params.path ?? ''), typeof params.fullName === 'string' ? params.fullName : undefined);
+        return versionControl().inspectLocal(
+          String(params.path ?? ''),
+          typeof params.fullName === 'string' ? params.fullName : undefined,
+          typeof params.fileId === 'string' ? params.fileId : undefined
+        );
+      case 'vcs.projects':
+        return versionControl().projects(typeof params?.also === 'string' && params.also ? params.also : undefined);
       case 'vcs.pickFolder':
         return pickFolder({ title: String(params?.title ?? 'Choose a folder'), initial: typeof params?.start === 'string' && params.start ? params.start : undefined });
       case 'vcs.openFolder': {

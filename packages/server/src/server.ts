@@ -174,6 +174,7 @@ export async function startServer(opts: StartOptions): Promise<RunningServer> {
     store,
     mediaDir: paths.assets,
     file: join(paths.home, 'vcs.json'),
+    projectFolders: () => siteStore.list().map((site) => site.folder),
     changed: (fileId, notice) => views.broadcast(fileId, { t: 'vcs', fileId, ...(notice ? { notice } : {}) }),
   });
   await vcs.init();

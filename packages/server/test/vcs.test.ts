@@ -49,6 +49,14 @@ function sampleDoc(name = 'Landing'): PaperDocument {
 const gitIn = (cwd: string, ...args: string[]) =>
   execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
+/** Wait for something that happens on its own (a watched folder being read), up to a few seconds. */
+async function until(check: () => boolean, what: string): Promise<void> {
+  for (const end = Date.now() + 8000; !check(); ) {
+    if (Date.now() > end) throw new Error(`Timed out waiting until ${what}`);
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
 describe('design folder format', () => {
   it('round-trips a document through its files', () => {
     const doc = sampleDoc();
@@ -93,6 +101,8 @@ describe('version control', () => {
   let hub: DocumentHub;
   let vcs: VcsService;
   const notices: string[] = [];
+  /** Project folders of live sites. */
+  let sites: string[] = [];
 
   beforeAll(async () => {
     home = await mkdtemp(join(tmpdir(), 'openpaper-vcs-test-'));
@@ -101,7 +111,14 @@ describe('version control', () => {
     await store.init();
     await writeFile(join(paths.assets, IMAGE), 'not really a png');
     hub = new DocumentHub(store);
-    vcs = new VcsService({ hub, store, mediaDir: paths.assets, file: join(paths.home, 'vcs.json'), changed: (_id, notice) => notice && notices.push(notice) });
+    vcs = new VcsService({
+      hub,
+      store,
+      mediaDir: paths.assets,
+      file: join(paths.home, 'vcs.json'),
+      changed: (_id, notice) => notice && notices.push(notice),
+      projectFolders: () => sites,
+    });
     await vcs.init();
     // A bare repository stands in for GitHub; `work` is the user's copy of it.
     origin = join(home, 'origin.git');
@@ -205,10 +222,65 @@ describe('version control', () => {
     expect(status.branch).toBe('redesign');
     expect(hub.peek(fileId)!.doc.name).toBe('Landing v2');
     expect(status.changes).toEqual([]);
-    expect(notices.at(-1) ?? '').toBe('');
+    // Editors are told, even though a status check found it.
+    expect(notices.at(-1)).toBe('Switched to redesign outside OpenPaper, so the design shows that branch’s version.');
+    expect(notices.filter((n) => /your version was kept/.test(n))).toEqual([]);
     gitIn(work, 'switch', 'main');
     await vcs.status(fileId);
     expect(hub.peek(fileId)!.doc.name).toBe('Landing');
+  });
+
+  it('follows the repository by itself when Git changes the folder outside OpenPaper', async () => {
+    await vcs.status(fileId); // seen on main
+    const count = notices.length;
+    gitIn(work, 'switch', 'redesign');
+    await until(() => hub.peek(fileId)!.doc.name === 'Landing v2', 'the design shows the other branch');
+    await until(() => notices.length > count, 'editors are told');
+    expect(notices.at(-1)).toBe('Switched to redesign outside OpenPaper, so the design shows that branch’s version.');
+    // An edit lands on top of that branch's design, not the one from before the switch.
+    hub.peek(fileId)!.transact(user, 'Recolor', (tx) => tx.updateNode(title().id, (n) => void (n.styles.color = '#00ff00')));
+    const status = await vcs.status(fileId);
+    expect(status.branch).toBe('redesign');
+    expect(status.changes!.map((c) => c.label)).toEqual(['Page “Page 1”']);
+    expect(JSON.parse(await readFile(join(dir(), 'openpaper.json'), 'utf8')).name).toBe('Landing v2');
+    await vcs.restore(fileId, 'HEAD', user, { comments: true, label: 'Discard changes' });
+    expect((await vcs.status(fileId)).changes).toEqual([]);
+    gitIn(work, 'switch', 'main');
+    await until(() => hub.peek(fileId)!.doc.name === 'Landing', 'the design is back on main');
+  });
+
+  it('leaves the design and its undo steps alone when its files are rewritten with the same design', async () => {
+    hub.peek(fileId)!.transact(user, 'Recolor', (tx) => tx.updateNode(title().id, (n) => void (n.styles.color = '#0000ff')));
+    await vcs.status(fileId);
+    const page = join(dir(), pageFile(hub.peek(fileId)!.doc.pageList[0]!.id));
+    const text = await readFile(page, 'utf8');
+    const count = notices.length;
+    // A formatter in the code project, say: other spacing, same layers.
+    await writeFile(page, JSON.stringify(JSON.parse(text)) + '\n');
+    await vcs.status(fileId);
+    expect(hub.peek(fileId)!.canUndo(user)).toBe(true);
+    expect(notices.length).toBe(count);
+    expect(hub.peek(fileId)!.undo(user)).toBe('Recolor');
+    expect((await vcs.status(fileId)).changes).toEqual([]);
+  });
+
+  it('offers code projects to keep a design in, and says when a folder there is taken', async () => {
+    await mkdir(join(work, 'src'), { recursive: true });
+    sites = [join(work, 'src'), join(home, 'not-a-repository')];
+    await mkdir(sites[1]!, { recursive: true });
+    const projects = await vcs.projects();
+    // The site inside the repository and the repository the design is kept in are the same project.
+    expect(projects).toHaveLength(1);
+    // Its remote is a repository folder on this computer, named as such.
+    expect(projects[0]).toMatchObject({ name: 'work', branch: 'main', remote: 'origin' });
+    const other = sampleDoc('Beside');
+    await store.save(other);
+    expect((await vcs.inspectLocal(dir(), undefined, other.id)).taken).toMatch(/Another design/);
+    expect((await vcs.inspectLocal(join(work, 'src'), undefined, other.id)).taken).toBeUndefined();
+    const free = await vcs.inspectLocal(join(work, 'designs', 'Beside'), undefined, other.id);
+    expect(free).toMatchObject({ state: 'missing', inner: 'designs/Beside', branch: 'main' });
+    expect(free.taken).toBeUndefined();
+    sites = [];
   });
 
   it('refuses to put a design where another design or other files are', async () => {
@@ -228,6 +300,8 @@ describe('version control', () => {
     expect(hub.peek(opened)!.doc.name).toBe('Landing');
     expect((await vcs.status(opened)).branch).toBe('main');
     expect(await vcs.openFolder(join(copy, 'designs', 'Landing'))).toBe(opened);
+    // The project's own folder finds the design inside it.
+    expect(await vcs.openFolder(copy)).toBe(opened);
   });
 
   it('pulls new commits made elsewhere and shows them', async () => {
@@ -242,6 +316,19 @@ describe('version control', () => {
     const pulled = await vcs.pull(fileId);
     expect(pulled.status).toMatchObject({ behind: 0, changes: [] });
     expect(title().textValue).toBe('Hello from the other copy');
+  });
+
+  it('keeps a second design beside the code without pushing the branch', async () => {
+    const other = sampleDoc('Beside');
+    await store.save(other);
+    const pushed = gitIn(origin, 'rev-parse', 'main');
+    const { status, warning } = await vcs.track(other.id, { kind: 'local', dir: join(work, 'designs', 'Beside'), push: false });
+    expect(warning).toBeUndefined();
+    expect(status).toMatchObject({ path: 'designs/Beside', branch: 'main', ahead: 1, changes: [] });
+    expect(gitIn(origin, 'rev-parse', 'main')).toBe(pushed);
+    // Two designs in the project: opening its folder asks which.
+    await expect(vcs.openFolder(work)).rejects.toThrow(/holds 2 designs \(designs\/Beside, designs\/Landing\)/);
+    await vcs.untrack(other.id);
   });
 
   it('stops tracking without touching the folder', async () => {
@@ -362,5 +449,20 @@ describe('version control with GitHub repositories', () => {
     await expect(vcs.track(id, { kind: 'github', account: 'octo', repo: { fullName: 'octo/site' }, local: join(home, 'clones', 'brand'), path: 'x' })).rejects.toThrow(/copy of https:\/\/github\.com\/octo\/brand/);
     await expect(vcs.track(id, { kind: 'github', account: 'octo', repo: { fullName: 'octo/site' }, local: join(home, 'clones', 'site'), path: 'designs/Hero' })).rejects.toThrow(/Another design/);
     await expect(vcs.track(id, { kind: 'github', account: 'octo', repo: { fullName: 'octo/site' }, local: join(home, 'clones', 'site'), path: '../escape' })).rejects.toThrow(/can’t be a folder name/);
+  });
+
+  it('pushes with Git’s own sign-in when GitHub turns the account down, as a code project’s pushes may', async () => {
+    // The remote refuses pushes signed in with the account's token (which travels as GIT_CONFIG_* settings).
+    const hook = join(github, 'octo', 'site.git', 'hooks', 'pre-receive');
+    await writeFile(hook, '#!/bin/sh\nif env | grep -q "^GIT_CONFIG_VALUE_0=AUTHORIZATION"; then echo "Permission to octo/site.git denied to octo." >&2; exit 1; fi\n', { mode: 0o755 });
+    try {
+      const id = await tracked('Banner');
+      const { status, warning } = await vcs.track(id, { kind: 'local', dir: join(home, 'clones', 'site', 'designs', 'Banner') });
+      expect(warning).toBeUndefined();
+      expect(status).toMatchObject({ path: 'designs/Banner', ahead: 0 });
+      expect(gitIn(join(github, 'octo', 'site.git'), 'log', '-1', '--format=%s', 'main')).toBe('Add Banner');
+    } finally {
+      await rm(hook, { force: true });
+    }
   });
 });

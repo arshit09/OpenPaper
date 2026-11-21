@@ -255,6 +255,22 @@ export function parseDesign(read: (path: string) => string | undefined, opts: { 
   } satisfies PaperDocument);
 }
 
+/** Whether a path in the design folder ('/'-separated) is one the design is read from (not the README, not a temporary file). */
+export function isDesignPath(path: string): boolean {
+  const name = path.slice(path.lastIndexOf('/') + 1);
+  if (name.startsWith('.')) return false;
+  return path === MANIFEST || path === TOKENS || path === COMMENTS || path === PAGES_DIR || path === ASSETS_DIR || path.startsWith(`${PAGES_DIR}/`) || path.startsWith(`${ASSETS_DIR}/`);
+}
+
+/** Two documents would be written to the same files (so loading one over the other changes nothing). */
+export function sameDesign(a: PaperDocument, b: PaperDocument, id?: string): boolean {
+  const fa = designFiles(a, id);
+  const fb = designFiles(b, id);
+  if (fa.size !== fb.size) return false;
+  for (const [path, text] of fa) if (fb.get(path) !== text) return false;
+  return true;
+}
+
 /** What a changed path in the design folder is, in the design's own terms. */
 export function changeLabel(path: string, doc: PaperDocument | undefined): string {
   if (path === MANIFEST) return 'Page list and file name';
@@ -355,9 +371,44 @@ export async function folderStamp(dir: string): Promise<string | null> {
   if (!parts.length) return null;
   await add(TOKENS);
   await add(COMMENTS);
-  for (const name of await list(join(dir, PAGES_DIR))) await add(`${PAGES_DIR}/${name}`);
-  for (const name of await list(join(dir, ASSETS_DIR))) parts.push(`${ASSETS_DIR}/${name}`);
+  // Not the temporary files a write leaves for a moment: a stamp taken then would never match again.
+  for (const name of await list(join(dir, PAGES_DIR))) if (!name.startsWith('.')) await add(`${PAGES_DIR}/${name}`);
+  for (const name of await list(join(dir, ASSETS_DIR))) if (!name.startsWith('.')) parts.push(`${ASSETS_DIR}/${name}`);
   return createHash('sha1').update(parts.sort().join('\n')).digest('hex');
+}
+
+/** Folders a design search never looks in: dependencies, build output, Git's own. */
+const NOT_DESIGNS = /^(node_modules|bower_components|vendor|dist|build|out|target|coverage|__pycache__|venv)$/i;
+
+/**
+ * Design folders inside `dir` (e.g. a code project), as '/'-separated paths from it, nearest first. Looks a
+ * few levels down, skipping hidden folders and the usual dependency and build folders, and stops early on
+ * very large trees.
+ */
+export async function findDesignFolders(dir: string, opts: { depth?: number; maxFolders?: number } = {}): Promise<string[]> {
+  const depth = opts.depth ?? 4;
+  let budget = opts.maxFolders ?? 3000;
+  const found: string[] = [];
+  let level: string[] = [''];
+  for (let d = 0; d <= depth && level.length && budget > 0; d++) {
+    const next: string[] = [];
+    for (const rel of level) {
+      if (budget-- <= 0) break;
+      const abs = rel ? join(dir, ...rel.split('/')) : dir;
+      if (rel && (await folderDesignId(abs))) {
+        found.push(rel);
+        continue; // a design doesn't hold another one
+      }
+      // A folder called "build" may be a design, but isn't looked inside.
+      if (NOT_DESIGNS.test(rel.slice(rel.lastIndexOf('/') + 1))) continue;
+      const entries = await readdir(abs, { withFileTypes: true }).catch(() => []);
+      for (const entry of entries) {
+        if (entry.isDirectory() && !entry.name.startsWith('.')) next.push(rel ? `${rel}/${entry.name}` : entry.name);
+      }
+    }
+    level = next.sort((a, b) => a.localeCompare(b));
+  }
+  return found;
 }
 
 /** The design id a folder holds (null: no design there). */

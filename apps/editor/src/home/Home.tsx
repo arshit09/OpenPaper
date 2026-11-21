@@ -56,7 +56,7 @@ export function Home() {
   /** Open a design kept as a folder (e.g. in a Git repository someone shared). It stays tracked there. */
   async function openDesignFolder() {
     try {
-      const path = await client.request<string | null>('vcs.pickFolder', { title: 'Open a design folder' });
+      const path = await client.request<string | null>('vcs.pickFolder', { title: 'Open a design folder, or the code project it’s in' });
       if (!path) return;
       const { fileId } = await client.request<{ fileId: string }>('vcs.openFolder', { path });
       location.hash = `#/file/${fileId}`;
@@ -116,7 +116,7 @@ export function Home() {
         <button className="op-btn outline" title="Open the site you're building and edit it with the agent" onClick={() => setSiteDialog({ site: null })}>
           <AppWindow size={15} /> Open live site
         </button>
-        <button className="op-btn outline" title="Open a design folder, e.g. from a Git repository" onClick={() => void openDesignFolder()}>
+        <button className="op-btn outline" title="Open a design folder, or the code project it’s kept in" onClick={() => void openDesignFolder()}>
           <FolderOpen size={15} /> Open folder
         </button>
         <button className="op-btn primary" onClick={createFile}>
