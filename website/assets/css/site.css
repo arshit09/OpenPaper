@@ -2714,6 +2714,12 @@ a:hover .link-arrow .i {
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 12px;
 }
+/* Six cards: two rows of three, not five and one. */
+@media (min-width: 641px) {
+  .facts.three {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
 .fact {
   display: flex;
   flex-direction: column;
