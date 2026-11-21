@@ -38,9 +38,10 @@ window closes, because agents connected over MCP still use it.
   `HKCU\Software\Classes\AppUserModelId\io.github.arshit09.openpaper` (an app without a package registers there), and
   the uninstaller removes that key.
 
-**The installer** (`installer/`, `OpenPaper Setup.exe`) has the website's look: the same palette, type and buttons,
-following light or dark mode. Install stays disabled until the Terms of Use and Privacy Policy box is ticked. Both
-documents open in a panel inside the installer.
+**The installer** (`installer/`, `OpenPaper Setup.exe`) is one small centered column in the website's palette,
+following light or dark mode: the app icon, a title, one line of status, the install folder and desktop-shortcut
+switch, and the buttons, always at the bottom. A line under Install says that installing means agreeing to the Terms
+of Use and Privacy Policy; both open in a panel inside the installer.
 
 1. Reads the manifest, by default from `https://github.com/arshit09/OpenPaper/releases/latest/download/OpenPaper-windows-x64.json`.
 2. Downloads the zip with progress, then checks its size and SHA-256.
@@ -48,7 +49,7 @@ documents open in a panel inside the installer.
 4. Unpacks into a hidden folder next to the install, then swaps it in, putting the old one back if that fails.
 5. Adds Start menu and (optionally) desktop shortcuts, and an Apps & Features entry.
 6. Copies itself into the install as `Uninstall OpenPaper.exe`. Run with `--uninstall`, it removes the app, its
-   shortcuts and entry, and, only if that box is ticked, the user's designs in `~\.openpaper`.
+   shortcuts and entry, and, only if that switch is on, the user's designs in `~\.openpaper`.
 
 Running the installer again updates or reinstalls in place. Run with `--update` (what the app does), it skips the
 first screen: it updates the install from `--dir` (else the registered one), keeps whether there's a desktop shortcut,

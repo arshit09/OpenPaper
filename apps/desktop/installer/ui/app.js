@@ -5,21 +5,10 @@ const appWindow = window.__TAURI__.window.getCurrentWindow();
 const $ = (selector) => document.querySelector(selector);
 const state = { info: null, release: null, dir: '', busy: false, step: null };
 
-const INSTALL_STEPS = [
-  ['download', 'Download'],
-  ['verify', 'Check the download'],
-  ['install', 'Install'],
-  ['shortcuts', 'Add shortcuts'],
-];
-const REMOVE_STEPS = [
-  ['close', 'Close OpenPaper'],
-  ['remove', 'Remove files'],
-  ['shortcuts', 'Remove shortcuts'],
-];
-
 function show(view) {
   for (const section of document.querySelectorAll('.view')) section.hidden = section.dataset.view !== view;
-  document.body.dataset.state = view === 'progress' ? 'busy' : view === 'done' || view === 'removed' ? 'done' : '';
+  document.body.dataset.state =
+    view === 'progress' ? 'busy' : view === 'done' || view === 'removed' ? 'done' : view === 'error' ? 'error' : '';
 }
 
 function mb(bytes) {
@@ -36,17 +25,20 @@ function compareVersions(a, b) {
   return 0;
 }
 
-/** Show a path in `el`, shortened in the middle so its start and its last folders stay readable. */
-function showPath(el, path, max = 46) {
-  let text = path;
+/**
+ * Show a path in `el`, shortened in the middle to the width it has, so the drive, the first two folders and
+ * as many of the last folders as fit stay readable. The full path is in the tooltip.
+ */
+function showPath(el, path) {
   const parts = path.split('\\');
-  // Keep the drive and the first two folders, then as many of the last folders as fit.
-  for (let keep = parts.length - 4; text.length > max && keep >= 1; keep--) {
-    text = [...parts.slice(0, 3), '…', ...parts.slice(parts.length - keep)].join('\\');
-  }
-  if (text.length > max) text = `${path.slice(0, 16)}…${path.slice(-(max - 17))}`;
-  el.textContent = text;
+  const candidates = [path];
+  for (let keep = parts.length - 4; keep >= 1; keep--) candidates.push([...parts.slice(0, 3), '…', ...parts.slice(-keep)].join('\\'));
   el.title = path;
+  for (const text of candidates) {
+    el.textContent = text;
+    // Hidden (no width yet): settle for a length that usually fits.
+    if (el.clientWidth ? el.scrollWidth <= el.clientWidth : text.length <= 40) return;
+  }
 }
 
 // ---------- Install ----------
@@ -56,164 +48,102 @@ function setDir(dir) {
   showPath($('#dir'), dir);
 }
 
-function updateInstallButton() {
-  $('#install').disabled = !($('#agree').checked && state.release);
-}
-
 async function loadRelease() {
   const line = $('#release-line');
-  const dot = $('[data-view="install"] .dot');
+  const button = $('#install');
   line.textContent = 'Checking for the latest version…';
-  dot.className = 'dot live';
-  $('#size-line').textContent = '';
+  line.title = '';
+  button.disabled = true;
   try {
     const release = await invoke('fetch_release');
     state.release = release;
     const installed = state.info.installed;
-    const button = $('#install');
+    const size = `${mb(release.size)} download`;
     if (installed && compareVersions(release.version, installed.version) > 0) {
-      line.textContent = `Update from ${installed.version} to ${release.version}`;
+      line.textContent = `Update from ${installed.version} to ${release.version} · ${size}`;
       button.textContent = 'Update';
     } else if (installed && compareVersions(release.version, installed.version) === 0) {
-      line.textContent = `Version ${release.version} is installed`;
+      line.textContent = `Version ${release.version} is already installed`;
       button.textContent = 'Reinstall';
     } else {
-      line.textContent = `Version ${release.version} for Windows`;
+      line.textContent = `Version ${release.version} · ${size}`;
       button.textContent = 'Install';
     }
-    dot.className = 'dot ready';
-    const needs = release.installedSize ? ` · needs ${mb(release.installedSize)}` : '';
-    $('#size-line').textContent = `${mb(release.size)} download${needs}`;
+    if (release.installedSize) line.title = `Needs ${mb(release.installedSize)} of disk space`;
+    button.disabled = false;
   } catch (error) {
     state.release = null;
-    dot.className = 'dot bad';
-    line.textContent = String(error).startsWith('No OpenPaper release') ? 'No release is available yet' : "Can't reach the download server";
-    $('#size-line').innerHTML = '';
+    line.textContent = String(error).startsWith('No OpenPaper release') ? 'No release is available yet. ' : "Can't reach the download server. ";
+    line.title = String(error);
     const retry = document.createElement('a');
     retry.textContent = 'Try again';
     retry.addEventListener('click', (e) => {
       e.preventDefault();
       loadRelease();
     });
-    $('#size-line').append(retry);
-    $('#size-line').title = String(error);
-  }
-  updateInstallButton();
-}
-
-function renderSteps(steps) {
-  const list = $('#steps');
-  list.replaceChildren(
-    ...steps.map(([id, name]) => {
-      const li = document.createElement('li');
-      li.className = 'step';
-      li.dataset.step = id;
-      li.innerHTML = `<span class="state"><svg class="i"><use href="#i-check" /></svg></span><span class="name"></span><span class="detail"></span>`;
-      li.querySelector('.name').textContent = name;
-      return li;
-    }),
-  );
-}
-
-/** Mark `id` active and every step before it done. */
-function activate(id, detail = '') {
-  let reached = false;
-  for (const li of document.querySelectorAll('.step')) {
-    const isIt = li.dataset.step === id;
-    if (isIt) reached = true;
-    li.classList.toggle('active', isIt);
-    li.classList.toggle('done', !reached);
-    if (isIt) li.querySelector('.detail').textContent = detail;
-    else if (!reached) li.querySelector('.detail').textContent = '';
+    line.append(retry);
   }
 }
 
-function finishSteps() {
-  for (const li of document.querySelectorAll('.step')) {
-    li.classList.remove('active');
-    li.classList.add('done');
-    li.querySelector('.detail').textContent = '';
-  }
-}
-
-function setBar(fraction) {
-  $('#bar').style.width = `${Math.max(0, Math.min(1, fraction)) * 100}%`;
+/** The one line under the bar's left end, and the bar itself. `percent` false leaves the number out. */
+function setProgress(status, fraction, percent = true) {
+  if (status !== undefined) $('#status').textContent = status;
+  const f = Math.max(0, Math.min(1, fraction));
+  $('#bar').style.width = `${f * 100}%`;
+  $('#percent').textContent = percent ? `${Math.floor(f * 100)}%` : '';
 }
 
 function installProgress() {
-  let samples = [];
   const channel = new Channel();
   channel.onmessage = (message) => {
     state.step = message.step;
-    $('#cancel').disabled = message.step !== 'download';
+    // Only the download can be cancelled; past it, closing would leave a half-moved install.
+    $('#cancel').hidden = message.step !== 'download';
     switch (message.step) {
       case 'download': {
-        const now = performance.now();
-        samples.push([now, message.done]);
-        samples = samples.filter(([t]) => now - t < 3000);
-        const [t0, d0] = samples[0];
-        const speed = now - t0 > 400 ? ((message.done - d0) / (now - t0)) * 1000 : 0;
         const total = message.total || state.release.size;
-        activate('download', `${mb(message.done)} of ${mb(total)}${speed ? ` · ${mb(speed)}/s` : ''}`);
-        setBar((message.done / total) * 0.7);
-        $('#progress-meta').textContent = `${Math.floor((message.done / total) * 100)}%`;
+        setProgress(`Downloading · ${mb(message.done)} of ${mb(total)}`, (message.done / total) * 0.7);
         break;
       }
       case 'verify':
-        activate('verify');
-        setBar(0.72);
-        $('#progress-meta').textContent = '';
+        setProgress('Checking the download…', 0.72);
         break;
       case 'close':
-        activate('install', 'Closing OpenPaper…');
-        setBar(0.74);
+        setProgress('Closing OpenPaper…', 0.74);
         break;
-      case 'extract': {
-        const fraction = message.total ? message.done / message.total : 0;
-        activate('install', `${Math.floor(fraction * 100)}%`);
-        setBar(0.74 + fraction * 0.22);
+      case 'extract':
+        setProgress('Installing…', 0.74 + (message.total ? message.done / message.total : 0) * 0.22);
         break;
-      }
       case 'shortcuts':
-        activate('shortcuts');
-        setBar(0.98);
+        setProgress('Adding shortcuts…', 0.98);
         break;
       case 'done':
-        finishSteps();
-        setBar(1);
+        setProgress('Done', 1);
         break;
     }
   };
   return channel;
 }
 
-function showProgress(eyebrow, detail) {
-  $('#progress-eyebrow').textContent = eyebrow;
-  $('#progress-title').innerHTML = 'Getting OpenPaper <em>ready.</em>';
-  $('#progress-meta').textContent = '';
+function showProgress(title, sub, status) {
+  $('#progress-title').textContent = title;
+  $('#progress-sub').textContent = sub;
   $('#cancel').hidden = false;
   $('#cancel').disabled = false;
-  renderSteps(INSTALL_STEPS);
-  activate('download', detail);
-  setBar(0);
+  setProgress(status, 0);
   show('progress');
 }
 
 async function startInstall() {
-  if (!state.release || !$('#agree').checked) return;
+  if (!state.release) return;
   state.busy = true;
   const verb = $('#install').textContent === 'Update' ? 'Updating' : 'Installing';
-  showProgress(`${verb} version ${state.release.version}`, 'Starting…');
+  showProgress(`${verb} OpenPaper`, `Version ${state.release.version}`, 'Starting…');
   try {
     const desktop = $('#desktop').checked;
     const dir = await invoke('install', { dir: state.dir, desktop, release: state.release, progress: installProgress() });
     state.dir = dir;
-    $('#done-lede').textContent = desktop
-      ? "OpenPaper is on your desktop and in the Start menu. Open it, then connect Claude Code, Cursor or another agent in Settings, in one click."
-      : 'OpenPaper is in the Start menu. Open it, then connect Claude Code, Cursor or another agent in Settings, in one click.';
-    $('#done-eyebrow').textContent = `Version ${state.release.version} installed`;
-    showPath($('#done-dir'), dir);
-    showPath($('#done-data'), state.info.dataDir);
+    $('#done-sub').textContent = `${desktop ? "It's on your desktop and in the Start menu." : "It's in the Start menu."} Once it's open, connect Claude Code, Cursor or another agent from Settings.`;
     show('done');
   } catch (error) {
     if (String(error) === 'cancelled') show('install');
@@ -229,10 +159,10 @@ async function startInstall() {
 /** The app started this Setup to update itself: no questions, keep its folder and shortcuts, then open it again. */
 async function startUpdate() {
   state.busy = true;
-  showProgress('Updating OpenPaper', 'Checking for the latest version…');
+  showProgress('Updating OpenPaper', '', 'Checking for the latest version…');
   try {
     state.release = await invoke('fetch_release');
-    $('#progress-eyebrow').textContent = `Updating to version ${state.release.version}`;
+    $('#progress-sub').textContent = `Version ${state.release.version}`;
     const dir = await invoke('install', {
       dir: state.dir,
       desktop: state.info.desktopShortcut,
@@ -259,18 +189,15 @@ function showError(error, retry) {
 
 // ---------- Uninstall ----------
 
+const REMOVE_STATUS = { close: 'Closing OpenPaper…', remove: 'Removing files…', shortcuts: 'Removing shortcuts…' };
+
 function removeProgress() {
   const channel = new Channel();
   channel.onmessage = (message) => {
     state.step = message.step;
-    const index = { close: 0, remove: 1, shortcuts: 2 }[message.step];
-    if (index !== undefined) {
-      activate(REMOVE_STEPS[index][0]);
-      setBar((index + 0.5) / REMOVE_STEPS.length);
-    } else if (message.step === 'done') {
-      finishSteps();
-      setBar(1);
-    }
+    const index = Object.keys(REMOVE_STATUS).indexOf(message.step);
+    if (index >= 0) setProgress(REMOVE_STATUS[message.step], (index + 0.5) / 3, false);
+    else if (message.step === 'done') setProgress('Done', 1, false);
   };
   return channel;
 }
@@ -278,19 +205,13 @@ function removeProgress() {
 async function startUninstall() {
   state.busy = true;
   const removeData = $('#remove-data').checked;
-  $('#progress-eyebrow').textContent = 'Uninstalling';
-  $('#progress-title').innerHTML = 'Removing <em>OpenPaper.</em>';
-  $('#progress-meta').textContent = '';
+  const version = state.info.installed?.version;
+  showProgress('Uninstalling OpenPaper', version ? `Version ${version}` : '', REMOVE_STATUS.close);
   $('#cancel').hidden = true;
-  renderSteps(REMOVE_STEPS);
-  activate('close');
-  setBar(0.05);
-  show('progress');
+  setProgress(undefined, 0.05, false);
   try {
     await invoke('uninstall', { removeData, progress: removeProgress() });
-    $('#removed-lede').textContent = removeData
-      ? 'OpenPaper and your designs were deleted from this PC. Agents you connected may still list OpenPaper in their settings.'
-      : `Your designs are still in ${state.info.dataDir}. Agents you connected may still list OpenPaper in their settings.`;
+    $('#removed-sub').textContent = `${removeData ? 'Your designs and settings were deleted too.' : `Your designs are still in ${state.info.dataDir}.`} Agents you connected may still list OpenPaper in their settings.`;
     show('removed');
   } catch (error) {
     showError(error, startUninstall);
@@ -343,7 +264,6 @@ function wire() {
   $('#close').addEventListener('click', requestClose);
   for (const button of document.querySelectorAll('[data-action="close"]')) button.addEventListener('click', requestClose);
 
-  $('#agree').addEventListener('change', updateInstallButton);
   $('#install').addEventListener('click', startInstall);
   $('#cancel').addEventListener('click', () => {
     $('#cancel').disabled = true;
@@ -380,18 +300,18 @@ async function init() {
   document.body.dataset.mode = state.info.mode;
   if (state.info.mode === 'uninstall') {
     const version = state.info.installed?.version;
-    $('#uninstall-eyebrow').textContent = version ? `Version ${version} installed` : 'OpenPaper';
-    showPath($('#data-dir'), state.info.dataDir);
+    $('#uninstall-sub').textContent = version ? `Removes version ${version} from this PC.` : 'Removes OpenPaper from this PC.';
     show('uninstall');
+    showPath($('#data-dir'), state.info.dataDir);
     return;
   }
   if (state.info.mode === 'update') {
-    setDir(state.info.updateDir ?? state.info.installed?.dir ?? state.info.defaultDir);
+    state.dir = state.info.updateDir ?? state.info.installed?.dir ?? state.info.defaultDir;
     startUpdate();
     return;
   }
-  setDir(state.info.installed?.dir ?? state.info.defaultDir);
   show('install');
+  setDir(state.info.installed?.dir ?? state.info.defaultDir);
   loadRelease();
 }
 

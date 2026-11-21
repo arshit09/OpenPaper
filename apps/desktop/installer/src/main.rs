@@ -102,7 +102,7 @@ fn build_window(app: &AppHandle, data_dir: PathBuf) -> tauri::Result<()> {
     let popups = app.clone();
     let window = WebviewWindowBuilder::new(app, "setup", WebviewUrl::App("index.html".into()))
         .title("OpenPaper Setup")
-        .inner_size(840.0, 560.0)
+        .inner_size(480.0, 440.0)
         .resizable(false)
         .maximizable(false)
         .decorations(false)
