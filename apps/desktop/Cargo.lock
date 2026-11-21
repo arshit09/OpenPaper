@@ -2440,7 +2440,7 @@ dependencies = [
 
 [[package]]
 name = "openpaper-app"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "openpaper-common",
  "reqwest 0.12.28",
@@ -2460,7 +2460,7 @@ dependencies = [
 
 [[package]]
 name = "openpaper-common"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "serde_json",
  "windows-sys 0.61.2",
@@ -2468,7 +2468,7 @@ dependencies = [
 
 [[package]]
 name = "openpaper-setup"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "dirs 6.0.0",
  "mslnk",
