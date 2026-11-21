@@ -48,12 +48,17 @@ function setDir(dir) {
   showPath($('#dir'), dir);
 }
 
+function updateInstallButton() {
+  $('#install').disabled = !($('#agree').checked && state.release);
+}
+
 async function loadRelease() {
   const line = $('#release-line');
   const button = $('#install');
   line.textContent = 'Checking for the latest version…';
   line.title = '';
-  button.disabled = true;
+  state.release = null;
+  updateInstallButton();
   try {
     const release = await invoke('fetch_release');
     state.release = release;
@@ -70,7 +75,6 @@ async function loadRelease() {
       button.textContent = 'Install';
     }
     if (release.installedSize) line.title = `Needs ${mb(release.installedSize)} of disk space`;
-    button.disabled = false;
   } catch (error) {
     state.release = null;
     line.textContent = String(error).startsWith('No OpenPaper release') ? 'No release is available yet. ' : "Can't reach the download server. ";
@@ -83,6 +87,7 @@ async function loadRelease() {
     });
     line.append(retry);
   }
+  updateInstallButton();
 }
 
 /** The one line under the bar's left end, and the bar itself. `percent` false leaves the number out. */
@@ -135,7 +140,7 @@ function showProgress(title, sub, status) {
 }
 
 async function startInstall() {
-  if (!state.release) return;
+  if (!state.release || !$('#agree').checked) return;
   state.busy = true;
   const verb = $('#install').textContent === 'Update' ? 'Updating' : 'Installing';
   showProgress(`${verb} OpenPaper`, `Version ${state.release.version}`, 'Starting…');
@@ -264,6 +269,7 @@ function wire() {
   $('#close').addEventListener('click', requestClose);
   for (const button of document.querySelectorAll('[data-action="close"]')) button.addEventListener('click', requestClose);
 
+  $('#agree').addEventListener('change', updateInstallButton);
   $('#install').addEventListener('click', startInstall);
   $('#cancel').addEventListener('click', () => {
     $('#cancel').disabled = true;

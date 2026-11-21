@@ -40,8 +40,8 @@ window closes, because agents connected over MCP still use it.
 
 **The installer** (`installer/`, `OpenPaper Setup.exe`) is one small centered column in the website's palette,
 following light or dark mode: the app icon, a title, one line of status, the install folder and desktop-shortcut
-switch, and the buttons, always at the bottom. A line under Install says that installing means agreeing to the Terms
-of Use and Privacy Policy; both open in a panel inside the installer.
+switch, and the buttons, always at the bottom. Install stays disabled until the Terms of Use and Privacy Policy box
+right above it is ticked; both documents open in a panel inside the installer.
 
 1. Reads the manifest, by default from `https://github.com/arshit09/OpenPaper/releases/latest/download/OpenPaper-windows-x64.json`.
 2. Downloads the zip with progress, then checks its size and SHA-256.
